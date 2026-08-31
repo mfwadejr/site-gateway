@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>Web Server</title>
+  <meta name="description" content="Create, upload, and serve static websites from one simple dashboard.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="login" class="login-shell hidden">
+    <form id="login-form" class="login-card">
+      <div class="brand-mark">W</div>
+      <p class="eyebrow">Your private publishing dock</p>
+      <h1>Welcome back</h1>
+      <p class="muted">Sign in to manage your sites.</p>
+      <label>Username<input name="username" autocomplete="username" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button class="button primary wide">Sign in</button>
+    </form>
+  </div>
+
+  <div id="dashboard" class="app-shell hidden">
+    <aside>
+      <div class="brand"><span class="brand-mark small">W</span><span>Web Server</span></div>
+      <nav><button class="nav-active">Sites <span id="nav-count">0</span></button></nav>
+      <div class="aside-footer"><span id="user-label">admin</span><button id="logout" class="text-button">Sign out</button></div>
+    </aside>
+    <main>
+      <header>
+        <div><p class="eyebrow">Site control</p><h1>Your websites</h1><p class="muted">Upload, publish, pause, and update—without touching a config file.</p></div>
+        <button id="open-create" class="button primary">＋ New site</button>
+      </header>
+      <section class="summary" aria-label="Site summary">
+        <div><span class="status-dot running"></span><strong id="running-count">0</strong><span>Running</span></div>
+        <div><span class="status-dot disabled"></span><strong id="disabled-count">0</strong><span>Disabled</span></div>
+        <div class="port-note">Ports <strong id="port-range">9000–9099</strong></div>
+      </section>
+      <section id="empty" class="empty hidden">
+        <div class="empty-icon">↗</div><h2>Publish your first site</h2>
+        <p>Drop in a ZIP containing an <code>index.html</code> and choose a port. That’s it.</p>
+        <button class="button primary create-trigger">Create a site</button>
+      </section>
+      <section id="site-grid" class="site-grid" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <dialog id="create-dialog">
+    <form id="create-form" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">New destination</p><h2>Create a site</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
+      <label>Site name<input name="name" placeholder="Portfolio" maxlength="80" required></label>
+      <label>Port<input name="port" type="number" required><small id="port-help"></small></label>
+      <label class="dropzone">Website files<input name="files" type="file" accept=".zip,.html,text/html,application/zip" required><span class="upload-icon">⇧</span><strong>Choose a ZIP or index.html</strong><small>ZIP files must contain index.html · Up to 250 MB</small></label>
+      <p id="create-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button class="button primary">Create & publish</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog">
+    <form method="dialog" class="dialog-card compact"><h2>Delete this site?</h2><p class="muted">Its uploaded files will be permanently removed.</p><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button><button value="confirm" class="button danger">Delete site</button></div></form>
+  </dialog>
+  <input id="replace-files" type="file" accept=".zip,.html,text/html,application/zip" hidden>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
