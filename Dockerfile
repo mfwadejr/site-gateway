@@ -6,6 +6,8 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 COPY src ./src
 
+RUN mkdir -p /data && chown -R node:node /data
+
 ENV NODE_ENV=production \
     ADMIN_PORT=8080 \
     DATA_DIR=/data
