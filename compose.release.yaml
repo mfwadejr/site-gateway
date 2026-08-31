@@ -1,0 +1,20 @@
+services:
+  web-server:
+    image: ghcr.io/mfwadejr/web-server:latest
+    container_name: web-server
+    restart: unless-stopped
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      ADMIN_PORT: 8080
+      SITE_PORT_MIN: 9000
+      SITE_PORT_MAX: 9099
+      DATA_DIR: /data
+    ports:
+      - "8080:8080"
+      - "9000-9099:9000-9099"
+    volumes:
+      - ${WEB_SERVER_DATA:-./data}:/data
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
