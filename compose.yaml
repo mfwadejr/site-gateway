@@ -10,6 +10,8 @@ services:
       SITE_PORT_MIN: 9000
       SITE_PORT_MAX: 9099
       DATA_DIR: /data
+      PUID: 1000
+      PGID: 1000
     ports:
       - "8080:8080"
       - "9000-9099:9000-9099"

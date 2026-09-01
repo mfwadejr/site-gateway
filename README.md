@@ -117,6 +117,10 @@ For simple upgrades, import `compose.release.yaml`; use ZimaOS's container updat
 | `SITE_PORT_MIN` | `9000` | Lowest allowed site port |
 | `SITE_PORT_MAX` | `9099` | Highest allowed site port |
 | `DATA_DIR` | `/data` | Persistent state location |
+| `PUID` | `1000` | UID that owns and runs against persistent files |
+| `PGID` | `1000` | GID that owns and runs against persistent files |
+
+At startup, the container automatically creates `/data/sites` and `/data/.uploads`, applies `PUID`/`PGID` ownership, and then drops root privileges before starting the application. With the ZimaOS bind mount, these appear under `/DATA/AppData/web-server` on the host. Unraid commonly uses `PUID=99` and `PGID=100`; ZimaOS typically uses `1000:1000`.
 
 ## Backup and update
 
