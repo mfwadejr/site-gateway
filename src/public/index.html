@@ -25,7 +25,10 @@
   <div id="dashboard" class="app-shell hidden">
     <aside>
       <div class="brand"><span class="brand-mark small">W</span><span>Web Server</span></div>
-      <nav><button class="nav-active">Sites <span id="nav-count">0</span></button></nav>
+      <nav aria-label="Publishing types">
+        <button class="nav-active">Hosted sites <span id="hosted-count">0</span></button>
+        <button class="nav-planned" aria-disabled="true" title="Proxy hosts are planned for the gateway release">Proxy hosts <span id="proxy-count">0</span></button>
+      </nav>
     </aside>
     <main>
       <header>

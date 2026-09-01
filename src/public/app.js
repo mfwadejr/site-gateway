@@ -50,7 +50,8 @@ function siteCard(site) {
 function render() {
   $("#site-grid").innerHTML = state.sites.map(siteCard).join("");
   $("#empty").classList.toggle("hidden", state.sites.length > 0);
-  $("#nav-count").textContent = state.sites.length;
+  $("#hosted-count").textContent = state.sites.length;
+  $("#proxy-count").textContent = "0";
   const running = state.sites.filter(s => s.status === "running").length;
   const disabled = state.sites.filter(s => s.status === "disabled").length;
   const errors = state.sites.filter(s => s.status === "error").length;
