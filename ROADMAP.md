@@ -50,7 +50,7 @@ The existing Node application remains responsible for authentication, the wizard
 
 ## Delivery phases
 
-### Phase 1 — Domains and automatic HTTPS
+### Phase 1 — Domains and automatic HTTPS (gateway beta implemented)
 
 - Publish ports 80 and 443
 - Domain assignment for static sites
@@ -59,7 +59,7 @@ The existing Node application remains responsible for authentication, the wizard
 - Certificate status and expiration reporting
 - Guided DNS/router readiness checks
 
-### Phase 2 — Reverse proxy and redirects
+### Phase 2 — Reverse proxy and redirects (proxy hosts implemented; redirects/logs pending)
 
 - Proxy to other containers, LAN devices, or URLs
 - WebSocket support

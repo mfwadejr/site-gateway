@@ -13,7 +13,10 @@ services:
       DATA_DIR: /data
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
+      ACME_EMAIL: ${ACME_EMAIL:-}
     ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
       - "8080:8080"
       - "9000-9099:9000-9099"
     volumes:

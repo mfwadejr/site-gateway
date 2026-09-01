@@ -7,13 +7,17 @@ Web Server is a small, self-hosted Docker appliance for publishing static websit
 - Password-protected, responsive admin dashboard
 - Create a site from a ZIP archive or a single `index.html`
 - One independently enabled/disabled port per site
+- Caddy gateway on ports 80 and 443
+- Domain routing and automatic HTTPS for hosted sites
+- Reverse proxy hosts for containers, LAN services, and applications
+- Automatic certificate renewal and HTTP-to-HTTPS redirects
 - Replace a site's files without recreating it
 - Delete sites and their stored files
 - Persistent configuration and uploads under `/data`
 - Path traversal protection for ZIP extraction and a 250 MB upload limit
 - Clean shutdown and automatic site restart after a container restart
 
-This first beta serves **static sites only** (HTML, CSS, JavaScript, images, fonts, and downloads). It does not run PHP, Node, Python, databases, TLS certificates, domains, or reverse proxy rules.
+Hosted uploads remain static-only (HTML, CSS, JavaScript, images, fonts, and downloads). Dynamic applications can be connected as proxy hosts. Web Server does not execute uploaded PHP, Node, Python, or database code.
 
 ## Quick start
 
@@ -34,6 +38,16 @@ Requirements: Docker Engine with Docker Compose.
 6. Open the site from its arrow button or visit `http://YOUR-SERVER-IP:PORT`.
 
 The included Compose file publishes site ports 9000–9099. Docker cannot add a host port to an already-running container, so any site port must be included in the published range. Change `SITE_PORT_MIN`, `SITE_PORT_MAX`, and the Compose `ports` range together before starting the container if you want a different range.
+
+For domain routing and automatic certificates, point the domain's DNS record at this server and forward public ports 80 and 443 to the container. If another reverse proxy already owns those ports, stop it or map Web Server to temporary alternate host ports for LAN testing; public ACME issuance will not work until 80/443 traffic reaches Web Server.
+
+## Domains, proxy hosts, and TLS
+
+Use **Hosted sites** for uploaded files. A domain is optional; when present, Caddy serves the site on ports 80/443 and automatically obtains and renews a public certificate. Direct site ports remain available for LAN testing.
+
+Use **Proxy hosts** to connect a domain to an existing application such as `http://192.168.1.20:3000` or another container name and port. Caddy supplies the normal forwarded headers and supports WebSocket upgrades automatically.
+
+Automatic HTTPS requires valid public DNS and inbound access to port 80 or 443. Caddy renews certificates automatically before expiration. HSTS is optional and should only be enabled after HTTPS works reliably.
 
 ## Install from the published image
 
@@ -119,6 +133,7 @@ For simple upgrades, import `compose.release.yaml`; use ZimaOS's container updat
 | `DATA_DIR` | `/data` | Persistent state location |
 | `PUID` | `1000` | UID that owns and runs against persistent files |
 | `PGID` | `1000` | GID that owns and runs against persistent files |
+| `ACME_EMAIL` | empty | Optional certificate account email |
 
 At startup, the container automatically creates `/data/sites` and `/data/.uploads`, applies `PUID`/`PGID` ownership, and then drops root privileges before starting the application. With the ZimaOS bind mount, these appear under `/DATA/AppData/web-server` on the host. Unraid commonly uses `PUID=99` and `PGID=100`; ZimaOS typically uses `1000:1000`.
 
