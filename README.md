@@ -8,13 +8,13 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Public beta" src="https://img.shields.io/badge/status-public%20beta-62E6A7">
+    <img alt="Public alpha" src="https://img.shields.io/badge/status-public%20alpha-FFBF69">
   </p>
   <p>
     <a href="#quick-start">Quick start</a> ·
     <a href="#domains-proxy-hosts-and-tls">Domains &amp; TLS</a> ·
-    <a href="#unraid-beta-install">Unraid</a> ·
-    <a href="#zimaos-beta-install">ZimaOS</a> ·
+    <a href="#unraid-alpha-install">Unraid</a> ·
+    <a href="#zimaos-alpha-install">ZimaOS</a> ·
     <a href="ROADMAP.md">Roadmap</a>
   </p>
 </div>
@@ -31,10 +31,12 @@ Site Gateway gives a home server one clear control panel for two jobs: publishin
 > [!NOTE]
 > Site Gateway is intentionally simpler than a general-purpose proxy manager. You provide the site or destination; the guided interface writes and safely reloads the gateway configuration.
 
-## Beta features
+## Alpha features
 
-- Password-protected, responsive admin dashboard
-- Installed-version reporting in the dashboard
+- Password-protected, responsive dashboard with live gateway health
+- Hosted-site, proxy-host, TLS-domain, and attention totals at a glance
+- Runtime uptime, memory, persistent-data size, disk space, and installed versions
+- Recent configuration activity for the current container session
 - Create a site from a ZIP archive or a single `index.html`
 - One independently enabled/disabled port per site
 - Caddy gateway on ports 80 and 443
@@ -112,7 +114,7 @@ my-site.zip
 
 A ZIP containing one top-level folder is also accepted; Site Gateway unwraps that folder automatically.
 
-## Unraid beta install
+## Unraid alpha install
 
 ### Option A: Compose Manager
 
@@ -134,7 +136,7 @@ docker compose up -d --build
 
 If Unraid reports a port conflict, change the admin port mapping's left side (for example `8180:8080`) or choose a different site-port range. Allow the selected site ports through any LAN firewall.
 
-## ZimaOS beta install
+## ZimaOS alpha install
 
 1. Copy this folder into ZimaOS storage, for example `/DATA/AppData/site-gateway/app`.
 2. Change the Compose volume to `/DATA/AppData/site-gateway/data:/data`.
@@ -201,12 +203,12 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. A tag such as `v0.2.0` also produces a matching versioned image. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.4.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.4.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ## Security notes
 
 - Change the default password before first use.
-- Keep the dashboard on a trusted LAN or behind a trusted HTTPS reverse proxy/VPN. The beta dashboard itself serves plain HTTP.
+- Keep the dashboard on a trusted LAN or behind a trusted HTTPS reverse proxy/VPN. The alpha dashboard itself serves plain HTTP.
 - Do not expose the admin dashboard directly to the internet.
 - Uploaded static JavaScript runs for visitors. Only publish files you trust.
 - The container runs as the unprivileged `node` user and does not require access to the Docker socket.
@@ -219,6 +221,6 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 - **Upload fails:** verify the file is below 250 MB and the extracted root contains `index.html`.
 - **Dashboard port is busy:** change only the host side, such as `8180:8080`, then browse to port 8180.
 
-## Beta roadmap
+## Alpha roadmap
 
 Good next additions are per-site access logs, certificate status reporting, drag-and-drop folder upload, rollback/history, health checks, access lists, and guided DNS diagnostics.

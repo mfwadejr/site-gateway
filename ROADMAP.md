@@ -50,7 +50,15 @@ The existing Node application remains responsible for authentication, the wizard
 
 ## Delivery phases
 
-### Next beta milestone — visibility and certificate health
+### Dashboard foundation (implemented in v0.4.0-alpha.1)
+
+- Default overview with hosted-site, proxy-host, TLS-domain, and attention totals
+- Gateway, hosted-site, and proxy-host health indicators
+- Safe runtime reporting for uptime, memory, persistent-data size, disk space, and installed versions
+- Recent configuration activity for the current container session
+- Responsive navigation for desktop and mobile
+
+### Next alpha milestone — visibility and certificate health
 
 This should be the next implementation target. It adds the reporting people rely on in NGINX Proxy Manager without expanding the creation workflow yet.
 
@@ -64,14 +72,14 @@ This should be the next implementation target. It adds the reporting people rely
 - Diagnostics that distinguish DNS, inbound port, certificate, and upstream failures
 - Never display private keys, account credentials, or raw sensitive configuration
 
-### Phase 1 — Domains and automatic HTTPS (gateway beta implemented)
+### Phase 1 — Domains and automatic HTTPS (gateway alpha implemented)
 
 - Publish ports 80 and 443
 - Domain assignment for static sites
 - Automatic certificate issue and renewal
 - Force-HTTPS option
-- Certificate status and expiration reporting (next beta milestone)
-- Guided DNS/router readiness checks (next beta milestone)
+- Certificate status and expiration reporting (next alpha milestone)
+- Guided DNS/router readiness checks (next alpha milestone)
 
 ### Phase 2 — Reverse proxy and redirects (proxy hosts implemented; redirects/logs pending)
 
