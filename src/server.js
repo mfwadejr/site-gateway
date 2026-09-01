@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -20,6 +21,8 @@ const configPath = path.join(dataDir, "sites.json");
 const proxiesPath = path.join(dataDir, "proxies.json");
 const uploadDir = path.join(dataDir, ".uploads");
 const caddyDir = path.join(dataDir, "caddy");
+const iconsDir = path.join(dataDir, "icons");
+const iconCatalogPath = path.join(iconsDir, "catalog.json");
 const caddyfilePath = path.join(caddyDir, "Caddyfile");
 const execFileAsync = promisify(execFile);
 const adminPort = numberEnv("ADMIN_PORT", 8080);
@@ -35,6 +38,8 @@ let gatewayError = null;
 let lastGatewayReload = null;
 let caddyVersion = "Unknown";
 const recentActivity = [];
+const probeFailures = { gateway: 0, http: 0, https: 0 };
+let iconCatalog = null;
 
 function recordActivity(message, status = "ok") {
   recentActivity.unshift({ message, status, at: new Date().toISOString() });
@@ -91,7 +96,7 @@ async function saveProxies() {
 }
 
 async function loadSites() {
-  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true })]);
+  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true })]);
   try {
     sites = JSON.parse(await fsp.readFile(configPath, "utf8"));
   } catch (error) {
@@ -182,23 +187,91 @@ function publicProxy(proxy) {
   return { ...proxy, status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled" };
 }
 
+function tcpProbe(port, timeoutMs = 1000) {
+  return new Promise(resolve => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const finish = result => { socket.destroy(); resolve(result); };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+function stableProbe(name, responding) {
+  if (responding) { probeFailures[name] = 0; return { status: "ready", healthy: true, responding: true }; }
+  probeFailures[name] += 1;
+  return probeFailures[name] < 2
+    ? { status: "checking", healthy: true, responding: false }
+    : { status: "error", healthy: false, responding: false };
+}
+
+async function loadIconCatalog() {
+  if (iconCatalog) return iconCatalog;
+  try {
+    const response = await fetch("https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/metadata.json", { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error(`Icon catalogue returned ${response.status}.`);
+    const text = await response.text();
+    if (text.length > 8 * 1024 * 1024) throw new Error("Icon catalogue is unexpectedly large.");
+    iconCatalog = JSON.parse(text);
+    await fsp.writeFile(iconCatalogPath, text);
+  } catch (error) {
+    try { iconCatalog = JSON.parse(await fsp.readFile(iconCatalogPath, "utf8")); }
+    catch { throw Object.assign(new Error("The icon catalogue is temporarily unavailable."), { status: 503 }); }
+  }
+  return iconCatalog;
+}
+
+function iconLabel(slug) {
+  return slug.split("-").map(word => word ? word[0].toUpperCase() + word.slice(1) : "").join(" ");
+}
+
+async function cacheIcon(slug) {
+  if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) throw Object.assign(new Error("Invalid icon selection."), { status: 400 });
+  const catalog = await loadIconCatalog();
+  const metadata = catalog[slug];
+  if (!metadata) throw Object.assign(new Error("Icon not found."), { status: 404 });
+  const response = await fetch(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/${slug}.svg`, { signal: AbortSignal.timeout(7000) });
+  if (!response.ok) throw Object.assign(new Error("The selected icon could not be downloaded."), { status: 502 });
+  const svg = await response.text();
+  if (svg.length > 512 * 1024 || !/<svg[\s>]/i.test(svg) || /<(?:script|foreignObject)\b|\son\w+\s*=|(?:href|xlink:href)\s*=\s*["'](?:https?:|\/\/)/i.test(svg)) {
+    throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
+  }
+  const filename = `${slug}.svg`;
+  await fsp.writeFile(path.join(iconsDir, filename), svg);
+  return `/site-icons/${filename}`;
+}
+
 async function dashboardSnapshot() {
   const hosted = sites.map(publicSite);
   const proxyHosts = proxies.map(publicProxy);
   const tlsDomains = [...sites, ...proxies].filter(item => item.enabled && item.domain && item.tls !== "http").length;
-  const storageWritable = await fsp.access(dataDir, fs.constants.R_OK | fs.constants.W_OK).then(() => true).catch(() => false);
+  const [storageWritable, gatewayResponding, httpResponding, httpsResponding] = await Promise.all([
+    fsp.access(dataDir, fs.constants.R_OK | fs.constants.W_OK).then(() => true).catch(() => false),
+    tcpProbe(2019),
+    tcpProbe(80),
+    tlsDomains ? tcpProbe(443) : Promise.resolve(false)
+  ]);
+  let gatewayProbe = stableProbe("gateway", gatewayResponding);
+  if (gatewayError) gatewayProbe = { status: "error", healthy: false, responding: gatewayResponding };
+  const httpProbe = stableProbe("http", httpResponding);
+  const httpsProbe = tlsDomains ? stableProbe("https", httpsResponding) : { status: "unconfigured", healthy: true, responding: false };
   const attention = [];
   if (gatewayError) attention.push({ kind: "gateway", name: "Gateway configuration", message: "Caddy rejected the current configuration." });
+  if (gatewayProbe.status === "error" && !gatewayResponding) attention.push({ kind: "gateway", name: "Caddy gateway", message: "The Caddy administration endpoint is not responding." });
+  if (httpProbe.status === "error") attention.push({ kind: "http", name: "HTTP · Port 80", message: "Port 80 is not accepting connections inside the container." });
+  if (httpsProbe.status === "error") attention.push({ kind: "https", name: "HTTPS · Port 443", message: "TLS domains are enabled but port 443 is not accepting connections." });
   if (!storageWritable) attention.push({ kind: "storage", name: "Persistent storage", message: "The data directory is not readable and writable." });
   for (const site of hosted.filter(item => item.status === "error")) attention.push({ kind: "hosted", name: site.name, message: `Hosted site is not responding on port ${site.port}.` });
   for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention." });
   const disk = await fsp.statfs(dataDir).catch(() => null);
   return {
-    gateway: { healthy: !gatewayError, lastReload: lastGatewayReload },
+    checkedAt: new Date().toISOString(),
+    gateway: { ...gatewayProbe, lastReload: lastGatewayReload },
     services: {
-      http: { healthy: !gatewayError, port: 80 },
-      https: { healthy: !gatewayError, activeDomains: tlsDomains },
-      storage: { healthy: storageWritable, path: dataDir }
+      http: { ...httpProbe, port: 80 },
+      https: { ...httpsProbe, port: 443, activeDomains: tlsDomains },
+      storage: { status: storageWritable ? "ready" : "error", healthy: storageWritable, path: dataDir }
     },
     hosted: { total: hosted.length, running: hosted.filter(item => item.status === "running").length, disabled: hosted.filter(item => item.status === "disabled").length, errors: hosted.filter(item => item.status === "error").length },
     proxies: { total: proxyHosts.length, running: proxyHosts.filter(item => item.status === "running").length, disabled: proxyHosts.filter(item => item.status === "disabled").length, errors: proxyHosts.filter(item => item.status === "error").length },
@@ -209,6 +282,7 @@ async function dashboardSnapshot() {
       memoryBytes: process.memoryUsage().rss,
       dataBytes: await directorySize(dataDir),
       diskFreeBytes: disk ? disk.bavail * disk.bsize : null,
+      diskTotalBytes: disk ? disk.blocks * disk.bsize : null,
       appVersion,
       caddyVersion,
       nodeVersion: process.version
@@ -311,6 +385,7 @@ app.disable("x-powered-by");
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(publicDir));
+app.use("/site-icons", express.static(iconsDir, { immutable: true, maxAge: "30d", setHeaders: res => res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'") }));
 
 app.get("/api/session", (req, res) => res.json({ authenticated: authenticated(req), username: authenticated(req) ? adminUser : null }));
 app.post("/api/login", (req, res) => {
@@ -330,6 +405,36 @@ app.get("/api/proxies", (req, res) => res.json(proxies.map(publicProxy)));
 app.get("/api/dashboard", async (req, res, next) => {
   try { res.json(await dashboardSnapshot()); }
   catch (error) { next(error); }
+});
+app.get("/api/icons/search", async (req, res, next) => {
+  try {
+    const query = String(req.query.q || "").trim().toLowerCase().slice(0, 80);
+    if (query.length < 2) return res.json([]);
+    const catalog = await loadIconCatalog();
+    const results = Object.entries(catalog).map(([slug, metadata]) => {
+      const aliases = metadata.aliases || [];
+      const searchText = [slug, ...aliases, ...(metadata.categories || [])].join(" ").toLowerCase();
+      const score = slug === query ? 0 : slug.startsWith(query) ? 1 : aliases.some(alias => alias.toLowerCase() === query) ? 2 : searchText.includes(query) ? 3 : 99;
+      return { slug, metadata, aliases, score };
+    }).filter(item => item.score < 99).sort((left, right) => left.score - right.score || left.slug.localeCompare(right.slug)).slice(0, 30)
+      .map(({ slug, aliases }) => ({ slug, label: iconLabel(slug), aliases: aliases.slice(0, 3), preview: `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/${slug}.svg` }));
+    res.json(results);
+  } catch (error) { next(error); }
+});
+app.put("/api/:kind/:id/icon", async (req, res, next) => {
+  try {
+    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : null;
+    if (!collection) return res.status(404).json({ error: "Entry type not found." });
+    const item = collection.find(entry => entry.id === req.params.id);
+    if (!item) return res.status(404).json({ error: "Entry not found." });
+    const slug = String(req.body.slug || "").trim();
+    const icon = slug ? await cacheIcon(slug) : null;
+    item.iconSlug = slug || null;
+    item.icon = icon;
+    if (collection === sites) await saveSites(); else await saveProxies();
+    recordActivity(`${slug ? "Icon updated" : "Icon reset"} for “${item.name}”.`);
+    res.json(collection === sites ? publicSite(item) : publicProxy(item));
+  } catch (error) { next(error); }
 });
 app.post("/api/sites", upload.single("files"), async (req, res, next) => {
   try {
