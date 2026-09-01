@@ -11,6 +11,8 @@ import express from "express";
 import multer from "multer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageMetadata = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+const appVersion = process.env.APP_VERSION || packageMetadata.version;
 const publicDir = path.join(__dirname, "public");
 const dataDir = path.resolve(process.env.DATA_DIR || "/data");
 const sitesDir = path.join(dataDir, "sites");
@@ -261,7 +263,7 @@ app.post("/api/logout", (req, res) => {
   res.json({ ok: true });
 });
 app.use("/api", (req, res, next) => authenticated(req) ? next() : res.status(401).json({ error: "Please sign in." }));
-app.get("/api/config", (req, res) => res.json({ minPort, maxPort, adminPort, gateway: { enabled: true, error: gatewayError } }));
+app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, gateway: { enabled: true, error: gatewayError } }));
 app.get("/api/sites", (req, res) => res.json(sites.map(publicSite)));
 app.get("/api/proxies", (req, res) => res.json(proxies.map(publicProxy)));
 app.post("/api/sites", upload.single("files"), async (req, res, next) => {
