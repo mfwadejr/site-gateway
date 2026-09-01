@@ -8,7 +8,7 @@ case "$app_uid:$app_gid" in
   *[!0-9:]*|:*|*:) echo "PUID and PGID must be numeric." >&2; exit 1 ;;
 esac
 
-mkdir -p "${DATA_DIR:-/data}/sites" "${DATA_DIR:-/data}/.uploads" "${DATA_DIR:-/data}/caddy/data" "${DATA_DIR:-/data}/caddy/config"
+mkdir -p "${DATA_DIR:-/data}/sites" "${DATA_DIR:-/data}/.uploads" "${DATA_DIR:-/data}/caddy/data" "${DATA_DIR:-/data}/caddy/config" "${DATA_DIR:-/data}/icons" "${DATA_DIR:-/data}/logs"
 chown -R "$app_uid:$app_gid" "${DATA_DIR:-/data}"
 
 caddyfile="${DATA_DIR:-/data}/caddy/Caddyfile"

@@ -22,6 +22,10 @@ const proxiesPath = path.join(dataDir, "proxies.json");
 const uploadDir = path.join(dataDir, ".uploads");
 const caddyDir = path.join(dataDir, "caddy");
 const iconsDir = path.join(dataDir, "icons");
+const logsDir = path.join(dataDir, "logs");
+const accessLogPath = path.join(logsDir, "access.json");
+const activityLogPath = path.join(logsDir, "activity.jsonl");
+const certificateDir = path.join(caddyDir, "data", "caddy", "certificates");
 const iconCatalogPath = path.join(iconsDir, "catalog.json");
 const caddyfilePath = path.join(caddyDir, "Caddyfile");
 const execFileAsync = promisify(execFile);
@@ -38,12 +42,15 @@ let gatewayError = null;
 let lastGatewayReload = null;
 let caddyVersion = "Unknown";
 const recentActivity = [];
+const upstreamHealth = new Map();
 const probeFailures = { gateway: 0, http: 0, https: 0 };
 let iconCatalog = null;
 
 function recordActivity(message, status = "ok") {
-  recentActivity.unshift({ message, status, at: new Date().toISOString() });
+  const entry = { message, status, at: new Date().toISOString() };
+  recentActivity.unshift(entry);
   recentActivity.splice(20);
+  fsp.appendFile(activityLogPath, `${JSON.stringify(entry)}\n`).catch(() => {});
 }
 
 async function directorySize(directory) {
@@ -96,7 +103,7 @@ async function saveProxies() {
 }
 
 async function loadSites() {
-  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true })]);
+  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(logsDir, { recursive: true })]);
   try {
     sites = JSON.parse(await fsp.readFile(configPath, "utf8"));
   } catch (error) {
@@ -111,6 +118,10 @@ async function loadSites() {
     proxies = [];
     await saveProxies();
   }
+  try {
+    const lines = (await fsp.readFile(activityLogPath, "utf8")).trim().split("\n").slice(-20).reverse();
+    recentActivity.push(...lines.map(line => JSON.parse(line)));
+  } catch { /* Activity history starts empty on a new installation. */ }
 }
 
 function normalizeDomain(value) {
@@ -142,14 +153,15 @@ function renderCaddyfile() {
   const email = String(process.env.ACME_EMAIL || "").trim();
   const lines = ["{", "  admin localhost:2019", "  persist_config off"];
   if (email) lines.push(`  email ${email}`);
-  lines.push("}", "", ":80 {", "  respond \"Site Gateway is ready.\" 404", "}");
+  const logging = ["  log {", `    output file ${accessLogPath} {`, "      roll_size 10mb", "      roll_keep 5", "      roll_keep_for 168h", "      roll_uncompressed", "    }", "    format json", "  }"];
+  lines.push("}", "", ":80 {", ...logging, "  respond \"Site Gateway is ready.\" 404", "}");
   for (const site of sites.filter(item => item.enabled && item.domain)) {
-    lines.push("", `${caddySiteAddress(site)} {`, `  root * ${path.join(sitesDir, site.id)}`, "  encode zstd gzip", "  file_server");
+    lines.push("", `${caddySiteAddress(site)} {`, ...logging, `  root * ${path.join(sitesDir, site.id)}`, "  encode zstd gzip", "  file_server");
     if (site.hsts && site.tls !== "http") lines.push('  header Strict-Transport-Security "max-age=31536000; includeSubDomains"');
     lines.push("}");
   }
   for (const proxy of proxies.filter(item => item.enabled && item.domain)) {
-    lines.push("", `${caddySiteAddress(proxy)} {`, `  reverse_proxy ${proxy.target}`);
+    lines.push("", `${caddySiteAddress(proxy)} {`, ...logging, `  reverse_proxy ${proxy.target}`);
     if (proxy.hsts && proxy.tls !== "http") lines.push('  header Strict-Transport-Security "max-age=31536000; includeSubDomains"');
     lines.push("}");
   }
@@ -184,7 +196,85 @@ function publicSite(site) {
 }
 
 function publicProxy(proxy) {
-  return { ...proxy, status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled" };
+  return { ...proxy, status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled", upstream: upstreamHealth.get(proxy.id) || null };
+}
+
+async function walkFiles(directory) {
+  const output = [];
+  for (const entry of await fsp.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error))) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) output.push(...await walkFiles(fullPath));
+    else if (entry.isFile()) output.push(fullPath);
+  }
+  return output;
+}
+
+function certificateNames(certificate) {
+  const names = [];
+  for (const part of String(certificate.subjectAltName || "").split(/,\s*/)) if (part.startsWith("DNS:")) names.push(part.slice(4).toLowerCase());
+  return names;
+}
+
+async function certificateInventory() {
+  const configured = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" }))]
+    .filter(item => item.enabled && item.domain && item.tls !== "http");
+  const parsed = [];
+  for (const filename of (await walkFiles(certificateDir)).filter(file => /\.(?:crt|pem)$/i.test(file))) {
+    try {
+      const certificate = new crypto.X509Certificate(await fsp.readFile(filename));
+      const stat = await fsp.stat(filename);
+      parsed.push({ certificate, names: certificateNames(certificate), updatedAt: stat.mtime.toISOString() });
+    } catch { /* Ignore non-certificate PEM files and unreadable entries. */ }
+  }
+  const certificates = configured.map(item => {
+    const found = parsed.find(entry => entry.names.some(name => name === item.domain || (name.startsWith("*.") && item.domain.endsWith(name.slice(1)))));
+    if (!found) return { domain: item.domain, name: item.name, kind: item.kind, status: "pending", daysRemaining: null, expiresAt: null, issuer: null, updatedAt: null };
+    const expiresAt = new Date(found.certificate.validTo);
+    const daysRemaining = Math.ceil((expiresAt.getTime() - Date.now()) / 86400000);
+    const status = daysRemaining <= 0 ? "expired" : daysRemaining <= 7 ? "critical" : daysRemaining <= 30 ? "warning" : "healthy";
+    return { domain: item.domain, name: item.name, kind: item.kind, status, daysRemaining, expiresAt: expiresAt.toISOString(), issuer: found.certificate.issuer, updatedAt: found.updatedAt, fingerprint: found.certificate.fingerprint256 };
+  });
+  return { summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length }, certificates };
+}
+
+async function checkProxy(proxy) {
+  if (!proxy.enabled) return { status: "disabled", checkedAt: new Date().toISOString(), history: [] };
+  const started = performance.now();
+  let result;
+  try {
+    const response = await fetch(proxy.target, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(4000), headers: { "user-agent": "Site-Gateway-Health/1.0" } });
+    await response.body?.cancel();
+    const responseMs = Math.round(performance.now() - started);
+    result = { status: response.status < 500 ? "healthy" : "unhealthy", httpStatus: response.status, responseMs, checkedAt: new Date().toISOString(), error: response.status >= 500 ? `HTTP ${response.status}` : null };
+  } catch (error) {
+    result = { status: "unhealthy", httpStatus: null, responseMs: Math.round(performance.now() - started), checkedAt: new Date().toISOString(), error: error.name === "TimeoutError" ? "Timed out after 4 seconds" : error.message };
+  }
+  const previous = upstreamHealth.get(proxy.id);
+  result.history = [{ status: result.status, responseMs: result.responseMs, httpStatus: result.httpStatus, checkedAt: result.checkedAt }, ...(previous?.history || [])].slice(0, 20);
+  upstreamHealth.set(proxy.id, result);
+  return result;
+}
+
+async function checkAllProxies() {
+  await Promise.all(proxies.map(checkProxy));
+  return proxies.map(publicProxy);
+}
+
+async function readAccessLogs(limit = 100, host = "") {
+  const files = (await fsp.readdir(logsDir).catch(() => [])).filter(name => name === "access.json" || name.startsWith("access.json.")).sort().reverse();
+  const entries = [];
+  for (const name of files) {
+    const content = await fsp.readFile(path.join(logsDir, name), "utf8").catch(() => "");
+    for (const line of content.trim().split("\n").reverse()) {
+      try {
+        const raw = JSON.parse(line); const request = raw.request || {}; const requestHost = String(request.host || "").split(":")[0];
+        if (host && requestHost !== host) continue;
+        entries.push({ at: raw.ts ? new Date(raw.ts * 1000).toISOString() : null, host: requestHost, method: request.method, uri: request.uri, status: raw.status, size: raw.size, durationMs: Number.isFinite(raw.duration) ? Math.round(raw.duration * 1000) : null, remoteIp: request.remote_ip || null });
+        if (entries.length >= limit) return entries;
+      } catch { /* Skip incomplete lines while Caddy writes. */ }
+    }
+  }
+  return entries;
 }
 
 function tcpProbe(port, timeoutMs = 1000) {
@@ -245,6 +335,7 @@ async function cacheIcon(slug) {
 async function dashboardSnapshot() {
   const hosted = sites.map(publicSite);
   const proxyHosts = proxies.map(publicProxy);
+  const certificates = await certificateInventory();
   const tlsDomains = [...sites, ...proxies].filter(item => item.enabled && item.domain && item.tls !== "http").length;
   const [storageWritable, gatewayResponding, httpResponding, httpsResponding] = await Promise.all([
     fsp.access(dataDir, fs.constants.R_OK | fs.constants.W_OK).then(() => true).catch(() => false),
@@ -264,6 +355,8 @@ async function dashboardSnapshot() {
   if (!storageWritable) attention.push({ kind: "storage", name: "Persistent storage", message: "The data directory is not readable and writable." });
   for (const site of hosted.filter(item => item.status === "error")) attention.push({ kind: "hosted", name: site.name, message: `Hosted site is not responding on port ${site.port}.` });
   for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention." });
+  for (const proxy of proxyHosts.filter(item => item.enabled && item.upstream?.status === "unhealthy")) attention.push({ kind: "upstream", name: proxy.name, message: `Upstream is unavailable${proxy.upstream.error ? ` · ${proxy.upstream.error}` : ""}.` });
+  for (const certificate of certificates.certificates.filter(item => ["warning", "critical", "expired"].includes(item.status))) attention.push({ kind: "certificate", name: certificate.domain, message: certificate.status === "expired" ? "Certificate has expired." : `Certificate expires in ${certificate.daysRemaining} day${certificate.daysRemaining === 1 ? "" : "s"}.` });
   const disk = await fsp.statfs(dataDir).catch(() => null);
   return {
     checkedAt: new Date().toISOString(),
@@ -276,6 +369,8 @@ async function dashboardSnapshot() {
     hosted: { total: hosted.length, running: hosted.filter(item => item.status === "running").length, disabled: hosted.filter(item => item.status === "disabled").length, errors: hosted.filter(item => item.status === "error").length },
     proxies: { total: proxyHosts.length, running: proxyHosts.filter(item => item.status === "running").length, disabled: proxyHosts.filter(item => item.status === "disabled").length, errors: proxyHosts.filter(item => item.status === "error").length },
     tlsDomains,
+    certificates: certificates.summary,
+    upstreams: { total: proxyHosts.filter(item => item.enabled).length, healthy: proxyHosts.filter(item => item.upstream?.status === "healthy").length, unhealthy: proxyHosts.filter(item => item.upstream?.status === "unhealthy").length },
     attention,
     system: {
       uptimeSeconds: Math.floor(process.uptime()),
@@ -405,6 +500,22 @@ app.get("/api/proxies", (req, res) => res.json(proxies.map(publicProxy)));
 app.get("/api/dashboard", async (req, res, next) => {
   try { res.json(await dashboardSnapshot()); }
   catch (error) { next(error); }
+});
+app.get("/api/certificates", async (req, res, next) => {
+  try { res.json(await certificateInventory()); }
+  catch (error) { next(error); }
+});
+app.get("/api/upstreams", (req, res) => res.json(proxies.map(publicProxy)));
+app.post("/api/upstreams/check", async (req, res, next) => {
+  try { res.json(await checkAllProxies()); }
+  catch (error) { next(error); }
+});
+app.get("/api/logs", async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 250);
+    const host = normalizeDomain(req.query.host);
+    res.json({ entries: await readAccessLogs(limit, host), hosts: [...new Set([...sites, ...proxies].map(item => item.domain).filter(Boolean))].sort(), activity: recentActivity });
+  } catch (error) { next(error); }
 });
 app.get("/api/icons/search", async (req, res, next) => {
   try {
@@ -581,6 +692,7 @@ app.delete("/api/proxies/:id", async (req, res, next) => {
 });
 app.use((error, req, res, next) => {
   console.error(error);
+  recordActivity(`${req.method} ${req.path}: ${error.message || "Unexpected gateway error"}`, "error");
   res.status(error.status || 500).json({ error: error.message || "Something went wrong." });
 });
 
@@ -588,6 +700,9 @@ app.listen(adminPort, "0.0.0.0", () => {
   console.log(`Site Gateway dashboard listening on port ${adminPort}`);
   if (adminPassword === "change-this-password") console.warn("WARNING: Change ADMIN_PASSWORD before exposing the dashboard.");
 });
+
+setTimeout(() => checkAllProxies().catch(error => console.warn("Initial upstream checks failed:", error.message)), 1500).unref();
+setInterval(() => checkAllProxies().catch(error => console.warn("Upstream checks failed:", error.message)), 60000).unref();
 
 async function shutdown() {
   await Promise.all([...activeServers.keys()].map(stopSite));

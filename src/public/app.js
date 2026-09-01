@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], dashboard: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, healthTimer: null };
+const state = { sites: [], proxies: [], dashboard: null, certificates: null, logs: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, healthTimer: null };
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 function applyTheme(preference) {
@@ -61,6 +61,7 @@ function renderDashboard() {
   $("#dash-proxy-total").textContent = data.proxies.total;
   $("#dash-proxy-detail").textContent = healthCopy(data.proxies, "routes");
   $("#dash-tls-total").textContent = data.tlsDomains;
+  $("#dash-tls-detail").textContent = data.certificates.total ? `${data.certificates.healthy} healthy · ${data.certificates.pending} provisioning` : "No TLS domains";
   $("#dash-attention-total").textContent = data.attention.length;
   $("#dash-attention-detail").textContent = data.attention.length ? `${data.attention.length} item${data.attention.length === 1 ? "" : "s"} to review` : "No current issues";
   const hasErrors = data.attention.length > 0, isChecking = [data.gateway, data.services.http, data.services.https].some(service => service.status === "checking"), hasNothingRunning = !data.hosted.running && !data.proxies.running;
@@ -84,7 +85,7 @@ function renderDashboard() {
   $("#system-app-version").textContent = `v${data.system.appVersion}`;
   $("#system-caddy-version").textContent = data.system.caddyVersion;
   $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<div class="dashboard-list-item issue"><span class="status-dot error"></span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></div>`).join("") : '<p class="quiet-state">Everything looks good.</p>';
-  $("#activity-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark">✓</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No changes recorded since this container started.</p>';
+  $("#activity-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : ""}">${item.status === "error" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No changes recorded yet.</p>';
 }
 
 function initials(name) {
@@ -100,20 +101,47 @@ function hostedCard(site) {
 }
 function proxyCard(proxy) {
   const status = proxy.status === "running" ? "running" : proxy.status === "error" ? "error" : "disabled";
-  return `<article class="site-card proxy" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy)}</div><div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="icon">Change icon</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div></div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions"><button class="toggle ${proxy.enabled ? "on" : ""}" data-action="toggle" aria-label="${proxy.enabled ? "Disable" : "Enable"} ${escapeHtml(proxy.name)}"><span></span></button><a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
+  const upstream = !proxy.enabled ? "Monitoring paused" : !proxy.upstream ? "Upstream check pending" : proxy.upstream.status === "healthy" ? `Upstream ${proxy.upstream.httpStatus} · ${proxy.upstream.responseMs} ms` : `Upstream unavailable · ${escapeHtml(proxy.upstream.error || "check failed")}`;
+  return `<article class="site-card proxy" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy)}</div><div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="icon">Change icon</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div></div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><p class="upstream-copy ${proxy.upstream?.status === "unhealthy" ? "bad" : ""}">${upstream}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions"><button class="toggle ${proxy.enabled ? "on" : ""}" data-action="toggle" aria-label="${proxy.enabled ? "Disable" : "Enable"} ${escapeHtml(proxy.name)}"><span></span></button><a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
+}
+
+function renderCertificates() {
+  const data = state.certificates; if (!data) return;
+  $("#certificate-count").textContent = data.summary.total;
+  $("#cert-healthy").textContent = data.summary.healthy; $("#cert-warning").textContent = data.summary.warning + data.summary.critical + data.summary.expired; $("#cert-pending").textContent = data.summary.pending;
+  $("#certificate-list").innerHTML = data.certificates.length ? data.certificates.map(cert => `<article class="data-row"><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span><div><strong>${escapeHtml(cert.domain)}</strong><small>${escapeHtml(cert.kind)} · ${escapeHtml(cert.name)}</small></div><div><strong>${cert.expiresAt ? `${cert.daysRemaining} days` : "Provisioning"}</strong><small>${cert.expiresAt ? `Expires ${formatTime(cert.expiresAt)}` : "Waiting for Caddy certificate"}</small></div><div><strong>${escapeHtml(cert.issuer || "Not issued yet")}</strong><small>${cert.updatedAt ? `Certificate updated ${formatTime(cert.updatedAt)}` : "Automatic HTTPS enabled"}</small></div></article>`).join("") : '<p class="quiet-state">No automatic HTTPS domains are configured.</p>';
+}
+
+function renderLogs() {
+  const data = state.logs; if (!data) return;
+  const selected = $("#log-host").value; $("#log-host").innerHTML = '<option value="">All domains</option>' + data.hosts.map(host => `<option value="${escapeHtml(host)}">${escapeHtml(host)}</option>`).join(""); $("#log-host").value = selected;
+  $("#log-rows").innerHTML = data.entries.length ? data.entries.map(entry => `<tr><td>${escapeHtml(formatTime(entry.at))}</td><td>${escapeHtml(entry.host || "—")}</td><td><code>${escapeHtml(entry.method || "")} ${escapeHtml(entry.uri || "")}</code></td><td><span class="http-status ${entry.status >= 500 ? "bad" : ""}">${entry.status ?? "—"}</span></td><td>${entry.durationMs == null ? "—" : `${entry.durationMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No matching requests have been logged yet.</td></tr>';
+  $("#gateway-log-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : ""}">${item.status === "error" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No gateway activity recorded yet.</p>';
+}
+
+async function loadFeatureView() {
+  if (state.view === "certificates") { state.certificates = await api("/api/certificates"); renderCertificates(); }
+  if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
 }
 function render() {
   $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length;
   document.querySelectorAll("nav [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);
-  $("#management-view").classList.toggle("hidden", overview);
-  $("#management-summary").classList.toggle("hidden", overview);
-  $("#open-create").classList.toggle("hidden", overview);
+  const management = state.view === "hosted" || state.view === "proxies";
+  $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !management);
+  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs");
+  $("#open-create").classList.toggle("hidden", !management);
   if (overview) {
     $("#page-title").textContent = "Dashboard";
     $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
     renderDashboard();
+    return;
+  }
+  if (!management) {
+    $("#page-title").textContent = state.view === "certificates" ? "Certificates" : "Access logs";
+    $("#page-subtitle").textContent = state.view === "certificates" ? "Expiration, issuer, and provisioning status for automatic HTTPS." : "Recent requests served through the Caddy gateway.";
+    if (state.view === "certificates") renderCertificates(); else renderLogs();
     return;
   }
   const items = state.view === "hosted" ? state.sites : state.proxies;
@@ -131,7 +159,7 @@ function render() {
   $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues";
   $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
 }
-async function refresh() { [state.sites, state.proxies, state.dashboard] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/dashboard")]); render(); }
+async function refresh() { [state.sites, state.proxies, state.dashboard, state.certificates] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/dashboard"), api("/api/certificates")]); render(); }
 async function refreshDashboard() {
   const button = $("#refresh-health"); button.disabled = true; button.classList.add("spinning"); $("#health-checked").textContent = "Checking services…";
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
@@ -149,8 +177,10 @@ async function boot() {
 $("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
 $("#logout").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); showLogin(); });
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }
-document.querySelectorAll("nav").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); } }));
-$("#dashboard-view").addEventListener("click", event => { const card = event.target.closest("[data-target]"); if (card) { state.view = card.dataset.target; render(); } });
+document.querySelectorAll("nav").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); } }));
+$("#dashboard-view").addEventListener("click", event => { const card = event.target.closest("[data-target]"); if (card) { state.view = card.dataset.target; render(); loadFeatureView().catch(error => toast(error.message)); } });
+$("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
+$("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
 function openCreate() {
   if (state.view === "proxies") { $("#proxy-form").reset(); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
   $("#create-form").reset(); $("#create-error").textContent = ""; const used = new Set(state.sites.map(site => site.port)); let port = state.config.minPort; while (used.has(port)) port++; $("#create-form [name=port]").value = port; $("#create-dialog").showModal();
