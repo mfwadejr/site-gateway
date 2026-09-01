@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>Web Server</Name>
+  <Name>Site Gateway</Name>
   <Repository>ghcr.io/mfwadejr/web-server:latest</Repository>
   <Registry>https://github.com/mfwadejr/web-server/pkgs/container/web-server</Registry>
   <Network>bridge</Network>
@@ -8,7 +8,8 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/mfwadejr/web-server/issues</Support>
   <Project>https://github.com/mfwadejr/web-server</Project>
-  <Overview>A simple dashboard for uploading, enabling, disabling, and serving static websites on assigned ports.</Overview>
+  <Overview>An easy self-hosted gateway for publishing static sites, proxying services, managing domains, and automating HTTPS.</Overview>
+  <Icon>https://raw.githubusercontent.com/mfwadejr/web-server/main/product-icon-v1.png</Icon>
   <Category>Network:Web</Category>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
   <ExtraParams>--restart unless-stopped</ExtraParams>
