@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], config: null, view: "hosted", pendingDelete: null, pendingReplace: null, editing: null };
+const state = { sites: [], proxies: [], dashboard: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null };
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 function applyTheme(preference) {
@@ -23,6 +23,59 @@ function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").
 function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
 function publicUrl(item) { return item.domain ? `${item.tls === "http" ? "http" : "https"}://${item.domain}` : `${location.protocol}//${location.hostname}:${item.port}`; }
+function formatBytes(value) {
+  if (!Number.isFinite(value)) return "Unavailable";
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"]; let size = value / 1024, unit = units[0];
+  for (let index = 1; size >= 1024 && index < units.length; index++) { size /= 1024; unit = units[index]; }
+  return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${unit}`;
+}
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return "Unavailable";
+  const days = Math.floor(seconds / 86400), hours = Math.floor(seconds % 86400 / 3600), minutes = Math.floor(seconds % 3600 / 60);
+  if (days) return `${days}d ${hours}h`; if (hours) return `${hours}h ${minutes}m`; return `${minutes}m`;
+}
+function formatTime(value) {
+  if (!value) return "Just now";
+  const date = new Date(value); return Number.isNaN(date.getTime()) ? "Recently" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+function healthCopy(group, label) {
+  if (!group.total) return "Nothing configured";
+  if (group.errors) return `${group.errors} ${label} need attention`;
+  if (group.running) return `${group.running} running${group.disabled ? ` · ${group.disabled} disabled` : ""}`;
+  return `${group.disabled} disabled`;
+}
+
+function renderDashboard() {
+  const data = state.dashboard; if (!data) return;
+  $("#dash-hosted-total").textContent = data.hosted.total;
+  $("#dash-hosted-detail").textContent = healthCopy(data.hosted, "sites");
+  $("#dash-proxy-total").textContent = data.proxies.total;
+  $("#dash-proxy-detail").textContent = healthCopy(data.proxies, "routes");
+  $("#dash-tls-total").textContent = data.tlsDomains;
+  $("#dash-attention-total").textContent = data.attention.length;
+  $("#dash-attention-detail").textContent = data.attention.length ? `${data.attention.length} item${data.attention.length === 1 ? "" : "s"} to review` : "No current issues";
+  const hasErrors = data.attention.length > 0, hasNothingRunning = !data.hosted.running && !data.proxies.running;
+  const overall = $("#overall-health");
+  overall.className = `health-badge ${hasErrors ? "error" : hasNothingRunning ? "warning" : "healthy"}`;
+  overall.textContent = hasErrors ? "Needs attention" : hasNothingRunning ? "Idle" : "Healthy";
+  $("#gateway-health-dot").className = `status-dot ${data.gateway.healthy ? "running" : "error"}`;
+  $("#gateway-health-copy").textContent = data.gateway.healthy ? (data.gateway.lastReload ? `Reloaded ${formatTime(data.gateway.lastReload)}` : "Configuration valid") : "Configuration rejected";
+  for (const [key, group] of [["hosted", data.hosted], ["proxy", data.proxies]]) {
+    const status = group.errors ? "error" : group.running ? "running" : "inactive";
+    $(`#${key}-health-dot`).className = `status-dot ${status}`;
+    $(`#${key}-health-copy`).textContent = healthCopy(group, key === "hosted" ? "sites" : "routes");
+  }
+  $("#system-uptime").textContent = formatDuration(data.system.uptimeSeconds);
+  $("#system-memory").textContent = formatBytes(data.system.memoryBytes);
+  $("#system-data").textContent = formatBytes(data.system.dataBytes);
+  $("#system-disk").textContent = formatBytes(data.system.diskFreeBytes);
+  $("#system-app-version").textContent = `v${data.system.appVersion}`;
+  $("#system-caddy-version").textContent = data.system.caddyVersion;
+  $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<div class="dashboard-list-item issue"><span class="status-dot error"></span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></div>`).join("") : '<p class="quiet-state">Everything looks good.</p>';
+  $("#activity-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark">✓</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No changes recorded since this container started.</p>';
+}
 
 function hostedCard(site) {
   const status = site.status === "running" ? "running" : site.status === "error" ? "error" : "disabled";
@@ -33,24 +86,35 @@ function proxyCard(proxy) {
   return `<article class="site-card proxy" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">PX</div><div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div></div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions"><button class="toggle ${proxy.enabled ? "on" : ""}" data-action="toggle" aria-label="${proxy.enabled ? "Disable" : "Enable"} ${escapeHtml(proxy.name)}"><span></span></button><a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
 }
 function render() {
+  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length;
+  document.querySelectorAll("nav [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
+  const overview = state.view === "overview";
+  $("#dashboard-view").classList.toggle("hidden", !overview);
+  $("#management-view").classList.toggle("hidden", overview);
+  $("#management-summary").classList.toggle("hidden", overview);
+  $("#open-create").classList.toggle("hidden", overview);
+  if (overview) {
+    $("#page-title").textContent = "Dashboard";
+    $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
+    renderDashboard();
+    return;
+  }
   const items = state.view === "hosted" ? state.sites : state.proxies;
   $("#site-grid").innerHTML = items.map(state.view === "hosted" ? hostedCard : proxyCard).join("");
   $("#empty").classList.toggle("hidden", items.length > 0);
   $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : "Create your first proxy host";
   $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : "Connect a domain to another container, application, or LAN service.";
-  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length;
   $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : "Proxy hosts";
   $("#page-subtitle").textContent = state.view === "hosted" ? "Upload and publish websites on a port or domain." : "Route domains securely to applications and containers.";
   $("#open-create").textContent = state.view === "hosted" ? "＋ New hosted site" : "＋ New proxy host";
   $(".create-trigger").textContent = state.view === "hosted" ? "Create a hosted site" : "Create a proxy host";
   $(".port-note").classList.toggle("hidden", state.view === "proxies");
-  document.querySelectorAll("nav [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length;
   $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors;
   $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues";
   $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
 }
-async function refresh() { [state.sites, state.proxies] = await Promise.all([api("/api/sites"), api("/api/proxies")]); render(); }
+async function refresh() { [state.sites, state.proxies, state.dashboard] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/dashboard")]); render(); }
 async function boot() {
   const session = await fetch("/api/session").then(response => response.json()); if (!session.authenticated) return showLogin();
   showDashboard(); $("#user-label").textContent = session.username; state.config = await api("/api/config");
@@ -61,7 +125,8 @@ async function boot() {
 
 $("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
 $("#logout").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); showLogin(); });
-document.querySelector("nav").addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { state.view = button.dataset.view; render(); } });
+document.querySelectorAll("nav").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { state.view = button.dataset.view; render(); } }));
+$("#dashboard-view").addEventListener("click", event => { const card = event.target.closest("[data-target]"); if (card) { state.view = card.dataset.target; render(); } });
 function openCreate() {
   if (state.view === "proxies") { $("#proxy-form").reset(); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
   $("#create-form").reset(); $("#create-error").textContent = ""; const used = new Set(state.sites.map(site => site.port)); let port = state.config.minPort; while (used.has(port)) port++; $("#create-form [name=port]").value = port; $("#create-dialog").showModal();

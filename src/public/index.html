@@ -27,7 +27,8 @@
     <aside>
       <div class="brand"><img class="brand-mark small product-icon" src="/icon.png" alt=""><span>Site Gateway</span></div>
       <nav aria-label="Publishing types">
-        <button class="nav-active" data-view="hosted">Hosted sites <span id="hosted-count">0</span></button>
+        <button class="nav-active" data-view="overview">Dashboard</button>
+        <button data-view="hosted">Hosted sites <span id="hosted-count">0</span></button>
         <button data-view="proxies">Proxy hosts <span id="proxy-count">0</span></button>
       </nav>
       <div class="aside-footer"><span>Installed version</span><strong id="version-label">v—</strong></div>
@@ -37,22 +38,68 @@
         <label class="theme-control" for="theme-select"><span>Theme</span><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
         <div class="account-control"><span>Signed in as <strong id="user-label">admin</strong></span><button id="logout" class="text-button">Sign out</button></div>
       </div>
+      <nav class="mobile-nav" aria-label="Dashboard sections">
+        <button class="nav-active" data-view="overview">Dashboard</button>
+        <button data-view="hosted">Hosted</button>
+        <button data-view="proxies">Proxies</button>
+      </nav>
       <header>
-        <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Hosted sites</h1><p id="page-subtitle" class="muted">Upload and publish websites on a port or domain.</p></div>
+        <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Dashboard</h1><p id="page-subtitle" class="muted">Health, activity, and system status at a glance.</p></div>
         <button id="open-create" class="button primary">＋ New hosted site</button>
       </header>
-      <section class="summary" aria-label="Site summary">
+      <section id="dashboard-view" class="dashboard-view" aria-label="Gateway dashboard">
+        <div class="metric-grid">
+          <button class="metric-card" data-target="hosted"><span class="metric-label">Hosted sites</span><strong id="dash-hosted-total">0</strong><span id="dash-hosted-detail">None configured</span></button>
+          <button class="metric-card" data-target="proxies"><span class="metric-label">Proxy hosts</span><strong id="dash-proxy-total">0</strong><span id="dash-proxy-detail">None configured</span></button>
+          <div class="metric-card"><span class="metric-label">TLS domains</span><strong id="dash-tls-total">0</strong><span>Certificate reporting next</span></div>
+          <div class="metric-card attention"><span class="metric-label">Needs attention</span><strong id="dash-attention-total">0</strong><span id="dash-attention-detail">No current issues</span></div>
+        </div>
+        <div class="dashboard-columns">
+          <section class="dashboard-panel">
+            <div class="panel-heading"><div><p class="eyebrow">Live health</p><h2>Services</h2></div><span id="overall-health" class="health-badge healthy">Healthy</span></div>
+            <div class="health-list">
+              <div><span id="gateway-health-dot" class="status-dot running"></span><span><strong>Gateway</strong><small id="gateway-health-copy">Configuration valid</small></span></div>
+              <div><span id="hosted-health-dot" class="status-dot inactive"></span><span><strong>Hosted sites</strong><small id="hosted-health-copy">Nothing configured</small></span></div>
+              <div><span id="proxy-health-dot" class="status-dot inactive"></span><span><strong>Proxy hosts</strong><small id="proxy-health-copy">Nothing configured</small></span></div>
+            </div>
+          </section>
+          <section class="dashboard-panel">
+            <div class="panel-heading"><div><p class="eyebrow">Runtime</p><h2>System</h2></div></div>
+            <dl class="system-grid">
+              <div><dt>Uptime</dt><dd id="system-uptime">—</dd></div>
+              <div><dt>Memory</dt><dd id="system-memory">—</dd></div>
+              <div><dt>Data used</dt><dd id="system-data">—</dd></div>
+              <div><dt>Disk free</dt><dd id="system-disk">—</dd></div>
+              <div><dt>Site Gateway</dt><dd id="system-app-version">—</dd></div>
+              <div><dt>Caddy</dt><dd id="system-caddy-version">—</dd></div>
+            </dl>
+          </section>
+        </div>
+        <div class="dashboard-columns lower">
+          <section class="dashboard-panel">
+            <div class="panel-heading"><div><p class="eyebrow">Action required</p><h2>Needs attention</h2></div></div>
+            <div id="attention-list" class="dashboard-list"><p class="quiet-state">Everything looks good.</p></div>
+          </section>
+          <section class="dashboard-panel">
+            <div class="panel-heading"><div><p class="eyebrow">Latest changes</p><h2>Recent activity</h2></div></div>
+            <div id="activity-list" class="dashboard-list"><p class="quiet-state">No recent activity.</p></div>
+          </section>
+        </div>
+      </section>
+      <section id="management-summary" class="summary hidden" aria-label="Site summary">
         <div><span id="running-dot" class="status-dot inactive"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div>
         <div><span id="disabled-dot" class="status-dot inactive"></span><strong id="disabled-count">0</strong><span id="disabled-label">No disabled sites</span></div>
         <div><span id="error-dot" class="status-dot inactive"></span><strong id="error-count">0</strong><span id="error-label">No issues</span></div>
         <div class="port-note">Ports <strong id="port-range">9000–9099</strong></div>
       </section>
-      <section id="empty" class="empty hidden">
-        <div class="empty-icon">↗</div><h2>Publish your first site</h2>
-        <p>Drop in a ZIP containing an <code>index.html</code> and choose a port. That’s it.</p>
-        <button class="button primary create-trigger">Create a site</button>
-      </section>
-      <section id="site-grid" class="site-grid" aria-live="polite"></section>
+      <div id="management-view" class="hidden">
+        <section id="empty" class="empty hidden">
+          <div class="empty-icon">↗</div><h2>Publish your first site</h2>
+          <p>Drop in a ZIP containing an <code>index.html</code> and choose a port. That’s it.</p>
+          <button class="button primary create-trigger">Create a site</button>
+        </section>
+        <section id="site-grid" class="site-grid" aria-live="polite"></section>
+      </div>
     </main>
   </div>
 
