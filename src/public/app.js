@@ -62,11 +62,13 @@ function renderDashboard() {
   overall.textContent = hasErrors ? "Needs attention" : hasNothingRunning ? "Idle" : "Healthy";
   $("#gateway-health-dot").className = `status-dot ${data.gateway.healthy ? "running" : "error"}`;
   $("#gateway-health-copy").textContent = data.gateway.healthy ? (data.gateway.lastReload ? `Reloaded ${formatTime(data.gateway.lastReload)}` : "Configuration valid") : "Configuration rejected";
-  for (const [key, group] of [["hosted", data.hosted], ["proxy", data.proxies]]) {
-    const status = group.errors ? "error" : group.running ? "running" : "inactive";
-    $(`#${key}-health-dot`).className = `status-dot ${status}`;
-    $(`#${key}-health-copy`).textContent = healthCopy(group, key === "hosted" ? "sites" : "routes");
-  }
+  $("#http-health-dot").className = `status-dot ${data.services.http.healthy ? "running" : "error"}`;
+  $("#http-health-copy").textContent = data.services.http.healthy ? `Port ${data.services.http.port} ready` : "Entry point unavailable";
+  const httpsActive = data.services.https.healthy && data.services.https.activeDomains > 0;
+  $("#https-health-dot").className = `status-dot ${data.services.https.healthy ? (httpsActive ? "running" : "inactive") : "error"}`;
+  $("#https-health-copy").textContent = !data.services.https.healthy ? "Automation unavailable" : httpsActive ? `${data.services.https.activeDomains} TLS domain${data.services.https.activeDomains === 1 ? "" : "s"} active` : "Waiting for a TLS domain";
+  $("#storage-health-dot").className = `status-dot ${data.services.storage.healthy ? "running" : "error"}`;
+  $("#storage-health-copy").textContent = data.services.storage.healthy ? "Data directory readable and writable" : "Check data-directory permissions";
   $("#system-uptime").textContent = formatDuration(data.system.uptimeSeconds);
   $("#system-memory").textContent = formatBytes(data.system.memoryBytes);
   $("#system-data").textContent = formatBytes(data.system.dataBytes);
