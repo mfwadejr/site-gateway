@@ -1,5 +1,23 @@
 const $ = selector => document.querySelector(selector);
 const state = { sites: [], config: null, pendingDelete: null, pendingReplace: null };
+const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+
+function applyTheme(preference) {
+  const effective = preference === "system" ? (systemTheme.matches ? "dark" : "light") : preference;
+  document.documentElement.dataset.theme = effective;
+  document.querySelector('meta[name="theme-color"]').content = effective === "dark" ? "#08101d" : "#f3f6fa";
+}
+
+const savedTheme = localStorage.getItem("webserver-theme") || "system";
+$("#theme-select").value = savedTheme;
+applyTheme(savedTheme);
+$("#theme-select").addEventListener("change", event => {
+  localStorage.setItem("webserver-theme", event.target.value);
+  applyTheme(event.target.value);
+});
+systemTheme.addEventListener("change", () => {
+  if ($("#theme-select").value === "system") applyTheme("system");
+});
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
@@ -40,7 +58,11 @@ function render() {
   $("#disabled-count").textContent = disabled;
   $("#error-count").textContent = errors;
   $("#running-label").textContent = running ? "Running" : "No sites running";
-  $("#running-dot").className = `status-dot ${running ? "running" : "idle"}`;
+  $("#disabled-label").textContent = disabled ? "Disabled" : "No disabled sites";
+  $("#error-label").textContent = errors ? "Needs attention" : "No issues";
+  $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`;
+  $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`;
+  $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
 }
 
 async function refresh() { state.sites = await api("/api/sites"); render(); }

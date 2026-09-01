@@ -26,17 +26,20 @@
     <aside>
       <div class="brand"><span class="brand-mark small">W</span><span>Web Server</span></div>
       <nav><button class="nav-active">Sites <span id="nav-count">0</span></button></nav>
-      <div class="aside-footer"><span id="user-label">admin</span><button id="logout" class="text-button">Sign out</button></div>
     </aside>
     <main>
       <header>
         <div><p class="eyebrow">Site control</p><h1>Your websites</h1><p class="muted">Upload, publish, pause, and update—without touching a config file.</p></div>
-        <button id="open-create" class="button primary">＋ New site</button>
+        <div class="header-actions">
+          <label class="theme-control" for="theme-select"><span>Theme</span><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+          <div class="account-control"><span>Signed in as <strong id="user-label">admin</strong></span><button id="logout" class="text-button">Sign out</button></div>
+          <button id="open-create" class="button primary">＋ New site</button>
+        </div>
       </header>
       <section class="summary" aria-label="Site summary">
-        <div><span id="running-dot" class="status-dot idle"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div>
-        <div><span class="status-dot disabled"></span><strong id="disabled-count">0</strong><span>Disabled</span></div>
-        <div><span class="status-dot error"></span><strong id="error-count">0</strong><span>Needs attention</span></div>
+        <div><span id="running-dot" class="status-dot inactive"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div>
+        <div><span id="disabled-dot" class="status-dot inactive"></span><strong id="disabled-count">0</strong><span id="disabled-label">No disabled sites</span></div>
+        <div><span id="error-dot" class="status-dot inactive"></span><strong id="error-count">0</strong><span id="error-label">No issues</span></div>
         <div class="port-note">Ports <strong id="port-range">9000–9099</strong></div>
       </section>
       <section id="empty" class="empty hidden">
