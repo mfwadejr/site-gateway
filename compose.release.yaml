@@ -1,7 +1,7 @@
 services:
-  web-server:
-    image: ghcr.io/mfwadejr/web-server:latest
-    container_name: web-server
+  site-gateway:
+    image: ghcr.io/mfwadejr/site-gateway:latest
+    container_name: site-gateway
     restart: unless-stopped
     environment:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
@@ -20,6 +20,6 @@ services:
       - "8080:8080"
       - "9000-9099:9000-9099"
     volumes:
-      - ${WEB_SERVER_DATA:-/DATA/AppData/web-server}:/data
+      - ${SITE_GATEWAY_DATA:-/DATA/AppData/site-gateway}:/data
     labels:
       com.centurylinklabs.watchtower.enable: "true"

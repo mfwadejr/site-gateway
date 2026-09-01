@@ -1,7 +1,7 @@
 services:
-  web-server:
+  site-gateway:
     build: .
-    container_name: web-server
+    container_name: site-gateway
     restart: unless-stopped
     environment:
       ADMIN_USERNAME: admin

@@ -1,5 +1,5 @@
 {
-  "name": "web-server",
+  "name": "site-gateway",
   "version": "0.2.0",
   "private": true,
   "description": "Site Gateway: simple self-hosted website publishing, reverse proxying, and automatic HTTPS.",

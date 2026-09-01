@@ -1,6 +1,35 @@
-# Site Gateway
+<div align="center">
+  <img src="product-icon-v1.png" alt="Site Gateway icon" width="180">
+  <h1>Site Gateway</h1>
+  <p><strong>Host. Proxy. Secure.</strong></p>
+  <p>A friendly, self-hosted gateway for websites, applications, domains, and automatic HTTPS.</p>
+  <p>
+    <a href="https://github.com/mfwadejr/site-gateway/actions/workflows/container.yml"><img alt="Container build" src="https://github.com/mfwadejr/site-gateway/actions/workflows/container.yml/badge.svg"></a>
+    <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
+    <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
+    <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
+    <img alt="License" src="https://img.shields.io/badge/status-public%20beta-62E6A7">
+  </p>
+  <p>
+    <a href="#quick-start">Quick start</a> ·
+    <a href="#domains-proxy-hosts-and-tls">Domains &amp; TLS</a> ·
+    <a href="#unraid-beta-install">Unraid</a> ·
+    <a href="#zimaos-beta-install">ZimaOS</a> ·
+    <a href="ROADMAP.md">Roadmap</a>
+  </p>
+</div>
 
-Site Gateway is a simple, self-hosted Docker appliance for publishing static websites, proxying applications, routing domains, and automating HTTPS without editing server configuration.
+---
+
+Site Gateway gives a home server one clear control panel for two jobs: publishing uploaded static sites and routing domains to applications already running on your network. Caddy handles the gateway, certificates, renewals, redirects, compression, and WebSocket forwarding behind the scenes.
+
+| Publish | Route | Protect | Operate |
+| --- | --- | --- | --- |
+| Upload a ZIP or `index.html` | Proxy domains to LAN apps or containers | Automatic HTTPS certificates and renewal | Enable, disable, replace, and delete from one dashboard |
+| Assign direct testing ports | Host multiple domains on ports 80/443 | Optional HSTS and HTTPS redirects | Persistent `/data` storage with PUID/PGID support |
+
+> [!NOTE]
+> Site Gateway is intentionally simpler than a general-purpose proxy manager. You provide the site or destination; the guided interface writes and safely reloads the gateway configuration.
 
 ## Beta features
 
@@ -51,7 +80,7 @@ Automatic HTTPS requires valid public DNS and inbound access to port 80 or 443. 
 
 ## Install from the published image
 
-Each push to `main` automatically publishes `ghcr.io/mfwadejr/web-server:latest` for both Intel/AMD and ARM64 servers. Copy `.env.example` to `.env`, replace the password and session secret, then run:
+Each push to `main` automatically publishes `ghcr.io/mfwadejr/site-gateway:latest` for both Intel/AMD and ARM64 servers. Copy `.env.example` to `.env`, replace the password and session secret, then run:
 
 ```bash
 docker compose -f compose.release.yaml pull
@@ -87,8 +116,8 @@ A ZIP containing one top-level folder is also accepted; Site Gateway unwraps tha
 ### Option A: Compose Manager
 
 1. Install **Compose Manager** from Community Applications if it is not already present.
-2. Copy this project folder to `/mnt/user/appdata/web-server/app`.
-3. In `compose.yaml`, change the volume to `/mnt/user/appdata/web-server/data:/data`.
+2. Copy this project folder to `/mnt/user/appdata/site-gateway/app`.
+3. In `compose.yaml`, change the volume to `/mnt/user/appdata/site-gateway/data:/data`.
 4. Set a strong `ADMIN_PASSWORD`. Optionally set a long random `SESSION_SECRET`.
 5. Add the stack in Compose Manager and choose **Compose Up**.
 6. Open `http://UNRAID-IP:8080`.
@@ -98,7 +127,7 @@ For automatic image-based upgrades, use `compose.release.yaml` instead. Unraid's
 ### Option B: build from the Unraid terminal
 
 ```bash
-cd /mnt/user/appdata/web-server/app
+cd /mnt/user/appdata/site-gateway/app
 docker compose up -d --build
 ```
 
@@ -106,19 +135,39 @@ If Unraid reports a port conflict, change the admin port mapping's left side (fo
 
 ## ZimaOS beta install
 
-1. Copy this folder into ZimaOS storage, for example `/DATA/AppData/web-server/app`.
-2. Change the Compose volume to `/DATA/AppData/web-server/data:/data`.
+1. Copy this folder into ZimaOS storage, for example `/DATA/AppData/site-gateway/app`.
+2. Change the Compose volume to `/DATA/AppData/site-gateway/data:/data`.
 3. Set a strong `ADMIN_PASSWORD` and optionally `SESSION_SECRET`.
 4. In the ZimaOS app interface, use its custom app / Compose import option and paste or select `compose.yaml`. If that option is unavailable in your release, use the terminal:
 
    ```bash
-   cd /DATA/AppData/web-server/app
+   cd /DATA/AppData/site-gateway/app
    docker compose up -d --build
    ```
 
 5. Open `http://ZIMAOS-IP:8080`.
 
 For simple upgrades, import `compose.release.yaml`; use ZimaOS's container update/recreate action whenever a new image is published. The `/data` mount keeps all sites during replacement.
+
+## Migrating from Web Server
+
+The product, repository, image, and default container are now named Site Gateway. Existing data does not need to move. Stop and remove the old container, then run the new image while mounting the existing folder:
+
+```bash
+docker stop web-server
+docker rm web-server
+docker pull ghcr.io/mfwadejr/site-gateway:latest
+docker run -d --name site-gateway --restart unless-stopped \
+  -p 8080:8080 -p 80:80 -p 443:443 -p 9000-9099:9000-9099 \
+  -v /DATA/AppData/web-server:/data \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_PASSWORD='YOUR_EXISTING_PASSWORD' \
+  -e SESSION_SECRET='YOUR_EXISTING_SESSION_SECRET' \
+  -e PUID=1000 -e PGID=1000 \
+  ghcr.io/mfwadejr/site-gateway:latest
+```
+
+After confirming the sites appear, you may keep the legacy host folder or rename it to `/DATA/AppData/site-gateway` while the container is stopped and update the mount accordingly. Unraid users should retain `/mnt/user/appdata/web-server` as the template's Data path for the first upgraded launch.
 
 ## Configuration
 
@@ -135,7 +184,7 @@ For simple upgrades, import `compose.release.yaml`; use ZimaOS's container updat
 | `PGID` | `1000` | GID that owns and runs against persistent files |
 | `ACME_EMAIL` | empty | Optional certificate account email |
 
-At startup, the container automatically creates `/data/sites` and `/data/.uploads`, applies `PUID`/`PGID` ownership, and then drops root privileges before starting the application. With the ZimaOS bind mount, these appear under `/DATA/AppData/web-server` on the host. Unraid commonly uses `PUID=99` and `PGID=100`; ZimaOS typically uses `1000:1000`.
+At startup, the container automatically creates `/data/sites` and `/data/.uploads`, applies `PUID`/`PGID` ownership, and then drops root privileges before starting the application. With the ZimaOS bind mount, these appear under `/DATA/AppData/site-gateway` on the host. Unraid commonly uses `PUID=99` and `PGID=100`; ZimaOS typically uses `1000:1000`.
 
 ## Backup and update
 
@@ -151,7 +200,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. A tag such as `v0.2.0` also produces a matching versioned image. The package starts private if the GitHub account's package defaults require it; make the `web-server` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. A tag such as `v0.2.0` also produces a matching versioned image. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ## Security notes
 
@@ -163,7 +212,7 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 
 ## Troubleshooting
 
-- **Site shows Error:** another process probably owns its port. Check `docker logs web-server`, then recreate the site on a free published port.
+- **Site shows Error:** another process probably owns its port. Check `docker logs site-gateway`, then recreate the site on a free published port.
 - **Site cannot be reached:** confirm the port is within the published Compose range and allowed through the server firewall.
 - **Permission denied under `/data`:** make the host data directory writable by UID/GID 1000, or adjust ownership to match your environment.
 - **Upload fails:** verify the file is below 250 MB and the extracted root contains `index.html`.
