@@ -56,21 +56,22 @@
         </div>
         <div class="dashboard-columns">
           <section class="dashboard-panel">
-            <div class="panel-heading"><div><p class="eyebrow">Live health</p><h2>Services</h2></div><span id="overall-health" class="health-badge healthy">Healthy</span></div>
+            <div class="panel-heading"><div><p class="eyebrow">Live health</p><h2>Services</h2></div><div class="health-actions"><span id="overall-health" class="health-badge healthy">Healthy</span><button id="refresh-health" class="icon-button" aria-label="Refresh health checks" title="Refresh health checks">↻</button></div></div>
             <div class="health-list">
               <div><span id="gateway-health-dot" class="status-dot running"></span><span><strong>Gateway</strong><small id="gateway-health-copy">Configuration valid</small></span></div>
-              <div><span id="http-health-dot" class="status-dot running"></span><span><strong>HTTP entry point</strong><small id="http-health-copy">Port 80 ready</small></span></div>
-              <div><span id="https-health-dot" class="status-dot inactive"></span><span><strong>HTTPS automation</strong><small id="https-health-copy">Waiting for a TLS domain</small></span></div>
+              <div><span id="http-health-dot" class="status-dot running"></span><span><strong>HTTP · Port 80</strong><small id="http-health-copy">Ready and responding</small></span></div>
+              <div><span id="https-health-dot" class="status-dot inactive"></span><span><strong>HTTPS · Port 443</strong><small id="https-health-copy">Not configured</small></span></div>
               <div><span id="storage-health-dot" class="status-dot running"></span><span><strong>Persistent storage</strong><small id="storage-health-copy">Data directory writable</small></span></div>
             </div>
+            <p id="health-checked" class="checked-time">Last checked —</p>
           </section>
           <section class="dashboard-panel">
             <div class="panel-heading"><div><p class="eyebrow">Runtime</p><h2>System</h2></div></div>
             <dl class="system-grid">
               <div><dt>Uptime</dt><dd id="system-uptime">—</dd></div>
               <div><dt>Memory</dt><dd id="system-memory">—</dd></div>
-              <div><dt>Data used</dt><dd id="system-data">—</dd></div>
-              <div><dt>Disk free</dt><dd id="system-disk">—</dd></div>
+              <div><dt>Site Gateway data</dt><dd id="system-data">—</dd><small>Used by sites and configuration</small></div>
+              <div><dt>Storage available</dt><dd id="system-disk">—</dd><small>Available on the /data volume</small></div>
               <div><dt>Site Gateway</dt><dd id="system-app-version">—</dd></div>
               <div><dt>Caddy</dt><dd id="system-caddy-version">—</dd></div>
             </dl>
@@ -146,6 +147,16 @@
 
   <dialog id="confirm-dialog">
     <form method="dialog" class="dialog-card compact"><h2 id="confirm-title">Delete this site?</h2><p id="confirm-copy" class="muted">Its uploaded files will be permanently removed.</p><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button><button value="confirm" class="button danger">Delete</button></div></form>
+  </dialog>
+  <dialog id="icon-dialog" class="icon-dialog">
+    <form method="dialog" class="dialog-card icon-picker">
+      <div class="dialog-heading"><div><p class="eyebrow">Appearance</p><h2>Choose an icon</h2></div><button value="cancel" class="icon-button" aria-label="Close">×</button></div>
+      <p class="muted">Search Dashboard Icons. Selected icons are validated and stored locally in <code>/data/icons</code>.</p>
+      <label>Search icons<input id="icon-search" type="search" placeholder="Jellyfin" autocomplete="off"></label>
+      <div id="icon-results" class="icon-results" aria-live="polite"><p class="quiet-state">Enter at least two characters to search.</p></div>
+      <p id="icon-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button id="reset-icon" value="none" class="button secondary">Use two-letter fallback</button><button value="cancel" class="button secondary">Cancel</button></div>
+    </form>
   </dialog>
   <input id="replace-files" type="file" accept=".zip,.html,text/html,application/zip" hidden>
   <div id="toast" class="toast" role="status"></div>
