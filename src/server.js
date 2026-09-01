@@ -116,7 +116,7 @@ function renderCaddyfile() {
   const email = String(process.env.ACME_EMAIL || "").trim();
   const lines = ["{", "  admin localhost:2019", "  persist_config off"];
   if (email) lines.push(`  email ${email}`);
-  lines.push("}", "", ":80 {", "  respond \"Web Server gateway is ready.\" 404", "}");
+  lines.push("}", "", ":80 {", "  respond \"Site Gateway is ready.\" 404", "}");
   for (const site of sites.filter(item => item.enabled && item.domain)) {
     lines.push("", `${caddySiteAddress(site)} {`, `  root * ${path.join(sitesDir, site.id)}`, "  encode zstd gzip", "  file_server");
     if (site.hsts && site.tls !== "http") lines.push('  header Strict-Transport-Security "max-age=31536000; includeSubDomains"');
@@ -404,7 +404,7 @@ app.use((error, req, res, next) => {
 });
 
 app.listen(adminPort, "0.0.0.0", () => {
-  console.log(`Web Server dashboard listening on port ${adminPort}`);
+  console.log(`Site Gateway dashboard listening on port ${adminPort}`);
   if (adminPassword === "change-this-password") console.warn("WARNING: Change ADMIN_PASSWORD before exposing the dashboard.");
 });
 
