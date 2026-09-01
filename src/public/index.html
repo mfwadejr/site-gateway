@@ -4,14 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0b1220">
-  <title>Web Server</title>
-  <meta name="description" content="Create, upload, and serve static websites from one simple dashboard.">
+  <title>Site Gateway</title>
+  <meta name="description" content="Host sites, proxy services, and manage HTTPS from one simple dashboard.">
+  <link rel="icon" type="image/png" href="/icon.png">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <div id="login" class="login-shell hidden">
     <form id="login-form" class="login-card">
-      <div class="brand-mark">W</div>
+      <img class="brand-mark product-icon" src="/icon.png" alt="Site Gateway">
       <p class="eyebrow">Your private publishing dock</p>
       <h1>Welcome back</h1>
       <p class="muted">Sign in to manage your sites.</p>
@@ -24,7 +25,7 @@
 
   <div id="dashboard" class="app-shell hidden">
     <aside>
-      <div class="brand"><span class="brand-mark small">W</span><span>Web Server</span></div>
+      <div class="brand"><img class="brand-mark small product-icon" src="/icon.png" alt=""><span>Site Gateway</span></div>
       <nav aria-label="Publishing types">
         <button class="nav-active" data-view="hosted">Hosted sites <span id="hosted-count">0</span></button>
         <button data-view="proxies">Proxy hosts <span id="proxy-count">0</span></button>

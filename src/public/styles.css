@@ -18,3 +18,4 @@ select{display:block;width:100%;margin-top:7px;border:1px solid var(--line);bord
 main{margin:0 auto;align-self:start}input[hidden]{display:none!important}
 
 main{padding-top:24px}.utility-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-height:38px;margin-bottom:42px}header{align-items:flex-end}@media(max-width:1050px){header{align-items:flex-end;flex-direction:row}}@media(max-width:760px){main{padding-top:18px}.utility-bar{margin-bottom:34px;flex-wrap:wrap}.account-control{order:initial;width:auto}.utility-bar .account-control{width:auto}header{align-items:flex-start;flex-direction:column}}
+.product-icon{object-fit:contain;background:transparent;box-shadow:none}
