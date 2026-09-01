@@ -203,7 +203,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.4.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.4.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.4.0-alpha.2` publishes `ghcr.io/mfwadejr/site-gateway:0.4.0-alpha.2` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ## Security notes
 
