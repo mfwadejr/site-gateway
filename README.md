@@ -34,6 +34,7 @@ Site Gateway gives a home server one clear control panel for two jobs: publishin
 ## Beta features
 
 - Password-protected, responsive admin dashboard
+- Installed-version reporting in the dashboard
 - Create a site from a ZIP archive or a single `index.html`
 - One independently enabled/disabled port per site
 - Caddy gateway on ports 80 and 443

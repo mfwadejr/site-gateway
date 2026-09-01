@@ -50,14 +50,28 @@ The existing Node application remains responsible for authentication, the wizard
 
 ## Delivery phases
 
+### Next beta milestone — visibility and certificate health
+
+This should be the next implementation target. It adds the reporting people rely on in NGINX Proxy Manager without expanding the creation workflow yet.
+
+- Certificate inventory derived from Caddy's managed certificate storage
+- Domain, issuer, valid-from, expiration date, and days remaining
+- Clear **Healthy**, **Renewing soon**, **Expired**, and **Needs attention** states
+- Dashboard counts for certificates expiring within 30 and 7 days
+- Last successful renewal and last certificate error when available
+- Per-host upstream reachability checks with response time and last-check timestamp
+- Recent gateway errors and a concise per-host access-log view
+- Diagnostics that distinguish DNS, inbound port, certificate, and upstream failures
+- Never display private keys, account credentials, or raw sensitive configuration
+
 ### Phase 1 — Domains and automatic HTTPS (gateway beta implemented)
 
 - Publish ports 80 and 443
 - Domain assignment for static sites
 - Automatic certificate issue and renewal
 - Force-HTTPS option
-- Certificate status and expiration reporting
-- Guided DNS/router readiness checks
+- Certificate status and expiration reporting (next beta milestone)
+- Guided DNS/router readiness checks (next beta milestone)
 
 ### Phase 2 — Reverse proxy and redirects (proxy hosts implemented; redirects/logs pending)
 
@@ -95,4 +109,21 @@ The existing Node application remains responsible for authentication, the wizard
 
 ## Scope recommendation
 
-Build Phases 1 and 2 first. They provide the high-value Nginx Proxy Manager experience—domains, HTTPS, proxy hosts, redirects, access controls, and clear status—without inheriting the complexity of full user management, raw server configuration, and stream proxying on day one.
+Prioritize reporting before adding more creation options: certificate health, renewal visibility, upstream checks, and useful logs make the existing gateway trustworthy. Follow that with redirect hosts and reusable access lists. Custom certificates, DNS challenges, streams, multi-user roles, and raw snippets should remain later advanced work because they add credential-storage, validation, and support complexity.
+
+## NGINX Proxy Manager alignment
+
+| Capability | Site Gateway direction | Priority |
+| --- | --- | --- |
+| Proxy hosts, WebSockets, automatic HTTPS | Implemented through guided Caddy configuration | Current |
+| Certificate expiration and renewal reporting | First-class certificate health page and dashboard alerts | Next |
+| Access logs and traffic reporting | Recent requests, status distribution, bytes, and errors per host; avoid promising full analytics | Next |
+| Upstream health | Reachability, response time, and failure reason per proxy target | Next |
+| Redirect hosts and maintenance responses | Add as simple destination types in the creation wizard | Near term |
+| Access lists and basic authentication | Reusable policies attachable to hosted and proxy entries | Near term |
+| DNS and reachability diagnostics | Guided checks for resolution, public IP, ports 80/443, and certificate eligibility | Near term |
+| Custom certificates | Validated certificate/key upload with encrypted-at-rest secrets and expiry reporting | Later |
+| Wildcard certificates | Selected DNS-provider integrations with encrypted API credentials | Later |
+| Advanced proxy options | Safe presets first; constrained expert snippets only after validation and rollback exist | Later |
+| TCP/UDP streams | Separate advanced area with explicit port-conflict checks | Later |
+| Backup and restore | Export the data model, uploads, policies, and certificate metadata; exclude or separately protect secrets | Near term |
