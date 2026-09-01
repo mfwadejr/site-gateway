@@ -31,13 +31,13 @@
       </nav>
     </aside>
     <main>
+      <div class="utility-bar" aria-label="Account and appearance">
+        <label class="theme-control" for="theme-select"><span>Theme</span><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+        <div class="account-control"><span>Signed in as <strong id="user-label">admin</strong></span><button id="logout" class="text-button">Sign out</button></div>
+      </div>
       <header>
         <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Hosted sites</h1><p id="page-subtitle" class="muted">Upload and publish websites on a port or domain.</p></div>
-        <div class="header-actions">
-          <label class="theme-control" for="theme-select"><span>Theme</span><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
-          <div class="account-control"><span>Signed in as <strong id="user-label">admin</strong></span><button id="logout" class="text-button">Sign out</button></div>
-          <button id="open-create" class="button primary">＋ New hosted site</button>
-        </div>
+        <button id="open-create" class="button primary">＋ New hosted site</button>
       </header>
       <section class="summary" aria-label="Site summary">
         <div><span id="running-dot" class="status-dot inactive"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div>
