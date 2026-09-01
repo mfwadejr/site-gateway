@@ -26,17 +26,17 @@
     <aside>
       <div class="brand"><span class="brand-mark small">W</span><span>Web Server</span></div>
       <nav aria-label="Publishing types">
-        <button class="nav-active">Hosted sites <span id="hosted-count">0</span></button>
-        <button class="nav-planned" aria-disabled="true" title="Proxy hosts are planned for the gateway release">Proxy hosts <span id="proxy-count">0</span></button>
+        <button class="nav-active" data-view="hosted">Hosted sites <span id="hosted-count">0</span></button>
+        <button data-view="proxies">Proxy hosts <span id="proxy-count">0</span></button>
       </nav>
     </aside>
     <main>
       <header>
-        <div><p class="eyebrow">Site control</p><h1>Your websites</h1><p class="muted">Upload, publish, pause, and update—without touching a config file.</p></div>
+        <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Hosted sites</h1><p id="page-subtitle" class="muted">Upload and publish websites on a port or domain.</p></div>
         <div class="header-actions">
           <label class="theme-control" for="theme-select"><span>Theme</span><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
           <div class="account-control"><span>Signed in as <strong id="user-label">admin</strong></span><button id="logout" class="text-button">Sign out</button></div>
-          <button id="open-create" class="button primary">＋ New site</button>
+          <button id="open-create" class="button primary">＋ New hosted site</button>
         </div>
       </header>
       <section class="summary" aria-label="Site summary">
@@ -59,14 +59,43 @@
       <div class="dialog-heading"><div><p class="eyebrow">New destination</p><h2>Create a site</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
       <label>Site name<input name="name" placeholder="Portfolio" maxlength="80" required></label>
       <label>Port<input name="port" type="number" required><small id="port-help"></small></label>
+      <label>Domain <span class="optional">Optional</span><input name="domain" placeholder="www.example.com"><small>Leave blank for port-only LAN access.</small></label>
+      <label>TLS<select name="tls"><option value="automatic">Automatic HTTPS</option><option value="http">HTTP only</option></select></label>
+      <label class="check-control"><input name="hsts" type="checkbox" value="true"><span>Enable HSTS after HTTPS is verified</span></label>
       <label class="dropzone">Website files<input name="files" type="file" accept=".zip,.html,text/html,application/zip" required><span class="upload-icon">⇧</span><strong>Choose a ZIP or index.html</strong><small>ZIP files must contain index.html · Up to 250 MB</small></label>
       <p id="create-error" class="error" role="alert"></p>
       <div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button class="button primary">Create & publish</button></div>
     </form>
   </dialog>
 
+  <dialog id="proxy-dialog">
+    <form id="proxy-form" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">New route</p><h2>Create a proxy host</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
+      <label>Name<input name="name" placeholder="Home Assistant" maxlength="80" required></label>
+      <label>Domain<input name="domain" placeholder="home.example.com" required></label>
+      <label>Forward to<input name="target" type="url" placeholder="http://192.168.1.20:8123" required><small>Use the container name, LAN address, or application URL.</small></label>
+      <label>TLS<select name="tls"><option value="automatic">Automatic HTTPS</option><option value="http">HTTP only</option></select></label>
+      <label class="check-control"><input name="hsts" type="checkbox"><span>Enable HSTS after HTTPS is verified</span></label>
+      <p id="proxy-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button class="button primary">Create & publish</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog">
+    <form id="settings-form" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Gateway settings</p><h2 id="settings-title">Edit route</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
+      <label id="settings-name-wrap">Name<input name="name" maxlength="80"></label>
+      <label>Domain<input name="domain" placeholder="www.example.com"></label>
+      <label id="settings-target-wrap">Forward to<input name="target" type="url" placeholder="http://192.168.1.20:3000"></label>
+      <label>TLS<select name="tls"><option value="automatic">Automatic HTTPS</option><option value="http">HTTP only</option></select></label>
+      <label class="check-control"><input name="hsts" type="checkbox"><span>Enable HSTS after HTTPS is verified</span></label>
+      <p id="settings-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button class="button primary">Save & apply</button></div>
+    </form>
+  </dialog>
+
   <dialog id="confirm-dialog">
-    <form method="dialog" class="dialog-card compact"><h2>Delete this site?</h2><p class="muted">Its uploaded files will be permanently removed.</p><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button><button value="confirm" class="button danger">Delete site</button></div></form>
+    <form method="dialog" class="dialog-card compact"><h2 id="confirm-title">Delete this site?</h2><p id="confirm-copy" class="muted">Its uploaded files will be permanently removed.</p><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button><button value="confirm" class="button danger">Delete</button></div></form>
   </dialog>
   <input id="replace-files" type="file" accept=".zip,.html,text/html,application/zip" hidden>
   <div id="toast" class="toast" role="status"></div>
