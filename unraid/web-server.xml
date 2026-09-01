@@ -24,6 +24,8 @@
   <Config Name="Admin username" Target="ADMIN_USERNAME" Default="admin" Mode="" Description="Dashboard login name" Type="Variable" Display="always" Required="true" Mask="false">admin</Config>
   <Config Name="Admin password" Target="ADMIN_PASSWORD" Default="" Mode="" Description="Use a long, unique password" Type="Variable" Display="always" Required="true" Mask="true"/>
   <Config Name="Session secret" Target="SESSION_SECRET" Default="" Mode="" Description="At least 32 random characters" Type="Variable" Display="advanced" Required="true" Mask="true"/>
+  <Config Name="User ID" Target="PUID" Default="99" Mode="" Description="Host user ID for appdata ownership" Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="Group ID" Target="PGID" Default="100" Mode="" Description="Host group ID for appdata ownership" Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
   <Config Name="Minimum site port" Target="SITE_PORT_MIN" Default="9000" Mode="" Description="Lowest available site port" Type="Variable" Display="advanced" Required="true" Mask="false">9000</Config>
   <Config Name="Maximum site port" Target="SITE_PORT_MAX" Default="9099" Mode="" Description="Highest available site port" Type="Variable" Display="advanced" Required="true" Mask="false">9099</Config>
 </Container>
