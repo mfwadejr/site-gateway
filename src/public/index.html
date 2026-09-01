@@ -34,8 +34,9 @@
         <button id="open-create" class="button primary">＋ New site</button>
       </header>
       <section class="summary" aria-label="Site summary">
-        <div><span class="status-dot running"></span><strong id="running-count">0</strong><span>Running</span></div>
+        <div><span id="running-dot" class="status-dot idle"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div>
         <div><span class="status-dot disabled"></span><strong id="disabled-count">0</strong><span>Disabled</span></div>
+        <div><span class="status-dot error"></span><strong id="error-count">0</strong><span>Needs attention</span></div>
         <div class="port-note">Ports <strong id="port-range">9000–9099</strong></div>
       </section>
       <section id="empty" class="empty hidden">

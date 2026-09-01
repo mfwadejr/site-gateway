@@ -33,8 +33,14 @@ function render() {
   $("#site-grid").innerHTML = state.sites.map(siteCard).join("");
   $("#empty").classList.toggle("hidden", state.sites.length > 0);
   $("#nav-count").textContent = state.sites.length;
-  $("#running-count").textContent = state.sites.filter(s => s.status === "running").length;
-  $("#disabled-count").textContent = state.sites.filter(s => s.status !== "running").length;
+  const running = state.sites.filter(s => s.status === "running").length;
+  const disabled = state.sites.filter(s => s.status === "disabled").length;
+  const errors = state.sites.filter(s => s.status === "error").length;
+  $("#running-count").textContent = running;
+  $("#disabled-count").textContent = disabled;
+  $("#error-count").textContent = errors;
+  $("#running-label").textContent = running ? "Running" : "No sites running";
+  $("#running-dot").className = `status-dot ${running ? "running" : "idle"}`;
 }
 
 async function refresh() { state.sites = await api("/api/sites"); render(); }
