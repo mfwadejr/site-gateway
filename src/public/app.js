@@ -54,6 +54,7 @@ async function refresh() { [state.sites, state.proxies] = await Promise.all([api
 async function boot() {
   const session = await fetch("/api/session").then(response => response.json()); if (!session.authenticated) return showLogin();
   showDashboard(); $("#user-label").textContent = session.username; state.config = await api("/api/config");
+  $("#version-label").textContent = `v${state.config.version || "unknown"}`;
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
   $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh();
 }
