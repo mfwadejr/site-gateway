@@ -57,6 +57,7 @@ The existing Node application remains responsible for authentication, the wizard
 - Safe runtime reporting for uptime, memory, persistent-data size, disk space, and installed versions
 - Recent configuration activity for the current container session
 - Responsive navigation for desktop and mobile
+- Infrastructure-focused live health for Caddy, HTTP, HTTPS automation, and persistent storage (refined in v0.4.0-alpha.2)
 
 ### Next alpha milestone — visibility and certificate health
 
