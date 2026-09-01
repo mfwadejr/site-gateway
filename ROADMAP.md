@@ -1,8 +1,8 @@
-# Web Server product roadmap
+# Site Gateway product roadmap
 
 ## Product direction
 
-Web Server should remain simpler than a general-purpose proxy manager: one dashboard, clear health reporting, and guided setup instead of exposing server configuration. It can still cover most home-server publishing needs by adding an HTTP/HTTPS gateway alongside the existing static-file service.
+Site Gateway should remain simpler than a general-purpose proxy manager: one dashboard, clear health reporting, and guided setup instead of exposing server configuration. It can still cover most home-server publishing needs with an HTTP/HTTPS gateway alongside the existing static-file service.
 
 ## Recommended gateway
 

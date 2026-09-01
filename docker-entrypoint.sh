@@ -13,7 +13,7 @@ chown -R "$app_uid:$app_gid" "${DATA_DIR:-/data}"
 
 caddyfile="${DATA_DIR:-/data}/caddy/Caddyfile"
 if [ ! -f "$caddyfile" ]; then
-  printf '%s\n' '{' '  admin localhost:2019' '  persist_config off' '}' '' ':80 {' '  respond "Web Server gateway is ready." 404' '}' > "$caddyfile"
+  printf '%s\n' '{' '  admin localhost:2019' '  persist_config off' '}' '' ':80 {' '  respond "Site Gateway is ready." 404' '}' > "$caddyfile"
   chown "$app_uid:$app_gid" "$caddyfile"
 fi
 

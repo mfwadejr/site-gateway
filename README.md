@@ -1,6 +1,6 @@
-# Web Server
+# Site Gateway
 
-Web Server is a small, self-hosted Docker appliance for publishing static websites without editing proxy or server configuration. Create a site, upload a ZIP, choose a port, and it is immediately available.
+Site Gateway is a simple, self-hosted Docker appliance for publishing static websites, proxying applications, routing domains, and automating HTTPS without editing server configuration.
 
 ## Beta features
 
@@ -17,7 +17,7 @@ Web Server is a small, self-hosted Docker appliance for publishing static websit
 - Path traversal protection for ZIP extraction and a 250 MB upload limit
 - Clean shutdown and automatic site restart after a container restart
 
-Hosted uploads remain static-only (HTML, CSS, JavaScript, images, fonts, and downloads). Dynamic applications can be connected as proxy hosts. Web Server does not execute uploaded PHP, Node, Python, or database code.
+Hosted uploads remain static-only (HTML, CSS, JavaScript, images, fonts, and downloads). Dynamic applications can be connected as proxy hosts. Site Gateway does not execute uploaded PHP, Node, Python, or database code.
 
 ## Quick start
 
@@ -39,7 +39,7 @@ Requirements: Docker Engine with Docker Compose.
 
 The included Compose file publishes site ports 9000–9099. Docker cannot add a host port to an already-running container, so any site port must be included in the published range. Change `SITE_PORT_MIN`, `SITE_PORT_MAX`, and the Compose `ports` range together before starting the container if you want a different range.
 
-For domain routing and automatic certificates, point the domain's DNS record at this server and forward public ports 80 and 443 to the container. If another reverse proxy already owns those ports, stop it or map Web Server to temporary alternate host ports for LAN testing; public ACME issuance will not work until 80/443 traffic reaches Web Server.
+For domain routing and automatic certificates, point the domain's DNS record at this server and forward public ports 80 and 443 to the container. If another reverse proxy already owns those ports, stop it or map Site Gateway to temporary alternate host ports for LAN testing; public ACME issuance will not work until 80/443 traffic reaches Site Gateway.
 
 ## Domains, proxy hosts, and TLS
 
@@ -80,7 +80,7 @@ my-site.zip
     └── logo.png
 ```
 
-A ZIP containing one top-level folder is also accepted; Web Server unwraps that folder automatically.
+A ZIP containing one top-level folder is also accepted; Site Gateway unwraps that folder automatically.
 
 ## Unraid beta install
 
