@@ -185,16 +185,24 @@ function publicProxy(proxy) {
 async function dashboardSnapshot() {
   const hosted = sites.map(publicSite);
   const proxyHosts = proxies.map(publicProxy);
+  const tlsDomains = [...sites, ...proxies].filter(item => item.enabled && item.domain && item.tls !== "http").length;
+  const storageWritable = await fsp.access(dataDir, fs.constants.R_OK | fs.constants.W_OK).then(() => true).catch(() => false);
   const attention = [];
   if (gatewayError) attention.push({ kind: "gateway", name: "Gateway configuration", message: "Caddy rejected the current configuration." });
+  if (!storageWritable) attention.push({ kind: "storage", name: "Persistent storage", message: "The data directory is not readable and writable." });
   for (const site of hosted.filter(item => item.status === "error")) attention.push({ kind: "hosted", name: site.name, message: `Hosted site is not responding on port ${site.port}.` });
   for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention." });
   const disk = await fsp.statfs(dataDir).catch(() => null);
   return {
     gateway: { healthy: !gatewayError, lastReload: lastGatewayReload },
+    services: {
+      http: { healthy: !gatewayError, port: 80 },
+      https: { healthy: !gatewayError, activeDomains: tlsDomains },
+      storage: { healthy: storageWritable, path: dataDir }
+    },
     hosted: { total: hosted.length, running: hosted.filter(item => item.status === "running").length, disabled: hosted.filter(item => item.status === "disabled").length, errors: hosted.filter(item => item.status === "error").length },
     proxies: { total: proxyHosts.length, running: proxyHosts.filter(item => item.status === "running").length, disabled: proxyHosts.filter(item => item.status === "disabled").length, errors: proxyHosts.filter(item => item.status === "error").length },
-    tlsDomains: [...sites, ...proxies].filter(item => item.enabled && item.domain && item.tls !== "http").length,
+    tlsDomains,
     attention,
     system: {
       uptimeSeconds: Math.floor(process.uptime()),
