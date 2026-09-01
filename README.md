@@ -8,7 +8,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="License" src="https://img.shields.io/badge/status-public%20beta-62E6A7">
+    <img alt="Public beta" src="https://img.shields.io/badge/status-public%20beta-62E6A7">
   </p>
   <p>
     <a href="#quick-start">Quick start</a> ·
@@ -220,4 +220,4 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 
 ## Beta roadmap
 
-Good next additions are custom domains and HTTPS integration, per-site access logs, drag-and-drop folder upload, rollback/history, health checks, and optional reverse-proxy templates.
+Good next additions are per-site access logs, certificate status reporting, drag-and-drop folder upload, rollback/history, health checks, access lists, and guided DNS diagnostics.
