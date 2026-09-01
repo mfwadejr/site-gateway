@@ -37,6 +37,9 @@ Site Gateway gives a home server one clear control panel for two jobs: publishin
 - Hosted-site, proxy-host, TLS-domain, and attention totals at a glance
 - Runtime uptime, memory, persistent-data size, disk space, and installed versions
 - Recent configuration activity for the current container session
+- Confirmed Caddy, HTTP port 80, and HTTPS port 443 health checks with manual and automatic refresh
+- Searchable Dashboard Icons picker with validated local storage under `/data/icons`
+- Consistent two-letter icon fallbacks for hosted sites and proxy hosts
 - Create a site from a ZIP archive or a single `index.html`
 - One independently enabled/disabled port per site
 - Caddy gateway on ports 80 and 443
@@ -203,7 +206,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.4.0-alpha.2` publishes `ghcr.io/mfwadejr/site-gateway:0.4.0-alpha.2` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.4.0-alpha.3` publishes `ghcr.io/mfwadejr/site-gateway:0.4.0-alpha.3` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ## Security notes
 
