@@ -42,6 +42,8 @@ function render() {
   $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : "Proxy hosts";
   $("#page-subtitle").textContent = state.view === "hosted" ? "Upload and publish websites on a port or domain." : "Route domains securely to applications and containers.";
   $("#open-create").textContent = state.view === "hosted" ? "＋ New hosted site" : "＋ New proxy host";
+  $(".create-trigger").textContent = state.view === "hosted" ? "Create a hosted site" : "Create a proxy host";
+  $(".port-note").classList.toggle("hidden", state.view === "proxies");
   document.querySelectorAll("nav [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length;
   $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors;
