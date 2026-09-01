@@ -32,6 +32,25 @@ const activeServers = new Map();
 let sites = [];
 let proxies = [];
 let gatewayError = null;
+let lastGatewayReload = null;
+let caddyVersion = "Unknown";
+const recentActivity = [];
+
+function recordActivity(message, status = "ok") {
+  recentActivity.unshift({ message, status, at: new Date().toISOString() });
+  recentActivity.splice(20);
+}
+
+async function directorySize(directory) {
+  let total = 0;
+  const entries = await fsp.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
+  for (const entry of entries) {
+    const itemPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) total += await directorySize(itemPath);
+    else if (entry.isFile()) total += (await fsp.stat(itemPath)).size;
+  }
+  return total;
+}
 
 function numberEnv(name, fallback) {
   const value = Number.parseInt(process.env[name] || "", 10);
@@ -141,6 +160,7 @@ async function syncCaddy() {
     await fsp.rename(nextPath, caddyfilePath);
     await execFileAsync("caddy", ["reload", "--config", caddyfilePath, "--adapter", "caddyfile"]);
     gatewayError = null;
+    lastGatewayReload = new Date().toISOString();
   } catch (error) {
     await fsp.rm(nextPath, { force: true });
     gatewayError = error.stderr || error.message;
@@ -160,6 +180,33 @@ function publicSite(site) {
 
 function publicProxy(proxy) {
   return { ...proxy, status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled" };
+}
+
+async function dashboardSnapshot() {
+  const hosted = sites.map(publicSite);
+  const proxyHosts = proxies.map(publicProxy);
+  const attention = [];
+  if (gatewayError) attention.push({ kind: "gateway", name: "Gateway configuration", message: "Caddy rejected the current configuration." });
+  for (const site of hosted.filter(item => item.status === "error")) attention.push({ kind: "hosted", name: site.name, message: `Hosted site is not responding on port ${site.port}.` });
+  for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention." });
+  const disk = await fsp.statfs(dataDir).catch(() => null);
+  return {
+    gateway: { healthy: !gatewayError, lastReload: lastGatewayReload },
+    hosted: { total: hosted.length, running: hosted.filter(item => item.status === "running").length, disabled: hosted.filter(item => item.status === "disabled").length, errors: hosted.filter(item => item.status === "error").length },
+    proxies: { total: proxyHosts.length, running: proxyHosts.filter(item => item.status === "running").length, disabled: proxyHosts.filter(item => item.status === "disabled").length, errors: proxyHosts.filter(item => item.status === "error").length },
+    tlsDomains: [...sites, ...proxies].filter(item => item.enabled && item.domain && item.tls !== "http").length,
+    attention,
+    system: {
+      uptimeSeconds: Math.floor(process.uptime()),
+      memoryBytes: process.memoryUsage().rss,
+      dataBytes: await directorySize(dataDir),
+      diskFreeBytes: disk ? disk.bavail * disk.bsize : null,
+      appVersion,
+      caddyVersion,
+      nodeVersion: process.version
+    },
+    activity: recentActivity
+  };
 }
 
 async function startSite(site) {
@@ -233,6 +280,12 @@ async function installUpload(site, file) {
 }
 
 await loadSites();
+try {
+  const result = await execFileAsync("caddy", ["version"]);
+  caddyVersion = result.stdout.trim().split(/\s+/)[0] || "Unknown";
+} catch (error) {
+  console.warn("Could not detect Caddy version:", error.message);
+}
 for (const site of sites.filter(item => item.enabled)) {
   try { await startSite(site); } catch (error) { console.error(`Could not start ${site.name}:`, error.message); }
 }
@@ -266,6 +319,10 @@ app.use("/api", (req, res, next) => authenticated(req) ? next() : res.status(401
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, gateway: { enabled: true, error: gatewayError } }));
 app.get("/api/sites", (req, res) => res.json(sites.map(publicSite)));
 app.get("/api/proxies", (req, res) => res.json(proxies.map(publicProxy)));
+app.get("/api/dashboard", async (req, res, next) => {
+  try { res.json(await dashboardSnapshot()); }
+  catch (error) { next(error); }
+});
 app.post("/api/sites", upload.single("files"), async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim();
@@ -286,6 +343,7 @@ app.post("/api/sites", upload.single("files"), async (req, res, next) => {
     try { await startSite(site); } catch (error) { console.error(error); }
     await syncCaddy();
     await saveSites();
+    recordActivity(`Hosted site “${site.name}” created.`);
     res.status(201).json(publicSite(site));
   } catch (error) {
     if (req.file) await fsp.rm(req.file.path, { force: true });
@@ -300,6 +358,7 @@ app.post("/api/sites/:id/toggle", async (req, res, next) => {
     await restartSite(site);
     await syncCaddy();
     await saveSites();
+    recordActivity(`Hosted site “${site.name}” ${site.enabled ? "enabled" : "disabled"}.`);
     res.json(publicSite(site));
   } catch (error) { next(error); }
 });
@@ -310,6 +369,7 @@ app.post("/api/sites/:id/files", upload.single("files"), async (req, res, next) 
     if (!req.file) return res.status(400).json({ error: "Choose a ZIP file or index.html." });
     await installUpload(site, req.file);
     await syncCaddy();
+    recordActivity(`Files replaced for “${site.name}”.`);
     res.json(publicSite(site));
   } catch (error) { next(error); }
 });
@@ -322,6 +382,7 @@ app.delete("/api/sites/:id", async (req, res, next) => {
     await syncCaddy();
     await fsp.rm(path.join(sitesDir, site.id), { recursive: true, force: true });
     await saveSites();
+    recordActivity(`Hosted site “${site.name}” deleted.`);
     res.status(204).end();
   } catch (error) { next(error); }
 });
@@ -337,6 +398,7 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     site.hsts = req.body.hsts === true;
     await syncCaddy();
     await saveSites();
+    recordActivity(`Gateway settings updated for “${site.name}”.`);
     res.json(publicSite(site));
   } catch (error) { next(error); }
 });
@@ -360,6 +422,7 @@ app.post("/api/proxies", async (req, res, next) => {
     proxies.push(proxy);
     await syncCaddy();
     await saveProxies();
+    recordActivity(`Proxy host “${proxy.name}” created.`);
     res.status(201).json(publicProxy(proxy));
   } catch (error) { next(error); }
 });
@@ -377,6 +440,7 @@ app.patch("/api/proxies/:id", async (req, res, next) => {
     proxy.hsts = req.body.hsts === true;
     await syncCaddy();
     await saveProxies();
+    recordActivity(`Proxy host “${proxy.name}” updated.`);
     res.json(publicProxy(proxy));
   } catch (error) { next(error); }
 });
@@ -387,6 +451,7 @@ app.post("/api/proxies/:id/toggle", async (req, res, next) => {
     proxy.enabled = !proxy.enabled;
     await syncCaddy();
     await saveProxies();
+    recordActivity(`Proxy host “${proxy.name}” ${proxy.enabled ? "enabled" : "disabled"}.`);
     res.json(publicProxy(proxy));
   } catch (error) { next(error); }
 });
@@ -394,9 +459,10 @@ app.delete("/api/proxies/:id", async (req, res, next) => {
   try {
     const index = proxies.findIndex(item => item.id === req.params.id);
     if (index < 0) return res.status(404).json({ error: "Proxy host not found." });
-    proxies.splice(index, 1);
+    const [proxy] = proxies.splice(index, 1);
     await syncCaddy();
     await saveProxies();
+    recordActivity(`Proxy host “${proxy.name}” deleted.`);
     res.status(204).end();
   } catch (error) { next(error); }
 });
