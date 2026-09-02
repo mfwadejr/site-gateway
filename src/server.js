@@ -19,6 +19,7 @@ const dataDir = path.resolve(process.env.DATA_DIR || "/data");
 const sitesDir = path.join(dataDir, "sites");
 const configPath = path.join(dataDir, "sites.json");
 const proxiesPath = path.join(dataDir, "proxies.json");
+const usersPath = path.join(dataDir, "users.json");
 const uploadDir = path.join(dataDir, ".uploads");
 const caddyDir = path.join(dataDir, "caddy");
 const iconsDir = path.join(dataDir, "icons");
@@ -29,6 +30,7 @@ const certificateDir = path.join(caddyDir, "data", "caddy", "certificates");
 const iconCatalogPath = path.join(iconsDir, "catalog.json");
 const caddyfilePath = path.join(caddyDir, "Caddyfile");
 const execFileAsync = promisify(execFile);
+const scryptAsync = promisify(crypto.scrypt);
 const adminPort = numberEnv("ADMIN_PORT", 8080);
 const minPort = numberEnv("SITE_PORT_MIN", 9000);
 const maxPort = numberEnv("SITE_PORT_MAX", 9099);
@@ -38,11 +40,13 @@ const sessionSecret = process.env.SESSION_SECRET || crypto.createHash("sha256").
 const activeServers = new Map();
 let sites = [];
 let proxies = [];
+let users = [];
 let gatewayError = null;
 let lastGatewayReload = null;
 let caddyVersion = "Unknown";
 const recentActivity = [];
 const upstreamHealth = new Map();
+const loginAttempts = new Map();
 const probeFailures = { gateway: 0, http: 0, https: 0 };
 let iconCatalog = null;
 
@@ -75,6 +79,27 @@ function safeEqual(a, b) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
+async function passwordRecord(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = await scryptAsync(String(password), salt, 64);
+  return { algorithm: "scrypt", salt, hash: hash.toString("hex") };
+}
+
+async function passwordMatches(password, record) {
+  if (!record?.salt || !record?.hash) return false;
+  const hash = await scryptAsync(String(password), record.salt, 64);
+  return safeEqual(hash.toString("hex"), record.hash);
+}
+
+function publicUser(user) {
+  const { password, ...safe } = user;
+  return safe;
+}
+
+function activeAdministrators() {
+  return users.filter(user => user.role === "administrator" && user.status === "active");
+}
+
 function slugify(value) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
 }
@@ -87,11 +112,12 @@ function cookieMap(header = "") {
   return Object.fromEntries(header.split(";").map(v => v.trim().split("=").map(decodeURIComponent)).filter(v => v.length === 2));
 }
 
-function authenticated(req) {
+function sessionUser(req) {
   const token = cookieMap(req.headers.cookie).webserver_session;
-  if (!token) return false;
-  const [expires, signature] = token.split(".");
-  return Number(expires) > Date.now() && safeEqual(signature || "", sign(expires));
+  if (!token) return null;
+  const [userId, expires, signature] = token.split(".");
+  if (!userId || Number(expires) <= Date.now() || !safeEqual(signature || "", sign(`${userId}.${expires}`))) return null;
+  return users.find(user => user.id === userId && user.status === "active") || null;
 }
 
 async function saveSites() {
@@ -100,6 +126,12 @@ async function saveSites() {
 
 async function saveProxies() {
   await fsp.writeFile(proxiesPath, JSON.stringify(proxies, null, 2));
+}
+
+async function saveUsers() {
+  const nextPath = `${usersPath}.next`;
+  await fsp.writeFile(nextPath, JSON.stringify(users, null, 2), { mode: 0o600 });
+  await fsp.rename(nextPath, usersPath);
 }
 
 async function loadSites() {
@@ -122,6 +154,14 @@ async function loadSites() {
     const lines = (await fsp.readFile(activityLogPath, "utf8")).trim().split("\n").slice(-20).reverse();
     recentActivity.push(...lines.map(line => JSON.parse(line)));
   } catch { /* Activity history starts empty on a new installation. */ }
+  try {
+    users = JSON.parse(await fsp.readFile(usersPath, "utf8"));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    const now = new Date().toISOString();
+    users = [{ id: crypto.randomUUID(), username: adminUser.toLowerCase(), displayName: "Administrator", role: "administrator", status: "active", password: await passwordRecord(adminPassword), source: "bootstrap", createdAt: now, updatedAt: now, lastLoginAt: null }];
+    await saveUsers();
+  }
 }
 
 function normalizeDomain(value) {
@@ -482,19 +522,85 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.static(publicDir));
 app.use("/site-icons", express.static(iconsDir, { immutable: true, maxAge: "30d", setHeaders: res => res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'") }));
 
-app.get("/api/session", (req, res) => res.json({ authenticated: authenticated(req), username: authenticated(req) ? adminUser : null }));
-app.post("/api/login", (req, res) => {
-  if (!safeEqual(req.body.username || "", adminUser) || !safeEqual(req.body.password || "", adminPassword)) return res.status(401).json({ error: "Incorrect username or password." });
-  const expires = String(Date.now() + 12 * 60 * 60 * 1000);
-  res.setHeader("Set-Cookie", `webserver_session=${expires}.${sign(expires)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200`);
-  res.json({ ok: true });
+app.get("/api/session", (req, res) => {
+  const user = sessionUser(req);
+  res.json({ authenticated: Boolean(user), user: user ? publicUser(user) : null, username: user?.username || null });
+});
+app.post("/api/login", async (req, res, next) => {
+  try {
+    const key = req.ip || req.socket.remoteAddress || "unknown";
+    const attempt = loginAttempts.get(key) || { count: 0, resetAt: Date.now() + 15 * 60 * 1000 };
+    if (attempt.resetAt <= Date.now()) { attempt.count = 0; attempt.resetAt = Date.now() + 15 * 60 * 1000; }
+    if (attempt.count >= 8) return res.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." });
+    const username = String(req.body.username || "").trim().toLowerCase();
+    const user = users.find(item => item.username === username);
+    if (!user || user.status !== "active" || !await passwordMatches(req.body.password || "", user.password)) {
+      attempt.count += 1; loginAttempts.set(key, attempt);
+      return res.status(401).json({ error: "Incorrect username or password." });
+    }
+    loginAttempts.delete(key);
+    user.lastLoginAt = new Date().toISOString(); user.updatedAt = user.lastLoginAt; await saveUsers();
+    const expires = String(Date.now() + 12 * 60 * 60 * 1000);
+    const value = `${user.id}.${expires}`;
+    res.setHeader("Set-Cookie", `webserver_session=${value}.${sign(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200`);
+    res.json({ ok: true, user: publicUser(user) });
+  } catch (error) { next(error); }
 });
 app.post("/api/logout", (req, res) => {
   res.setHeader("Set-Cookie", "webserver_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
   res.json({ ok: true });
 });
-app.use("/api", (req, res, next) => authenticated(req) ? next() : res.status(401).json({ error: "Please sign in." }));
+app.use("/api", (req, res, next) => {
+  const user = sessionUser(req);
+  if (!user) return res.status(401).json({ error: "Please sign in." });
+  req.user = user;
+  next();
+});
+app.use("/api", (req, res, next) => req.user.role === "administrator" || req.method === "GET" ? next() : res.status(403).json({ error: "Administrator access is required to make changes." }));
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, gateway: { enabled: true, error: gatewayError } }));
+app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));
+app.post("/api/users", async (req, res, next) => {
+  try {
+    const username = String(req.body.username || "").trim().toLowerCase();
+    const displayName = String(req.body.displayName || "").trim();
+    const password = String(req.body.password || "");
+    const role = req.body.role === "administrator" ? "administrator" : "standard";
+    if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return res.status(400).json({ error: "Username must be 3–64 characters using letters, numbers, periods, hyphens, or underscores." });
+    if (users.some(user => user.username === username)) return res.status(409).json({ error: "That username already exists." });
+    if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Display name is required and must be 80 characters or fewer." });
+    if (password.length < 12) return res.status(400).json({ error: "Password must contain at least 12 characters." });
+    const now = new Date().toISOString();
+    const user = { id: crypto.randomUUID(), username, displayName, role, status: "active", password: await passwordRecord(password), source: "local", createdAt: now, updatedAt: now, lastLoginAt: null };
+    users.push(user); await saveUsers(); recordActivity(`User “${user.username}” created as ${role === "administrator" ? "Administrator" : "Standard User"}.`);
+    res.status(201).json(publicUser(user));
+  } catch (error) { next(error); }
+});
+app.patch("/api/users/:id", async (req, res, next) => {
+  try {
+    const user = users.find(item => item.id === req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    const nextRole = req.body.role === undefined ? user.role : req.body.role === "administrator" ? "administrator" : "standard";
+    const nextStatus = req.body.status === undefined ? user.status : ["active", "disabled", "archived"].includes(req.body.status) ? req.body.status : null;
+    if (!nextStatus) return res.status(400).json({ error: "Invalid user status." });
+    const removesActiveAdmin = user.role === "administrator" && user.status === "active" && (nextRole !== "administrator" || nextStatus !== "active");
+    if (removesActiveAdmin && activeAdministrators().length === 1) return res.status(400).json({ error: "At least one active Administrator is required." });
+    if (user.id === req.user.id && nextStatus !== "active") return res.status(400).json({ error: "You cannot disable or archive your own account." });
+    if (user.id === req.user.id && nextRole !== user.role) return res.status(400).json({ error: "Another Administrator must change your role." });
+    user.role = nextRole; user.status = nextStatus;
+    if (req.body.displayName !== undefined) {
+      const displayName = String(req.body.displayName).trim();
+      if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Display name is required and must be 80 characters or fewer." });
+      user.displayName = displayName;
+    }
+    if (req.body.password !== undefined) {
+      const password = String(req.body.password);
+      if (password.length < 12) return res.status(400).json({ error: "Password must contain at least 12 characters." });
+      user.password = await passwordRecord(password);
+    }
+    user.updatedAt = new Date().toISOString(); await saveUsers(); recordActivity(`User “${user.username}” updated · ${user.role === "administrator" ? "Administrator" : "Standard User"} · ${user.status}.`);
+    res.json(publicUser(user));
+  } catch (error) { next(error); }
+});
 app.get("/api/sites", (req, res) => res.json(sites.map(publicSite)));
 app.get("/api/proxies", (req, res) => res.json(proxies.map(publicProxy)));
 app.get("/api/dashboard", async (req, res, next) => {

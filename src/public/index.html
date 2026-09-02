@@ -32,6 +32,7 @@
         <button data-view="proxies">Proxy hosts <span id="proxy-count">0</span></button>
         <button data-view="certificates">Certificates <span id="certificate-count">0</span></button>
         <button data-view="logs">Logs</button>
+        <button class="admin-only" data-view="users">Users <span id="user-count">0</span></button>
       </nav>
       <div class="aside-footer"><span>Installed version</span><strong id="version-label">v—</strong></div>
     </aside>
@@ -46,6 +47,7 @@
         <button data-view="proxies">Proxies</button>
         <button data-view="certificates">TLS</button>
         <button data-view="logs">Logs</button>
+        <button class="admin-only" data-view="users">Users</button>
       </nav>
       <header>
         <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Dashboard</h1><p id="page-subtitle" class="muted">Health, activity, and system status at a glance.</p></div>
@@ -103,6 +105,10 @@
         <p class="muted feature-note">Recent requests handled by Caddy. Sensitive request headers are never displayed.</p>
         <div class="table-wrap"><table class="log-table"><thead><tr><th>Time</th><th>Domain</th><th>Request</th><th>Status</th><th>Duration</th></tr></thead><tbody id="log-rows"></tbody></table></div>
         <section class="dashboard-panel log-activity"><div class="panel-heading"><div><p class="eyebrow">Gateway events</p><h2>Activity and errors</h2></div></div><div id="gateway-log-list" class="dashboard-list"></div></section>
+      </section>
+      <section id="users-view" class="feature-view hidden">
+        <div class="role-callout"><strong>Administrator</strong><span>Full control of users, sites, proxy hosts, certificates, logs, and gateway settings.</span><strong>Standard User</strong><span>Read-only access to dashboard health, configured services, certificates, and logs.</span></div>
+        <div id="user-list" class="user-grid"><p class="quiet-state">Loading users…</p></div>
       </section>
       <section id="management-summary" class="summary hidden" aria-label="Site summary">
         <div><span id="running-dot" class="status-dot inactive"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div>
@@ -172,6 +178,25 @@
       <div id="icon-results" class="icon-results" aria-live="polite"><p class="quiet-state">Enter at least two characters to search.</p></div>
       <p id="icon-error" class="error" role="alert"></p>
       <div class="dialog-actions"><button id="reset-icon" value="none" class="button secondary">Use two-letter fallback</button><button value="cancel" class="button secondary">Cancel</button></div>
+    </form>
+  </dialog>
+  <dialog id="user-dialog">
+    <form id="user-form" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Administration</p><h2>Create a user</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
+      <label>Display name<input name="displayName" placeholder="Marvin Wade" maxlength="80" required></label>
+      <label>Username<input name="username" placeholder="marvin" minlength="3" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,63}" autocomplete="off" required></label>
+      <label>Role<select name="role"><option value="standard">Standard User</option><option value="administrator">Administrator</option></select></label>
+      <label>Temporary password<input name="password" type="password" minlength="12" autocomplete="new-password" required><small>At least 12 characters. Share it securely.</small></label>
+      <p id="user-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button class="button primary">Create user</button></div>
+    </form>
+  </dialog>
+  <dialog id="password-dialog">
+    <form id="password-form" class="dialog-card">
+      <div class="dialog-heading"><div><p class="eyebrow">Credentials</p><h2 id="password-title">Reset password</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
+      <label>New password<input name="password" type="password" minlength="12" autocomplete="new-password" required><small>At least 12 characters.</small></label>
+      <p id="password-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button class="button primary">Save password</button></div>
     </form>
   </dialog>
   <input id="replace-files" type="file" accept=".zip,.html,text/html,application/zip" hidden>

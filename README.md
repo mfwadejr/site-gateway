@@ -206,7 +206,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.5.0-alpha.2` publishes `ghcr.io/mfwadejr/site-gateway:0.5.0-alpha.2` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.6.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.6.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ### Monitoring in v0.5.0-alpha.1
 
@@ -216,6 +216,14 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 - Caddy access logs are stored as rotating JSON files under `/data/logs` and displayed without request headers. Gateway activity and errors are also appended to `/data/logs/activity.jsonl`.
 
 `v0.5.0-alpha.2` clarifies that a missing stored certificate is **not detected**, rather than claiming issuance is actively provisioning, and includes a consistency pass for dashboard indicators, cards, and log controls.
+
+### Users and roles in v0.6.0-alpha.1
+
+- The environment-defined administrator becomes the initial persistent Administrator on first startup after upgrading.
+- Administrators can create users, assign Administrator or Standard User roles, reset passwords, disable accounts, and archive or restore accounts.
+- Standard Users have read-only access to dashboard health, hosted sites, proxy hosts, certificates, and logs. Per-host ownership and granular permissions are planned for a later release.
+- Passwords are stored as salted scrypt hashes in `/data/users.json`; plaintext passwords are never written to disk.
+- Site Gateway prevents removal of the final active Administrator and blocks users from disabling or archiving their own active session.
 
 ## Security notes
 

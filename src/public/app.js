@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], dashboard: null, certificates: null, logs: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, healthTimer: null };
+const state = { sites: [], proxies: [], dashboard: null, certificates: null, logs: null, users: [], user: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 function applyTheme(preference) {
@@ -18,7 +18,7 @@ async function api(url, options = {}) {
   if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Request failed."); }
   return response.status === 204 ? null : response.json();
 }
-function showLogin() { $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); }
+function showLogin() { state.user = null; state.users = []; state.view = "overview"; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); }
 function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); }
 function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
@@ -94,15 +94,20 @@ function initials(name) {
   return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2).padEnd(2, words[0][0])).toUpperCase();
 }
 function iconMarkup(item) { return item.icon ? `<img src="${escapeHtml(item.icon)}" alt="">` : escapeHtml(initials(item.name)); }
+function canManage() { return state.user?.role === "administrator"; }
 
 function hostedCard(site) {
   const status = site.status === "running" ? "running" : site.status === "error" ? "error" : "disabled";
-  return `<article class="site-card" data-id="${site.id}" data-kind="hosted"><div class="card-top"><div class="site-icon">${iconMarkup(site)}</div><div class="menu-wrap"><button class="icon-button menu-button" aria-label="Site options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Domain & TLS</button><button data-action="icon">Change icon</button><button data-action="replace">Replace files</button><button data-action="delete" class="danger-text">Delete site</button></div></div></div><h2>${escapeHtml(site.name)}</h2><p class="address">${escapeHtml(site.domain || `Port ${site.port}`)}</p>${site.domain ? `<p class="gateway-address ${site.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(site))}</p>` : ""}<div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions"><button class="toggle ${site.enabled ? "on" : ""}" data-action="toggle" aria-label="${site.enabled ? "Disable" : "Enable"} ${escapeHtml(site.name)}"><span></span></button><a class="launch" href="${publicUrl(site)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(site.name)}">↗</a></div></div></article>`;
+  const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Site options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Domain & TLS</button><button data-action="icon">Change icon</button><button data-action="replace">Replace files</button><button data-action="delete" class="danger-text">Delete site</button></div></div>` : "";
+  const toggle = canManage() ? `<button class="toggle ${site.enabled ? "on" : ""}" data-action="toggle" aria-label="${site.enabled ? "Disable" : "Enable"} ${escapeHtml(site.name)}"><span></span></button>` : "";
+  return `<article class="site-card" data-id="${site.id}" data-kind="hosted"><div class="card-top"><div class="site-icon">${iconMarkup(site)}</div>${menu}</div><h2>${escapeHtml(site.name)}</h2><p class="address">${escapeHtml(site.domain || `Port ${site.port}`)}</p>${site.domain ? `<p class="gateway-address ${site.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(site))}</p>` : ""}<div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(site)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(site.name)}">↗</a></div></div></article>`;
 }
 function proxyCard(proxy) {
   const status = proxy.status === "running" ? "running" : proxy.status === "error" ? "error" : "disabled";
   const upstream = !proxy.enabled ? "Monitoring paused" : !proxy.upstream ? "Upstream check pending" : proxy.upstream.status === "healthy" ? `Upstream ${proxy.upstream.httpStatus} · ${proxy.upstream.responseMs} ms` : `Upstream unavailable · ${escapeHtml(proxy.upstream.error || "check failed")}`;
-  return `<article class="site-card proxy" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy)}</div><div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="icon">Change icon</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div></div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><p class="upstream-copy ${proxy.upstream?.status === "unhealthy" ? "bad" : ""}">${upstream}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions"><button class="toggle ${proxy.enabled ? "on" : ""}" data-action="toggle" aria-label="${proxy.enabled ? "Disable" : "Enable"} ${escapeHtml(proxy.name)}"><span></span></button><a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
+  const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="icon">Change icon</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div>` : "";
+  const toggle = canManage() ? `<button class="toggle ${proxy.enabled ? "on" : ""}" data-action="toggle" aria-label="${proxy.enabled ? "Disable" : "Enable"} ${escapeHtml(proxy.name)}"><span></span></button>` : "";
+  return `<article class="site-card proxy" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy)}</div>${menu}</div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><p class="upstream-copy ${proxy.upstream?.status === "unhealthy" ? "bad" : ""}">${upstream}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
 }
 
 function renderCertificates() {
@@ -119,9 +124,21 @@ function renderLogs() {
   $("#gateway-log-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : ""}">${item.status === "error" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No gateway activity recorded yet.</p>';
 }
 
+function renderUsers() {
+  $("#user-count").textContent = state.users.length;
+  $("#user-list").innerHTML = state.users.length ? state.users.map(user => {
+    const isSelf = user.id === state.user?.id;
+    const statusClass = user.status === "active" ? "running" : user.status === "disabled" ? "disabled" : "inactive";
+    const roleAction = user.role === "administrator" ? "standard" : "administrator";
+    const lifecycle = user.status === "archived" ? `<button class="button secondary" data-user-action="status" data-value="disabled">Restore</button>` : user.status === "active" ? `<button class="button secondary" data-user-action="status" data-value="disabled">Disable</button><button class="button secondary danger-text" data-user-action="status" data-value="archived">Archive</button>` : `<button class="button secondary" data-user-action="status" data-value="active">Enable</button><button class="button secondary danger-text" data-user-action="status" data-value="archived">Archive</button>`;
+    return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${user.role === "administrator" ? "Administrator" : "Standard User"}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}</div></article>`;
+  }).join("") : '<p class="quiet-state">No users found.</p>';
+}
+
 async function loadFeatureView() {
   if (state.view === "certificates") { state.certificates = await api("/api/certificates"); renderCertificates(); }
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
+  if (state.view === "users") { state.users = await api("/api/users"); renderUsers(); }
 }
 function render() {
   $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
@@ -130,8 +147,8 @@ function render() {
   $("#dashboard-view").classList.toggle("hidden", !overview);
   const management = state.view === "hosted" || state.view === "proxies";
   $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !management);
-  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs");
-  $("#open-create").classList.toggle("hidden", !management);
+  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#users-view").classList.toggle("hidden", state.view !== "users");
+  $("#open-create").classList.toggle("hidden", !(management || state.view === "users") || !canManage());
   if (overview) {
     $("#page-title").textContent = "Dashboard";
     $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
@@ -139,9 +156,10 @@ function render() {
     return;
   }
   if (!management) {
-    $("#page-title").textContent = state.view === "certificates" ? "Certificates" : "Access logs";
-    $("#page-subtitle").textContent = state.view === "certificates" ? "Expiration, issuer, and provisioning status for automatic HTTPS." : "Recent requests served through the Caddy gateway.";
-    if (state.view === "certificates") renderCertificates(); else renderLogs();
+    $("#page-title").textContent = state.view === "certificates" ? "Certificates" : state.view === "users" ? "Users" : "Access logs";
+    $("#page-subtitle").textContent = state.view === "certificates" ? "Expiration, issuer, and certificate-detection status for automatic HTTPS." : state.view === "users" ? "Create accounts, assign roles, and control access to Site Gateway." : "Recent requests served through the Caddy gateway.";
+    $("#open-create").textContent = state.view === "users" ? "＋ Create user" : $("#open-create").textContent;
+    if (state.view === "certificates") renderCertificates(); else if (state.view === "users") renderUsers(); else renderLogs();
     return;
   }
   const items = state.view === "hosted" ? state.sites : state.proxies;
@@ -167,7 +185,7 @@ async function refreshDashboard() {
 }
 async function boot() {
   const session = await fetch("/api/session").then(response => response.json()); if (!session.authenticated) return showLogin();
-  showDashboard(); $("#user-label").textContent = session.username; state.config = await api("/api/config");
+  state.view = "overview"; state.users = []; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canManage())); state.config = await api("/api/config");
   $("#version-label").textContent = `v${state.config.version || "unknown"}`;
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
   $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh();
@@ -182,6 +200,7 @@ $("#dashboard-view").addEventListener("click", event => { const card = event.tar
 $("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
 function openCreate() {
+  if (state.view === "users") { $("#user-form").reset(); $("#user-error").textContent = ""; return $("#user-dialog").showModal(); }
   if (state.view === "proxies") { $("#proxy-form").reset(); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
   $("#create-form").reset(); $("#create-error").textContent = ""; const used = new Set(state.sites.map(site => site.port)); let port = state.config.minPort; while (used.has(port)) port++; $("#create-form [name=port]").value = port; $("#create-dialog").showModal();
 }
@@ -238,4 +257,34 @@ async function saveIcon(slug) {
 }
 $("#icon-results").addEventListener("click", event => { const choice = event.target.closest("[data-slug]"); if (choice) saveIcon(choice.dataset.slug); });
 $("#reset-icon").addEventListener("click", event => { event.preventDefault(); saveIcon(""); });
+$("#user-form").addEventListener("submit", async event => {
+  event.preventDefault(); const button = event.submitter; button.disabled = true; $("#user-error").textContent = "";
+  try {
+    await api("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) });
+    $("#user-dialog").close(); await loadFeatureView(); toast("User created.");
+  } catch (error) { $("#user-error").textContent = error.message; }
+  finally { button.disabled = false; }
+});
+$("#user-list").addEventListener("click", async event => {
+  const button = event.target.closest("[data-user-action]"); if (!button) return;
+  const card = button.closest("[data-user-id]"); const user = state.users.find(item => item.id === card?.dataset.userId); if (!user) return;
+  if (button.dataset.userAction === "password") {
+    state.passwordTarget = user.id; $("#password-form").reset(); $("#password-error").textContent = ""; $("#password-title").textContent = `Reset ${user.username} password`; $("#password-dialog").showModal(); return;
+  }
+  button.disabled = true;
+  try {
+    const body = button.dataset.userAction === "role" ? { role: button.dataset.value } : { status: button.dataset.value };
+    await api(`/api/users/${user.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    await loadFeatureView(); toast("User updated.");
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+});
+$("#password-form").addEventListener("submit", async event => {
+  event.preventDefault(); const button = event.submitter; button.disabled = true; $("#password-error").textContent = "";
+  try {
+    await api(`/api/users/${state.passwordTarget}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: new FormData(event.target).get("password") }) });
+    $("#password-dialog").close(); state.passwordTarget = null; await loadFeatureView(); toast("Password reset.");
+  } catch (error) { $("#password-error").textContent = error.message; }
+  finally { button.disabled = false; }
+});
 boot().catch(error => toast(error.message));
