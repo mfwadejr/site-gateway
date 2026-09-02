@@ -206,7 +206,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.5.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.5.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.5.0-alpha.2` publishes `ghcr.io/mfwadejr/site-gateway:0.5.0-alpha.2` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ### Monitoring in v0.5.0-alpha.1
 
@@ -214,6 +214,8 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 - Dashboard alerts call out certificates within 30 days of expiration and unreachable proxy upstreams.
 - Enabled proxy targets are checked every 60 seconds with a four-second timeout; status, HTTP response, latency, and recent in-memory history are available to the dashboard.
 - Caddy access logs are stored as rotating JSON files under `/data/logs` and displayed without request headers. Gateway activity and errors are also appended to `/data/logs/activity.jsonl`.
+
+`v0.5.0-alpha.2` clarifies that a missing stored certificate is **not detected**, rather than claiming issuance is actively provisioning, and includes a consistency pass for dashboard indicators, cards, and log controls.
 
 ## Security notes
 

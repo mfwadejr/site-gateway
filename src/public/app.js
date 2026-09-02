@@ -42,7 +42,7 @@ function formatTime(value) {
 
 function healthCopy(group, label) {
   if (!group.total) return "Nothing configured";
-  if (group.errors) return `${group.errors} ${label} need attention`;
+  if (group.errors) return `${group.errors} ${group.errors === 1 ? label.replace(/s$/, "") : label} need attention`;
   if (group.running) return `${group.running} running${group.disabled ? ` · ${group.disabled} disabled` : ""}`;
   return `${group.disabled} disabled`;
 }
@@ -61,7 +61,7 @@ function renderDashboard() {
   $("#dash-proxy-total").textContent = data.proxies.total;
   $("#dash-proxy-detail").textContent = healthCopy(data.proxies, "routes");
   $("#dash-tls-total").textContent = data.tlsDomains;
-  $("#dash-tls-detail").textContent = data.certificates.total ? `${data.certificates.healthy} healthy · ${data.certificates.pending} provisioning` : "No TLS domains";
+  $("#dash-tls-detail").textContent = data.certificates.total ? `${data.certificates.healthy} healthy · ${data.certificates.pending} not detected` : "No TLS domains";
   $("#dash-attention-total").textContent = data.attention.length;
   $("#dash-attention-detail").textContent = data.attention.length ? `${data.attention.length} item${data.attention.length === 1 ? "" : "s"} to review` : "No current issues";
   const hasErrors = data.attention.length > 0, isChecking = [data.gateway, data.services.http, data.services.https].some(service => service.status === "checking"), hasNothingRunning = !data.hosted.running && !data.proxies.running;
@@ -109,7 +109,7 @@ function renderCertificates() {
   const data = state.certificates; if (!data) return;
   $("#certificate-count").textContent = data.summary.total;
   $("#cert-healthy").textContent = data.summary.healthy; $("#cert-warning").textContent = data.summary.warning + data.summary.critical + data.summary.expired; $("#cert-pending").textContent = data.summary.pending;
-  $("#certificate-list").innerHTML = data.certificates.length ? data.certificates.map(cert => `<article class="data-row"><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span><div><strong>${escapeHtml(cert.domain)}</strong><small>${escapeHtml(cert.kind)} · ${escapeHtml(cert.name)}</small></div><div><strong>${cert.expiresAt ? `${cert.daysRemaining} days` : "Provisioning"}</strong><small>${cert.expiresAt ? `Expires ${formatTime(cert.expiresAt)}` : "Waiting for Caddy certificate"}</small></div><div><strong>${escapeHtml(cert.issuer || "Not issued yet")}</strong><small>${cert.updatedAt ? `Certificate updated ${formatTime(cert.updatedAt)}` : "Automatic HTTPS enabled"}</small></div></article>`).join("") : '<p class="quiet-state">No automatic HTTPS domains are configured.</p>';
+  $("#certificate-list").innerHTML = data.certificates.length ? data.certificates.map(cert => `<article class="data-row"><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span><div><strong>${escapeHtml(cert.domain)}</strong><small>${escapeHtml(cert.kind)} · ${escapeHtml(cert.name)}</small></div><div><strong>${cert.expiresAt ? `${cert.daysRemaining} days` : "Not detected"}</strong><small>${cert.expiresAt ? `Expires ${formatTime(cert.expiresAt)}` : "Caddy has not stored a certificate"}</small></div><div><strong>${escapeHtml(cert.issuer || "No issuer detected")}</strong><small>${cert.updatedAt ? `Certificate updated ${formatTime(cert.updatedAt)}` : "Automatic HTTPS is configured"}</small></div></article>`).join("") : '<p class="quiet-state">No automatic HTTPS domains are configured.</p>';
 }
 
 function renderLogs() {
@@ -124,7 +124,7 @@ async function loadFeatureView() {
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
 }
 function render() {
-  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length;
+  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
   document.querySelectorAll("nav [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);

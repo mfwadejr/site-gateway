@@ -60,6 +60,7 @@ The existing Node application remains responsible for authentication, the wizard
 - Infrastructure-focused live health for Caddy, HTTP, HTTPS automation, and persistent storage (refined in v0.4.0-alpha.2)
 - Confirmed port health, clearer storage reporting, local service icons, and resilient dashboard controls (v0.4.0-alpha.3)
 - Certificate inventory and expiration alerts, proxy upstream monitoring, and filtered rotating access logs (v0.5.0-alpha.1)
+- Corrected certificate wording and standardized dashboard, card, and log-control spacing (v0.5.0-alpha.2)
 
 ### Next alpha milestone — visibility and certificate health
 
