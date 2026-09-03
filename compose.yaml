@@ -10,6 +10,8 @@ services:
       SITE_PORT_MIN: 9000
       SITE_PORT_MAX: 9099
       DATA_DIR: /data
+      BACKUP_DIR: /backups
+      BACKUP_PASSWORD: ""
       PUID: 1000
       PGID: 1000
       ACME_EMAIL: ""
@@ -20,3 +22,4 @@ services:
       - "9000-9099:9000-9099"
     volumes:
       - ./data:/data
+      - ./backups:/backups

@@ -24,10 +24,12 @@
   <Config Name="HTTPS Gateway" Target="443" Default="443" Mode="tcp" Description="Public HTTPS traffic" Type="Port" Display="always" Required="true" Mask="false">443</Config>
   <Config Name="Site ports" Target="9000-9099" Default="9000-9099" Mode="tcp" Description="Ports available for hosted sites" Type="Port" Display="always" Required="true" Mask="false">9000-9099</Config>
   <Config Name="Data" Target="/data" Default="/mnt/user/appdata/site-gateway" Mode="rw" Description="Persistent sites and configuration" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/site-gateway</Config>
+  <Config Name="Backups" Target="/backups" Default="/mnt/user/backups/site-gateway" Mode="rw" Description="Scheduled backup destination; use a separately protected share when possible" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/backups/site-gateway</Config>
   <Config Name="Admin username" Target="ADMIN_USERNAME" Default="admin" Mode="" Description="Dashboard login name" Type="Variable" Display="always" Required="true" Mask="false">admin</Config>
   <Config Name="Admin password" Target="ADMIN_PASSWORD" Default="" Mode="" Description="Use a long, unique password" Type="Variable" Display="always" Required="true" Mask="true"/>
   <Config Name="Session secret" Target="SESSION_SECRET" Default="" Mode="" Description="At least 32 random characters" Type="Variable" Display="advanced" Required="true" Mask="true"/>
   <Config Name="Certificate email" Target="ACME_EMAIL" Default="" Mode="" Description="Email used for certificate account notices" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Scheduled backup password" Target="BACKUP_PASSWORD" Default="" Mode="" Description="Optional password used when scheduled-backup encryption is enabled" Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="User ID" Target="PUID" Default="99" Mode="" Description="Host user ID for appdata ownership" Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
   <Config Name="Group ID" Target="PGID" Default="100" Mode="" Description="Host group ID for appdata ownership" Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
   <Config Name="Minimum site port" Target="SITE_PORT_MIN" Default="9000" Mode="" Description="Lowest available site port" Type="Variable" Display="advanced" Required="true" Mask="false">9000</Config>

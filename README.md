@@ -45,7 +45,15 @@ Site Gateway gives a home server one clear control panel for two jobs: publishin
 - Caddy gateway on ports 80 and 443
 - Domain routing and automatic HTTPS for hosted sites
 - Reverse proxy hosts for containers, LAN services, and applications
+- Redirect Hosts with 301, 302, 307, and 308 responses and optional path preservation
+- Reusable Access Lists with LAN/CIDR rules and a themed username/password sign-in page
+- Collapsible Proxy Host controls for custom locations, headers, compression, upstream TLS, health expectations, and expert Caddy snippets
+- Public, internal, HTTP-only, and uploaded custom-certificate modes
 - Automatic certificate renewal and HTTP-to-HTTPS redirects
+- Configurable themed welcome, 404, redirect, no-response, and custom-HTML fallback pages
+- Integrated, searchable documentation with real-world setup examples
+- Administrator workspace for users, gateway defaults, security guidance, and backup/restore
+- Downloadable, importable, scheduled, retained, and optionally encrypted `.sgbackup` archives
 - Replace a site's files without recreating it
 - Delete sites and their stored files
 - Persistent configuration and uploads under `/data`
@@ -186,6 +194,8 @@ After confirming the sites appear, you may keep the legacy host folder or rename
 | `SITE_PORT_MIN` | `9000` | Lowest allowed site port |
 | `SITE_PORT_MAX` | `9099` | Highest allowed site port |
 | `DATA_DIR` | `/data` | Persistent state location |
+| `BACKUP_DIR` | `/data/backups` | Stored and scheduled backup location; mount `/backups` separately when possible |
+| `BACKUP_PASSWORD` | empty | Encryption password used only when encrypted scheduled backups are enabled |
 | `PUID` | `1000` | UID that owns and runs against persistent files |
 | `PGID` | `1000` | GID that owns and runs against persistent files |
 | `ACME_EMAIL` | empty | Optional certificate account email |
@@ -194,7 +204,9 @@ At startup, the container automatically creates `/data/sites` and `/data/.upload
 
 ## Backup and update
 
-Back up the entire mounted `data` directory. It contains `sites.json` and every uploaded site.
+Open **Administration → Backup & restore** to create a Configuration or Complete backup. Manual backups download to the browser. Scheduled backups are stored under `BACKUP_DIR`, retained according to the interface setting, and can use AES-256-GCM encryption when `BACKUP_PASSWORD` is configured. A Complete backup contains hosted files, local icons, custom fallback assets, and uploaded certificates; logs are optional.
+
+Before restoring, Site Gateway checks the archive manifest and creates a complete pre-restore safety backup. It then reloads persisted state and validates the resulting Caddy configuration. Store important backups on a separate disk or NAS share—copies in the same appdata volume do not protect against disk failure.
 
 To rebuild after pulling a new version:
 
@@ -206,7 +218,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.6.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.6.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.7.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.7.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ### Monitoring in v0.5.0-alpha.1
 
@@ -224,6 +236,14 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 - Standard Users have read-only access to dashboard health, hosted sites, proxy hosts, certificates, and logs. Per-host ownership and granular permissions are planned for a later release.
 - Passwords are stored as salted scrypt hashes in `/data/users.json`; plaintext passwords are never written to disk.
 - Site Gateway prevents removal of the final active Administrator and blocks users from disabling or archiving their own active session.
+
+### Gateway management in v0.7.0-alpha.1
+
+- Administration and Documentation appear directly above the installed-version divider; Administration is role-restricted.
+- Proxy Hosts support multiple custom locations using `path | destination | strip-or-preserve`, request/response headers, upstream TLS controls, custom certificates, Access Lists, compression, and configurable health checks.
+- Access List credentials are stored as salted password hashes and presented through a Site Gateway-themed login form. Network rules accept exact IP addresses, CIDR ranges, or Caddy's `private_ranges` token.
+- Redirect Hosts and the configurable Default Site compile to native Caddy routes and are validated before reload.
+- Expert Caddy snippets are administrator-only, size-limited, screened against global directives, and validated as part of the complete generated configuration.
 
 ## Security notes
 

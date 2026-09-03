@@ -20,10 +20,16 @@ const sitesDir = path.join(dataDir, "sites");
 const configPath = path.join(dataDir, "sites.json");
 const proxiesPath = path.join(dataDir, "proxies.json");
 const usersPath = path.join(dataDir, "users.json");
+const redirectsPath = path.join(dataDir, "redirects.json");
+const accessListsPath = path.join(dataDir, "access-lists.json");
+const settingsPath = path.join(dataDir, "settings.json");
 const uploadDir = path.join(dataDir, ".uploads");
 const caddyDir = path.join(dataDir, "caddy");
 const iconsDir = path.join(dataDir, "icons");
 const logsDir = path.join(dataDir, "logs");
+const backupsDir = path.resolve(process.env.BACKUP_DIR || path.join(dataDir, "backups"));
+const defaultSiteDir = path.join(dataDir, "default-site");
+const customCertificatesDir = path.join(dataDir, "custom-certificates");
 const accessLogPath = path.join(logsDir, "access.json");
 const activityLogPath = path.join(logsDir, "activity.jsonl");
 const certificateDir = path.join(caddyDir, "data", "caddy", "certificates");
@@ -37,10 +43,14 @@ const maxPort = numberEnv("SITE_PORT_MAX", 9099);
 const adminUser = process.env.ADMIN_USERNAME || "admin";
 const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
 const sessionSecret = process.env.SESSION_SECRET || crypto.createHash("sha256").update(`${adminUser}:${adminPassword}`).digest("hex");
+const scheduledBackupPassword = process.env.BACKUP_PASSWORD || "";
 const activeServers = new Map();
 let sites = [];
 let proxies = [];
 let users = [];
+let redirects = [];
+let accessLists = [];
+let settings = {};
 let gatewayError = null;
 let lastGatewayReload = null;
 let caddyVersion = "Unknown";
@@ -134,8 +144,27 @@ async function saveUsers() {
   await fsp.rename(nextPath, usersPath);
 }
 
+async function atomicJson(filename, value, mode = 0o600) {
+  const nextPath = `${filename}.next`;
+  await fsp.writeFile(nextPath, JSON.stringify(value, null, 2), { mode });
+  await fsp.rename(nextPath, filename);
+}
+
+const saveRedirects = () => atomicJson(redirectsPath, redirects);
+const saveAccessLists = () => atomicJson(accessListsPath, accessLists);
+const saveSettings = () => atomicJson(settingsPath, settings);
+
+async function readJson(filename, fallback) {
+  try { return JSON.parse(await fsp.readFile(filename, "utf8")); }
+  catch (error) {
+    if (error.code !== "ENOENT") console.warn(`Could not read ${path.basename(filename)}:`, error.message);
+    await atomicJson(filename, fallback);
+    return fallback;
+  }
+}
+
 async function loadSites() {
-  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(logsDir, { recursive: true })]);
+  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(logsDir, { recursive: true }), fsp.mkdir(backupsDir, { recursive: true }), fsp.mkdir(defaultSiteDir, { recursive: true }), fsp.mkdir(customCertificatesDir, { recursive: true })]);
   try {
     sites = JSON.parse(await fsp.readFile(configPath, "utf8"));
   } catch (error) {
@@ -162,6 +191,14 @@ async function loadSites() {
     users = [{ id: crypto.randomUUID(), username: adminUser.toLowerCase(), displayName: "Administrator", role: "administrator", status: "active", password: await passwordRecord(adminPassword), source: "bootstrap", createdAt: now, updatedAt: now, lastLoginAt: null }];
     await saveUsers();
   }
+  redirects = await readJson(redirectsPath, []);
+  accessLists = await readJson(accessListsPath, []);
+  const defaultSettings = {
+    defaultSite: { mode: "themed404", redirectUrl: "", redirectCode: 302, preservePath: true, title: "Route not found", message: "The gateway is responding, but this address has not been configured.", customHtml: "" },
+    backups: { enabled: false, frequency: "daily", hour: 2, retention: 7, type: "configuration", includeLogs: false, encrypt: false, lastRunAt: null, lastStatus: null }
+  };
+  const storedSettings = await readJson(settingsPath, defaultSettings);
+  settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) } };
 }
 
 function normalizeDomain(value) {
@@ -171,7 +208,7 @@ function normalizeDomain(value) {
 function validateDomain(domain, exceptId) {
   if (!domain) return null;
   if (domain.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) return "Enter a valid public domain such as app.example.com.";
-  if ([...sites, ...proxies].some(item => item.domain === domain && item.id !== exceptId)) return "That domain is already assigned.";
+  if ([...sites, ...proxies, ...redirects].some(item => item.domain === domain && item.id !== exceptId)) return "That domain is already assigned.";
   return null;
 }
 
@@ -185,8 +222,107 @@ function validateTarget(value) {
   }
 }
 
+function cleanHeaders(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 30).map(item => ({ name: String(item.name || "").trim(), value: String(item.value || "").trim() }))
+    .filter(item => /^[A-Za-z0-9-]{1,80}$/.test(item.name) && item.value.length <= 500);
+}
+
+function cleanLocations(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).map(item => {
+    const location = { path: String(item.path || "").trim(), target: validateTarget(item.target), stripPrefix: Boolean(item.stripPrefix), requestHeaders: cleanHeaders(item.requestHeaders), upstreamTlsServerName: String(item.upstreamTlsServerName || "").trim().slice(0, 253), upstreamTlsInsecure: Boolean(item.upstreamTlsInsecure) };
+    if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*\*?$/.test(location.path)) throw Object.assign(new Error("Custom Location paths must start with / and may end with *."), { status: 400 });
+    return location;
+  });
+}
+
+function cleanCustomConfig(value) {
+  const config = String(value || "").trim();
+  if (config.length > 20000) throw Object.assign(new Error("Custom Caddy configuration must be 20 KB or less."), { status: 400 });
+  if (/(^|\n)\s*(?:\{|admin\b|storage\b|import\b|persist_config\b)/i.test(config)) throw Object.assign(new Error("Global blocks, imports, and Caddy administration settings are not allowed here."), { status: 400 });
+  return config;
+}
+
+function applyAdvancedSettings(item, body) {
+  if (body.accessListId !== undefined) item.accessListId = String(body.accessListId || "");
+  if (body.compression !== undefined) item.compression = ["off", "gzip", "automatic"].includes(body.compression) ? body.compression : "automatic";
+  if (body.hstsSubdomains !== undefined) item.hstsSubdomains = Boolean(body.hstsSubdomains);
+  if (body.requestHeaders !== undefined) item.requestHeaders = cleanHeaders(body.requestHeaders);
+  if (body.responseHeaders !== undefined) item.responseHeaders = cleanHeaders(body.responseHeaders);
+  if (body.upstreamTlsServerName !== undefined) item.upstreamTlsServerName = String(body.upstreamTlsServerName || "").trim().slice(0, 253);
+  if (body.upstreamTlsInsecure !== undefined) item.upstreamTlsInsecure = Boolean(body.upstreamTlsInsecure);
+  if (body.healthEnabled !== undefined) item.healthEnabled = Boolean(body.healthEnabled);
+  if (body.healthPath !== undefined) item.healthPath = /^\//.test(body.healthPath || "") ? String(body.healthPath).slice(0, 500) : "/";
+  if (body.healthMethod !== undefined) item.healthMethod = ["GET", "HEAD"].includes(body.healthMethod) ? body.healthMethod : "GET";
+  if (body.healthExpected !== undefined) {
+    const expected = String(body.healthExpected || "200-499").trim().slice(0, 80);
+    if (!/^\d{3}(?:\s*-\s*\d{3})?(?:\s*,\s*\d{3}(?:\s*-\s*\d{3})?)*$/.test(expected)) throw Object.assign(new Error("Expected status must contain HTTP codes or ranges, such as 200,204 or 200-399."), { status: 400 });
+    item.healthExpected = expected;
+  }
+  if (body.healthTimeoutSeconds !== undefined) item.healthTimeoutSeconds = Math.min(Math.max(Number(body.healthTimeoutSeconds) || 4, 1), 60);
+  if (body.customConfig !== undefined) item.customConfig = cleanCustomConfig(body.customConfig);
+  if (body.locations !== undefined) item.locations = cleanLocations(body.locations);
+}
+
+function expectedStatusMatches(status, specification = "200-499") {
+  return String(specification).split(",").some(part => {
+    const value = part.trim();
+    if (/^\d{3}$/.test(value)) return status === Number(value);
+    const match = value.match(/^(\d{3})\s*-\s*(\d{3})$/);
+    return match ? status >= Number(match[1]) && status <= Number(match[2]) : false;
+  });
+}
+
 function caddySiteAddress(item) {
   return item.tls === "http" ? `http://${item.domain}` : item.domain;
+}
+
+function caddyQuote(value) {
+  return `"${String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", " ")}"`;
+}
+
+function accessDirectives(accessListId) {
+  const list = accessLists.find(item => item.id === accessListId && item.enabled !== false);
+  if (!list) return [];
+  const output = [];
+  if (list.deniedNetworks?.length) output.push(`  @blocked-${list.id} remote_ip ${list.deniedNetworks.join(" ")}`, `  abort @blocked-${list.id}`);
+  if (list.networks?.length) {
+    output.push(`  @outside-${list.id} not remote_ip ${list.networks.join(" ")}`, `  abort @outside-${list.id}`);
+  }
+  if (list.credentials?.length) {
+    output.push(`  @protected-${list.id} not path /_site-gateway/*`, `  forward_auth @protected-${list.id} 127.0.0.1:${adminPort} {`, `    uri /api/access-check?list=${list.id}`, "  }", `  handle /_site-gateway/* {`, `    reverse_proxy 127.0.0.1:${adminPort}`, "  }");
+  }
+  return output;
+}
+
+function commonHostDirectives(item) {
+  const output = [...accessDirectives(item.accessListId)];
+  if (item.compression !== "off") output.push(item.compression === "gzip" ? "  encode gzip" : "  encode zstd gzip");
+  for (const header of item.responseHeaders || []) output.push(`  header ${header.name} ${caddyQuote(header.value)}`);
+  if (item.hsts && item.tls !== "http") output.push(`  header Strict-Transport-Security ${caddyQuote(`max-age=31536000${item.hstsSubdomains ? "; includeSubDomains" : ""}`)}`);
+  if (item.tls === "internal") output.push("  tls internal");
+  if (item.tls === "custom" && item.certificatePath && item.keyPath) output.push(`  tls ${caddyQuote(item.certificatePath)} ${caddyQuote(item.keyPath)}`);
+  return output;
+}
+
+function proxyBlock(target, item, indent = "  ") {
+  const output = [`${indent}reverse_proxy ${target} {`];
+  const timeout = Math.min(Math.max(Number(item.healthTimeoutSeconds) || 4, 1), 60);
+  if (item.upstreamTlsServerName) output.push(`${indent}  transport http {`, `${indent}    tls_server_name ${item.upstreamTlsServerName}`, ...(item.upstreamTlsInsecure ? [`${indent}    tls_insecure_skip_verify`] : []), `${indent}    response_header_timeout ${timeout}s`, `${indent}  }`);
+  for (const header of item.requestHeaders || []) output.push(`${indent}  header_up ${header.name} ${caddyQuote(header.value)}`);
+  output.push(`${indent}}`);
+  return output;
+}
+
+async function writeDefaultSitePage() {
+  const selected = settings.defaultSite || {};
+  const title = String(selected.title || (selected.mode === "welcome" ? "Gateway ready" : "Route not found")).replace(/[<>]/g, "");
+  const message = String(selected.message || "The gateway is responding, but this address has not been configured.").replace(/[<>]/g, "");
+  const html = selected.mode === "custom" && selected.customHtml
+    ? String(selected.customHtml)
+    : `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><title>${title}</title><style>:root{color-scheme:dark light;--bg:#08101d;--card:#101a2b;--line:#25344c;--text:#eef4ff;--muted:#95a4ba;--green:#62e6a7}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#163829 0,transparent 42%),var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif}.card{width:min(620px,100%);padding:44px;border:1px solid var(--line);border-radius:22px;background:color-mix(in srgb,var(--card) 94%,transparent);box-shadow:0 28px 80px #0006}.mark{width:54px;height:54px;border-radius:15px;display:grid;place-items:center;background:#17352a;color:var(--green);font-weight:900}.eyebrow{margin:28px 0 10px;color:var(--green);font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}h1{margin:0;font-size:clamp(34px,7vw,56px);letter-spacing:-.05em;line-height:1.02}p{color:var(--muted);font-size:17px;line-height:1.65;margin:20px 0 0}.foot{padding-top:28px;margin-top:30px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}@media(prefers-color-scheme:light){:root{--bg:#f3f6fa;--card:#fff;--line:#d6dfeb;--text:#132033;--muted:#637188;--green:#138a5b}}</style></head><body><main class="card"><div class="mark">SG</div><div class="eyebrow">Site Gateway</div><h1>${title}</h1><p>${message}</p><div class="foot">Host. Proxy. Secure.</div></main></body></html>`;
+  await fsp.writeFile(path.join(defaultSiteDir, "index.html"), html);
 }
 
 function renderCaddyfile() {
@@ -194,22 +330,38 @@ function renderCaddyfile() {
   const lines = ["{", "  admin localhost:2019", "  persist_config off"];
   if (email) lines.push(`  email ${email}`);
   const logging = ["  log {", `    output file ${accessLogPath} {`, "      roll_size 10mb", "      roll_keep 5", "      roll_keep_for 168h", "      roll_uncompressed", "    }", "    format json", "  }"];
-  lines.push("}", "", ":80 {", ...logging, "  respond \"Site Gateway is ready.\" 404", "}");
+  lines.push("}", "", ":80 {", ...logging);
+  const defaultSite = settings.defaultSite || {};
+  if (defaultSite.mode === "abort") lines.push("  abort");
+  else if (defaultSite.mode === "redirect" && defaultSite.redirectUrl) lines.push(`  redir ${caddyQuote(`${defaultSite.redirectUrl}${defaultSite.preservePath ? "{uri}" : ""}`)} ${[301, 302, 307, 308].includes(Number(defaultSite.redirectCode)) ? Number(defaultSite.redirectCode) : 302}`);
+  else lines.push(`  root * ${defaultSiteDir}`, "  rewrite * /index.html", `  file_server {`, `    status ${defaultSite.mode === "welcome" ? 200 : 404}`, "  }");
+  lines.push("}");
   for (const site of sites.filter(item => item.enabled && item.domain)) {
-    lines.push("", `${caddySiteAddress(site)} {`, ...logging, `  root * ${path.join(sitesDir, site.id)}`, "  encode zstd gzip", "  file_server");
-    if (site.hsts && site.tls !== "http") lines.push('  header Strict-Transport-Security "max-age=31536000; includeSubDomains"');
+    lines.push("", `${caddySiteAddress(site)} {`, ...logging, ...commonHostDirectives(site), `  root * ${path.join(sitesDir, site.id)}`, "  file_server");
     lines.push("}");
   }
   for (const proxy of proxies.filter(item => item.enabled && item.domain)) {
-    lines.push("", `${caddySiteAddress(proxy)} {`, ...logging, `  reverse_proxy ${proxy.target}`);
-    if (proxy.hsts && proxy.tls !== "http") lines.push('  header Strict-Transport-Security "max-age=31536000; includeSubDomains"');
+    lines.push("", `${caddySiteAddress(proxy)} {`, ...logging, ...commonHostDirectives(proxy));
+    for (const location of proxy.locations || []) {
+      lines.push(`  ${location.stripPrefix ? "handle_path" : "handle"} ${location.path} {`, ...proxyBlock(location.target, location, "    "), "  }");
+    }
+    if ((proxy.locations || []).length) lines.push("  handle {", ...proxyBlock(proxy.target, proxy, "    "), "  }");
+    else lines.push(...proxyBlock(proxy.target, proxy));
+    if (proxy.customConfig) lines.push("  # Administrator-provided custom configuration", ...String(proxy.customConfig).split("\n").map(line => `  ${line}`));
     lines.push("}");
+  }
+  for (const redirect of redirects.filter(item => item.enabled && item.domain)) {
+    const target = `${redirect.target}${redirect.preservePath ? "{uri}" : ""}`;
+    lines.push("", `${caddySiteAddress(redirect)} {`, ...logging, ...commonHostDirectives(redirect), `  redir ${caddyQuote(target)} ${redirect.code || 302}`, "}");
   }
   return `${lines.join("\n")}\n`;
 }
 
 async function syncCaddy() {
   const nextPath = `${caddyfilePath}.next`;
+  const previous = await fsp.readFile(caddyfilePath, "utf8").catch(() => null);
+  const previousDefaultPage = await fsp.readFile(path.join(defaultSiteDir, "index.html")).catch(() => null);
+  await writeDefaultSitePage();
   await fsp.writeFile(nextPath, renderCaddyfile());
   try {
     await execFileAsync("caddy", ["fmt", "--overwrite", nextPath]);
@@ -219,9 +371,19 @@ async function syncCaddy() {
     gatewayError = null;
     lastGatewayReload = new Date().toISOString();
   } catch (error) {
+    const rejectedReason = error.stderr || error.message;
+    let rollbackSucceeded = false;
     await fsp.rm(nextPath, { force: true });
-    gatewayError = error.stderr || error.message;
-    throw Object.assign(new Error(`Gateway configuration was rejected: ${gatewayError}`), { status: 400 });
+    if (previous !== null) {
+      await fsp.writeFile(caddyfilePath, previous);
+      rollbackSucceeded = await execFileAsync("caddy", ["reload", "--config", caddyfilePath, "--adapter", "caddyfile"]).then(() => true).catch(() => false);
+    }
+    if (previousDefaultPage !== null) await fsp.writeFile(path.join(defaultSiteDir, "index.html"), previousDefaultPage);
+    try {
+      sites = JSON.parse(await fsp.readFile(configPath, "utf8")); proxies = JSON.parse(await fsp.readFile(proxiesPath, "utf8")); redirects = JSON.parse(await fsp.readFile(redirectsPath, "utf8")); accessLists = JSON.parse(await fsp.readFile(accessListsPath, "utf8")); settings = JSON.parse(await fsp.readFile(settingsPath, "utf8"));
+    } catch { /* Startup may not have persisted every collection yet. */ }
+    gatewayError = rollbackSucceeded ? null : rejectedReason;
+    throw Object.assign(new Error(`Gateway configuration was rejected: ${rejectedReason}${rollbackSucceeded ? " The previous working configuration remains active." : ""}`), { status: 400 });
   }
 }
 
@@ -235,8 +397,10 @@ function publicSite(site) {
   return { ...site, status: siteStatus(site), url: `http://${site.host || "localhost"}:${site.port}` };
 }
 
-function publicProxy(proxy) {
-  return { ...proxy, status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled", upstream: upstreamHealth.get(proxy.id) || null };
+function publicProxy(proxy, includeAdvanced = false) {
+  const { certificatePath, keyPath, ...safe } = proxy;
+  if (!includeAdvanced) { delete safe.customConfig; delete safe.requestHeaders; }
+  return { ...safe, certificatePath: certificatePath ? "installed" : null, hasCustomCertificate: Boolean(certificatePath && keyPath), status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled", upstream: upstreamHealth.get(proxy.id) || null };
 }
 
 async function walkFiles(directory) {
@@ -279,15 +443,18 @@ async function certificateInventory() {
 
 async function checkProxy(proxy) {
   if (!proxy.enabled) return { status: "disabled", checkedAt: new Date().toISOString(), history: [] };
+  if (proxy.healthEnabled === false) return { status: "unmonitored", checkedAt: null, history: [] };
   const started = performance.now();
   let result;
   try {
-    const response = await fetch(proxy.target, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(4000), headers: { "user-agent": "Site-Gateway-Health/1.0" } });
+    const target = new URL(proxy.healthPath || "/", `${proxy.target}/`).toString();
+    const response = await fetch(target, { method: proxy.healthMethod || "GET", redirect: "manual", signal: AbortSignal.timeout((proxy.healthTimeoutSeconds || 4) * 1000), headers: { "user-agent": "Site-Gateway-Health/1.0" } });
     await response.body?.cancel();
     const responseMs = Math.round(performance.now() - started);
-    result = { status: response.status < 500 ? "healthy" : "unhealthy", httpStatus: response.status, responseMs, checkedAt: new Date().toISOString(), error: response.status >= 500 ? `HTTP ${response.status}` : null };
+    const accepted = expectedStatusMatches(response.status, proxy.healthExpected);
+    result = { status: accepted ? "healthy" : "unhealthy", httpStatus: response.status, responseMs, checkedAt: new Date().toISOString(), error: accepted ? null : `Expected ${proxy.healthExpected || "200-499"}; received HTTP ${response.status}` };
   } catch (error) {
-    result = { status: "unhealthy", httpStatus: null, responseMs: Math.round(performance.now() - started), checkedAt: new Date().toISOString(), error: error.name === "TimeoutError" ? "Timed out after 4 seconds" : error.message };
+    result = { status: "unhealthy", httpStatus: null, responseMs: Math.round(performance.now() - started), checkedAt: new Date().toISOString(), error: error.name === "TimeoutError" ? `Timed out after ${proxy.healthTimeoutSeconds || 4} seconds` : error.message };
   }
   const previous = upstreamHealth.get(proxy.id);
   result.history = [{ status: result.status, responseMs: result.responseMs, httpStatus: result.httpStatus, checkedAt: result.checkedAt }, ...(previous?.history || [])].slice(0, 20);
@@ -496,6 +663,97 @@ async function installUpload(site, file) {
   }
 }
 
+const backupFiles = ["sites.json", "proxies.json", "redirects.json", "access-lists.json", "users.json", "settings.json"];
+
+async function protectBackup(buffer, password) {
+  if (!password) return buffer;
+  const salt = crypto.randomBytes(16), iv = crypto.randomBytes(12), key = await scryptAsync(password, salt, 32), cipher = crypto.createCipheriv("aes-256-gcm", key, iv), encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
+  return Buffer.concat([Buffer.from("SGBK1"), salt, iv, cipher.getAuthTag(), encrypted]);
+}
+
+async function openBackup(filename, password = "") {
+  let buffer = await fsp.readFile(filename), encrypted = false;
+  if (buffer.subarray(0, 5).toString() === "SGBK1") {
+    encrypted = true; if (!password) throw Object.assign(new Error("This backup is encrypted. Enter its password."), { status: 400 });
+    try { const salt = buffer.subarray(5, 21), iv = buffer.subarray(21, 33), tag = buffer.subarray(33, 49), key = await scryptAsync(password, salt, 32), decipher = crypto.createDecipheriv("aes-256-gcm", key, iv); decipher.setAuthTag(tag); buffer = Buffer.concat([decipher.update(buffer.subarray(49)), decipher.final()]); }
+    catch { throw Object.assign(new Error("The backup password is incorrect or the file is damaged."), { status: 400 }); }
+  }
+  return { zip: new AdmZip(buffer), encrypted };
+}
+
+async function createBackup(type = "configuration", includeLogs = false, prefix = "site-gateway-backup", password = "") {
+  const safeType = type === "complete" ? "complete" : "configuration";
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `${prefix}-${stamp}.sgbackup`;
+  const destination = path.join(backupsDir, filename);
+  const zip = new AdmZip();
+  const manifest = { format: 1, product: "Site Gateway", appVersion, createdAt: new Date().toISOString(), type: safeType, includeLogs: Boolean(includeLogs), encrypted: Boolean(password), files: [] };
+  for (const name of backupFiles) {
+    const source = path.join(dataDir, name);
+    if (fs.existsSync(source)) { const value = await fsp.readFile(source); zip.addFile(`config/${name}`, value); manifest.files.push(`config/${name}`); }
+  }
+  if (safeType === "complete") {
+    for (const [directory, archivePath] of [[sitesDir, "sites"], [iconsDir, "icons"], [defaultSiteDir, "default-site"], [customCertificatesDir, "custom-certificates"]]) {
+      if (fs.existsSync(directory)) zip.addLocalFolder(directory, archivePath);
+    }
+  }
+  if (includeLogs && fs.existsSync(logsDir)) zip.addLocalFolder(logsDir, "logs");
+  manifest.files = zip.getEntries().filter(entry => !entry.isDirectory).map(entry => entry.entryName);
+  manifest.checksums = Object.fromEntries(zip.getEntries().filter(entry => !entry.isDirectory).map(entry => [entry.entryName, crypto.createHash("sha256").update(entry.getData()).digest("hex")]));
+  zip.addFile("manifest.json", Buffer.from(JSON.stringify(manifest, null, 2)));
+  await fsp.writeFile(destination, await protectBackup(zip.toBuffer(), password));
+  recordActivity(`${safeType === "complete" ? "Complete" : "Configuration"} backup created.`);
+  return { filename, path: destination, ...manifest, size: (await fsp.stat(destination)).size };
+}
+
+async function listBackups() {
+  const names = (await fsp.readdir(backupsDir)).filter(name => name.endsWith(".sgbackup"));
+  return Promise.all(names.map(async filename => {
+    const stat = await fsp.stat(path.join(backupsDir, filename));
+    let manifest = {}; const header = Buffer.alloc(5); const handle = await fsp.open(path.join(backupsDir, filename), "r"); await handle.read(header, 0, 5, 0); await handle.close(); const encrypted = header.toString() === "SGBK1";
+    if (!encrypted) try { manifest = JSON.parse(new AdmZip(path.join(backupsDir, filename)).readAsText("manifest.json")); } catch { /* Report unreadable archive in UI. */ }
+    return { filename, size: stat.size, createdAt: manifest.createdAt || stat.mtime.toISOString(), type: encrypted ? "encrypted" : manifest.type || "unknown", appVersion: encrypted ? "protected" : manifest.appVersion || "unknown", valid: encrypted || Boolean(manifest.format), encrypted };
+  })).then(items => items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+}
+
+async function restoreBackup(filename, password = "", createSafetyBackup = true) {
+  const source = path.resolve(backupsDir, filename);
+  if (!source.startsWith(`${backupsDir}${path.sep}`) || !filename.endsWith(".sgbackup")) throw Object.assign(new Error("Invalid backup selection."), { status: 400 });
+  const { zip } = await openBackup(source, password); const manifest = JSON.parse(zip.readAsText("manifest.json") || "null");
+  if (!manifest || manifest.product !== "Site Gateway" || manifest.format !== 1) throw Object.assign(new Error("This is not a supported Site Gateway backup."), { status: 400 });
+  for (const [name, expected] of Object.entries(manifest.checksums || {})) {
+    const entry = zip.getEntry(name); if (!entry || crypto.createHash("sha256").update(entry.getData()).digest("hex") !== expected) throw Object.assign(new Error(`Backup integrity check failed for ${name}.`), { status: 400 });
+  }
+  const safetyBackup = createSafetyBackup ? await createBackup("complete", true, "pre-restore") : null;
+  const staging = path.join(uploadDir, `restore-${crypto.randomUUID()}`); await fsp.mkdir(staging, { recursive: true });
+  try {
+    for (const entry of zip.getEntries()) {
+      if (entry.entryName === "manifest.json") continue;
+      const target = path.resolve(staging, entry.entryName);
+      if (!target.startsWith(`${staging}${path.sep}`)) throw Object.assign(new Error("Unsafe path in backup."), { status: 400 });
+      if (entry.isDirectory) await fsp.mkdir(target, { recursive: true }); else { await fsp.mkdir(path.dirname(target), { recursive: true }); await fsp.writeFile(target, entry.getData()); }
+    }
+    for (const name of backupFiles) {
+      const candidate = path.join(staging, "config", name);
+      if (fs.existsSync(candidate)) { JSON.parse(await fsp.readFile(candidate, "utf8")); await fsp.copyFile(candidate, path.join(dataDir, name)); }
+    }
+    if (manifest.type === "complete") for (const name of ["sites", "icons", "default-site", "custom-certificates"]) {
+      const candidate = path.join(staging, name); if (!fs.existsSync(candidate)) continue;
+      const destination = path.join(dataDir, name); await fsp.rm(destination, { recursive: true, force: true }); await fsp.cp(candidate, destination, { recursive: true });
+    }
+    await Promise.all([...activeServers.keys()].map(stopSite)); sites = []; proxies = []; users = []; redirects = []; accessLists = []; settings = {}; recentActivity.splice(0); await loadSites();
+    for (const site of sites.filter(item => item.enabled)) await startSite(site);
+    await syncCaddy(); recordActivity(`Backup ${filename} restored.`);
+  } catch (error) {
+    if (safetyBackup) {
+      try { await restoreBackup(safetyBackup.filename, "", false); recordActivity(`Restore of ${filename} failed; the pre-restore state was recovered.`, "error"); }
+      catch (rollbackError) { error.message = `${error.message} Automatic rollback also failed: ${rollbackError.message}`; }
+    }
+    throw error;
+  } finally { await fsp.rm(staging, { recursive: true, force: true }); }
+  return manifest;
+}
+
 await loadSites();
 try {
   const result = await execFileAsync("caddy", ["version"]);
@@ -516,6 +774,7 @@ for (let attempt = 0; attempt < 10; attempt++) {
 
 const app = express();
 const upload = multer({ dest: uploadDir, limits: { fileSize: 250 * 1024 * 1024, files: 1 } });
+const certificateUpload = multer({ dest: uploadDir, limits: { fileSize: 5 * 1024 * 1024, files: 2 } });
 app.disable("x-powered-by");
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -549,6 +808,33 @@ app.post("/api/login", async (req, res, next) => {
 app.post("/api/logout", (req, res) => {
   res.setHeader("Set-Cookie", "webserver_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
   res.json({ ok: true });
+});
+function accessSession(req, listId) {
+  const token = cookieMap(req.headers.cookie).site_gateway_access; if (!token) return null;
+  const [storedList, username, expires, signature] = token.split(".");
+  if (storedList !== listId || Number(expires) <= Date.now() || !safeEqual(signature || "", sign(`${storedList}.${username}.${expires}`))) return null;
+  return username;
+}
+app.get("/api/access-check", (req, res) => {
+  const listId = String(req.query.list || ""), list = accessLists.find(item => item.id === listId && item.enabled !== false);
+  if (!list || !list.credentials?.length) return res.status(204).end();
+  const username = accessSession(req, listId); if (username) { res.setHeader("X-Site-Gateway-User", username); return res.status(204).end(); }
+  const original = String(req.headers["x-forwarded-uri"] || "/"); const safeReturn = original.startsWith("/") && !original.startsWith("//") ? original : "/";
+  res.redirect(302, `/_site-gateway/login?list=${encodeURIComponent(listId)}&return=${encodeURIComponent(safeReturn)}`);
+});
+app.get("/_site-gateway/login", (req, res) => {
+  const listId = String(req.query.list || ""), list = accessLists.find(item => item.id === listId && item.enabled !== false);
+  if (!list) return res.status(404).send("Access policy not found."); const safeReturn = String(req.query.return || "/").startsWith("/") ? String(req.query.return || "/") : "/";
+  res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><title>Sign in · Site Gateway</title><style>:root{color-scheme:dark light;--bg:#08101d;--panel:#101a2b;--line:#25344c;--text:#eef4ff;--muted:#95a4ba;--green:#62e6a7}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:22px;background:radial-gradient(circle at 50% 0,#17372b 0,transparent 44%),var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif}.card{width:min(430px,100%);padding:34px;border:1px solid var(--line);border-radius:20px;background:var(--panel);box-shadow:0 24px 70px #0007}.mark{width:48px;height:48px;display:grid;place-items:center;border-radius:14px;background:#18362b;color:var(--green);font-weight:900}.eyebrow{margin:25px 0 7px;color:var(--green);font-size:11px;font-weight:850;letter-spacing:.13em;text-transform:uppercase}h1{margin:0;font-size:34px;letter-spacing:-.045em}p{color:var(--muted);line-height:1.55}label{display:block;margin-top:17px;font-size:13px;font-weight:700}input{display:block;width:100%;height:46px;margin-top:7px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#0a1423;color:var(--text);font:inherit}button{width:100%;height:46px;margin-top:22px;border:0;border-radius:10px;background:var(--green);color:#05251a;font-weight:850;cursor:pointer}.error{color:#ff7185;font-size:13px}@media(prefers-color-scheme:light){:root{--bg:#f3f6fa;--panel:#fff;--line:#d6dfeb;--text:#132033;--muted:#637188;--green:#138a5b}input{background:#fff}}</style></head><body><form class="card" method="post" action="/_site-gateway/login"><div class="mark">SG</div><div class="eyebrow">Protected by Site Gateway</div><h1>Sign in to continue</h1><p>This service uses the <strong>${String(list.name).replace(/[<>]/g, "")}</strong> access policy.</p>${req.query.error ? '<p class="error">That username or password was not accepted.</p>' : ""}<input type="hidden" name="list" value="${listId}"><input type="hidden" name="return" value="${safeReturn.replaceAll('"', '&quot;')}"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button>Sign in</button></form></body></html>`);
+});
+app.post("/_site-gateway/login", async (req, res, next) => {
+  try {
+    const listId = String(req.body.list || ""), list = accessLists.find(item => item.id === listId && item.enabled !== false), username = String(req.body.username || "").trim(); const credential = list?.credentials?.find(item => item.username === username);
+    const safeReturn = String(req.body.return || "/").startsWith("/") && !String(req.body.return).startsWith("//") ? String(req.body.return) : "/";
+    if (!credential?.password || !await passwordMatches(req.body.password || "", credential.password)) return res.redirect(303, `/_site-gateway/login?list=${encodeURIComponent(listId)}&return=${encodeURIComponent(safeReturn)}&error=1`);
+    const expires = String(Date.now() + 12 * 60 * 60 * 1000), value = `${listId}.${username}.${expires}`; const secure = String(req.headers["x-forwarded-proto"] || "").includes("https") ? "; Secure" : "";
+    res.setHeader("Set-Cookie", `site_gateway_access=${value}.${sign(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200${secure}`); res.redirect(303, safeReturn);
+  } catch (error) { next(error); }
 });
 app.use("/api", (req, res, next) => {
   const user = sessionUser(req);
@@ -602,7 +888,10 @@ app.patch("/api/users/:id", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.get("/api/sites", (req, res) => res.json(sites.map(publicSite)));
-app.get("/api/proxies", (req, res) => res.json(proxies.map(publicProxy)));
+app.get("/api/proxies", (req, res) => res.json(proxies.map(proxy => publicProxy(proxy, req.user.role === "administrator"))));
+app.get("/api/redirects", (req, res) => res.json(redirects));
+app.get("/api/access-lists", (req, res) => res.json(accessLists.map(({ credentials, ...item }) => ({ ...item, credentials: (credentials || []).map(({ username }) => ({ username })) }))));
+app.get("/api/settings", (req, res) => req.user.role === "administrator" ? res.json({ ...settings, backupDirectory: backupsDir }) : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/dashboard", async (req, res, next) => {
   try { res.json(await dashboardSnapshot()); }
   catch (error) { next(error); }
@@ -658,7 +947,7 @@ app.post("/api/sites", upload.single("files"), async (req, res, next) => {
     const name = String(req.body.name || "").trim();
     const port = Number.parseInt(req.body.port, 10);
     const domain = normalizeDomain(req.body.domain);
-    const tls = req.body.tls === "http" ? "http" : "automatic";
+    const tls = ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : "automatic";
     const hsts = req.body.hsts === "true";
     const id = `${slugify(name) || "site"}-${crypto.randomBytes(3).toString("hex")}`;
     if (!name) throw Object.assign(new Error("Site name is required."), { status: 400 });
@@ -724,7 +1013,7 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     const domainError = validateDomain(domain, site.id);
     if (domainError) return res.status(400).json({ error: domainError });
     site.domain = domain;
-    site.tls = req.body.tls === "http" ? "http" : "automatic";
+    site.tls = ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : "automatic";
     site.hsts = req.body.hsts === true;
     await syncCaddy();
     await saveSites();
@@ -744,11 +1033,12 @@ app.post("/api/proxies", async (req, res, next) => {
       name,
       domain,
       target: validateTarget(req.body.target),
-      tls: req.body.tls === "http" ? "http" : "automatic",
+      tls: ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : "automatic",
       hsts: req.body.hsts === true,
       enabled: true,
       createdAt: new Date().toISOString()
     };
+    applyAdvancedSettings(proxy, req.body);
     proxies.push(proxy);
     await syncCaddy();
     await saveProxies();
@@ -760,19 +1050,44 @@ app.patch("/api/proxies/:id", async (req, res, next) => {
   try {
     const proxy = proxies.find(item => item.id === req.params.id);
     if (!proxy) return res.status(404).json({ error: "Proxy host not found." });
-    const domain = normalizeDomain(req.body.domain);
-    const domainError = validateDomain(domain, proxy.id);
-    if (domainError || !domain) return res.status(400).json({ error: domainError || "Domain is required." });
-    proxy.name = String(req.body.name || proxy.name).trim();
-    proxy.domain = domain;
-    proxy.target = validateTarget(req.body.target);
-    proxy.tls = req.body.tls === "http" ? "http" : "automatic";
-    proxy.hsts = req.body.hsts === true;
+    if (req.body.domain !== undefined) {
+      const domain = normalizeDomain(req.body.domain);
+      const domainError = validateDomain(domain, proxy.id);
+      if (domainError || !domain) return res.status(400).json({ error: domainError || "Domain is required." });
+      proxy.domain = domain;
+    }
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name).trim();
+      if (!name) return res.status(400).json({ error: "Proxy name is required." });
+      proxy.name = name;
+    }
+    if (req.body.target !== undefined) proxy.target = validateTarget(req.body.target);
+    if (req.body.tls !== undefined) proxy.tls = req.body.tls === "custom" && proxy.certificatePath && proxy.keyPath ? "custom" : ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : proxy.tls;
+    if (req.body.hsts !== undefined) proxy.hsts = req.body.hsts === true;
+    applyAdvancedSettings(proxy, req.body);
     await syncCaddy();
     await saveProxies();
     recordActivity(`Proxy host “${proxy.name}” updated.`);
     res.json(publicProxy(proxy));
   } catch (error) { next(error); }
+});
+app.post("/api/proxies/:id/certificate", certificateUpload.fields([{ name: "certificate", maxCount: 1 }, { name: "privateKey", maxCount: 1 }]), async (req, res, next) => {
+  const files = Object.values(req.files || {}).flat();
+  try {
+    const proxy = proxies.find(item => item.id === req.params.id); if (!proxy) return res.status(404).json({ error: "Proxy host not found." });
+    const certificateFile = req.files?.certificate?.[0], keyFile = req.files?.privateKey?.[0];
+    if (!certificateFile || !keyFile) return res.status(400).json({ error: "Choose both the PEM certificate and private key." });
+    const certificatePem = await fsp.readFile(certificateFile.path, "utf8"), keyPem = await fsp.readFile(keyFile.path, "utf8");
+    const certificate = new crypto.X509Certificate(certificatePem), privateKey = crypto.createPrivateKey(keyPem), publicFromKey = crypto.createPublicKey(privateKey);
+    const certificatePublic = certificate.publicKey.export({ type: "spki", format: "der" }), suppliedPublic = publicFromKey.export({ type: "spki", format: "der" });
+    if (!certificatePublic.equals(suppliedPublic)) return res.status(400).json({ error: "The private key does not match the certificate." });
+    if (!certificate.checkHost(proxy.domain)) return res.status(400).json({ error: `The certificate does not cover ${proxy.domain}.` });
+    const destination = path.join(customCertificatesDir, proxy.id); await fsp.mkdir(destination, { recursive: true });
+    const certificatePath = path.join(destination, "certificate.pem"), keyPath = path.join(destination, "private-key.pem");
+    await fsp.writeFile(certificatePath, certificatePem, { mode: 0o600 }); await fsp.writeFile(keyPath, keyPem, { mode: 0o600 });
+    proxy.tls = "custom"; proxy.certificatePath = certificatePath; proxy.keyPath = keyPath; await syncCaddy(); await saveProxies(); recordActivity(`Custom certificate installed for “${proxy.name}”.`); res.json(publicProxy(proxy));
+  } catch (error) { next(Object.assign(new Error(error.message || "Could not read that certificate."), { status: error.status || 400 })); }
+  finally { await Promise.all(files.map(file => fsp.rm(file.path, { force: true }))); }
 });
 app.post("/api/proxies/:id/toggle", async (req, res, next) => {
   try {
@@ -796,6 +1111,120 @@ app.delete("/api/proxies/:id", async (req, res, next) => {
     res.status(204).end();
   } catch (error) { next(error); }
 });
+
+app.post("/api/access-lists", async (req, res, next) => {
+  try {
+    const name = String(req.body.name || "").trim();
+    if (!name || name.length > 80) return res.status(400).json({ error: "Access List name is required and must be 80 characters or fewer." });
+    const networks = String(req.body.networks || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
+    const deniedNetworks = String(req.body.deniedNetworks || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
+    if (networks.some(value => !/^(?:private_ranges|(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-f:]+(?:\/\d{1,3})?)$/i.test(value))) return res.status(400).json({ error: "Enter IP addresses, CIDR ranges, or private_ranges, one per line." });
+    if (deniedNetworks.some(value => !/^(?:private_ranges|(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-f:]+(?:\/\d{1,3})?)$/i.test(value))) return res.status(400).json({ error: "Enter valid denied IP addresses or CIDR ranges." });
+    const credentials = [];
+    for (const entry of Array.isArray(req.body.credentials) ? req.body.credentials.slice(0, 25) : []) {
+      const username = String(entry.username || "").trim(); const password = String(entry.password || "");
+      if (!/^[A-Za-z0-9._-]{1,64}$/.test(username) || password.length < 12) return res.status(400).json({ error: "Access usernames must be valid and passwords must contain at least 12 characters." });
+      const { stdout } = await execFileAsync("caddy", ["hash-password", "--plaintext", password]);
+      credentials.push({ username, hash: stdout.trim(), password: await passwordRecord(password) });
+    }
+    if (!networks.length && !deniedNetworks.length && !credentials.length) return res.status(400).json({ error: "Add at least one network rule or login." });
+    const item = { id: `access-${crypto.randomBytes(4).toString("hex")}`, name, networks, deniedNetworks, credentials, enabled: true, createdAt: new Date().toISOString() };
+    accessLists.push(item); await syncCaddy(); await saveAccessLists(); recordActivity(`Access List “${name}” created.`);
+    res.status(201).json({ ...item, credentials: credentials.map(({ username }) => ({ username })) });
+  } catch (error) { next(error); }
+});
+app.patch("/api/access-lists/:id", async (req, res, next) => {
+  try {
+    const item = accessLists.find(value => value.id === req.params.id); if (!item) return res.status(404).json({ error: "Access List not found." });
+    if (req.body.enabled !== undefined) item.enabled = Boolean(req.body.enabled);
+    if (req.body.name) item.name = String(req.body.name).trim().slice(0, 80);
+    if (req.body.networks !== undefined) {
+      const networks = String(req.body.networks || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
+      if (networks.some(value => !/^(?:private_ranges|(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-f:]+(?:\/\d{1,3})?)$/i.test(value))) return res.status(400).json({ error: "Enter IP addresses, CIDR ranges, or private_ranges, one per line." });
+      item.networks = networks;
+    }
+    if (req.body.deniedNetworks !== undefined) {
+      const deniedNetworks = String(req.body.deniedNetworks || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
+      if (deniedNetworks.some(value => !/^(?:private_ranges|(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-f:]+(?:\/\d{1,3})?)$/i.test(value))) return res.status(400).json({ error: "Enter valid denied IP addresses or CIDR ranges." });
+      item.deniedNetworks = deniedNetworks;
+    }
+    if (Array.isArray(req.body.credentials) && req.body.credentials.length) {
+      const credentials = [];
+      for (const entry of req.body.credentials.slice(0, 25)) { const username = String(entry.username || "").trim(), password = String(entry.password || ""); if (!/^[A-Za-z0-9._-]{1,64}$/.test(username) || password.length < 12) return res.status(400).json({ error: "Access usernames must be valid and passwords must contain at least 12 characters." }); const { stdout } = await execFileAsync("caddy", ["hash-password", "--plaintext", password]); credentials.push({ username, hash: stdout.trim(), password: await passwordRecord(password) }); }
+      item.credentials = credentials;
+    }
+    if (!(item.networks || []).length && !(item.deniedNetworks || []).length && !(item.credentials || []).length) return res.status(400).json({ error: "Keep at least one network rule or login." });
+    await syncCaddy(); await saveAccessLists(); recordActivity(`Access List “${item.name}” updated.`); res.json({ ...item, credentials: (item.credentials || []).map(({ username }) => ({ username })) });
+  } catch (error) { next(error); }
+});
+app.delete("/api/access-lists/:id", async (req, res, next) => {
+  try {
+    if ([...sites, ...proxies, ...redirects].some(item => item.accessListId === req.params.id)) return res.status(409).json({ error: "Remove this Access List from all hosts before deleting it." });
+    const index = accessLists.findIndex(item => item.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Access List not found." });
+    const [item] = accessLists.splice(index, 1); await saveAccessLists(); recordActivity(`Access List “${item.name}” deleted.`); res.status(204).end();
+  } catch (error) { next(error); }
+});
+
+app.post("/api/redirects", async (req, res, next) => {
+  try {
+    const name = String(req.body.name || "").trim(); const domain = normalizeDomain(req.body.domain); const target = String(req.body.target || "").trim().replace(/\/$/, "");
+    const domainError = validateDomain(domain); if (!name || domainError || !domain) return res.status(400).json({ error: domainError || "Name and source domain are required." });
+    try { const parsed = new URL(target); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { return res.status(400).json({ error: "Destination must be a complete HTTP or HTTPS URL." }); }
+    const item = { id: `redirect-${crypto.randomBytes(4).toString("hex")}`, name, domain, target, code: [301,302,307,308].includes(Number(req.body.code)) ? Number(req.body.code) : 302, preservePath: req.body.preservePath !== false, tls: ["http","automatic","internal"].includes(req.body.tls) ? req.body.tls : "automatic", hsts: Boolean(req.body.hsts), accessListId: String(req.body.accessListId || ""), enabled: true, createdAt: new Date().toISOString() };
+    redirects.push(item); await syncCaddy(); await saveRedirects(); recordActivity(`Redirect Host “${name}” created.`); res.status(201).json(item);
+  } catch (error) { next(error); }
+});
+app.patch("/api/redirects/:id", async (req, res, next) => {
+  try {
+    const item = redirects.find(value => value.id === req.params.id); if (!item) return res.status(404).json({ error: "Redirect Host not found." });
+    if (req.body.domain !== undefined) { const domain = normalizeDomain(req.body.domain); const error = validateDomain(domain, item.id); if (error || !domain) return res.status(400).json({ error: error || "Source domain is required." }); item.domain = domain; }
+    if (req.body.enabled !== undefined) item.enabled = Boolean(req.body.enabled);
+    for (const key of ["name","target","accessListId"]) if (req.body[key] !== undefined) item[key] = String(req.body[key]).trim();
+    if (req.body.target !== undefined) { try { const parsed = new URL(item.target); if (!['http:','https:'].includes(parsed.protocol)) throw new Error(); } catch { return res.status(400).json({ error: "Destination must be a complete HTTP or HTTPS URL." }); } }
+    if (req.body.code !== undefined && [301,302,307,308].includes(Number(req.body.code))) item.code = Number(req.body.code);
+    if (req.body.preservePath !== undefined) item.preservePath = Boolean(req.body.preservePath);
+    if (req.body.tls !== undefined) item.tls = ["http","automatic","internal"].includes(req.body.tls) ? req.body.tls : item.tls;
+    if (req.body.hsts !== undefined) item.hsts = Boolean(req.body.hsts);
+    await syncCaddy(); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” updated.`); res.json(item);
+  } catch (error) { next(error); }
+});
+app.delete("/api/redirects/:id", async (req, res, next) => {
+  try { const index = redirects.findIndex(item => item.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Redirect Host not found." }); const [item] = redirects.splice(index, 1); await syncCaddy(); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” deleted.`); res.status(204).end(); } catch (error) { next(error); }
+});
+
+app.patch("/api/settings", async (req, res, next) => {
+  try {
+    if (req.body.defaultSite) {
+      const value = req.body.defaultSite; const mode = ["welcome","themed404","abort","redirect","custom"].includes(value.mode) ? value.mode : "themed404";
+      settings.defaultSite = { mode, redirectUrl: String(value.redirectUrl || "").trim(), redirectCode: [301,302,307,308].includes(Number(value.redirectCode)) ? Number(value.redirectCode) : 302, preservePath: value.preservePath !== false, title: String(value.title || "").slice(0, 100), message: String(value.message || "").slice(0, 500), customHtml: String(value.customHtml || "").slice(0, 250000) };
+    }
+    if (req.body.backups) settings.backups = { ...settings.backups, ...req.body.backups, hour: Math.min(Math.max(Number(req.body.backups.hour) || 0, 0), 23), retention: Math.min(Math.max(Number(req.body.backups.retention) || 7, 1), 100) };
+    await syncCaddy(); await saveSettings(); recordActivity("Administration settings updated."); res.json({ ...settings, backupDirectory: backupsDir });
+  } catch (error) { next(error); }
+});
+app.use("/api/backups", (req, res, next) => req.user.role === "administrator" ? next() : res.status(403).json({ error: "Administrator access is required." }));
+app.get("/api/backups", async (req, res, next) => { try { res.json(await listBackups()); } catch (error) { next(error); } });
+app.post("/api/backups", async (req, res, next) => {
+  try { const backup = await createBackup(req.body.type, Boolean(req.body.includeLogs), "site-gateway-backup", String(req.body.password || "")); res.status(201).json(backup); } catch (error) { next(error); }
+});
+app.post("/api/backups/import", upload.single("backup"), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "Choose a .sgbackup file." });
+    const { zip } = await openBackup(req.file.path, String(req.body.password || "")); const manifest = JSON.parse(zip.readAsText("manifest.json") || "null");
+    if (!manifest || manifest.product !== "Site Gateway" || manifest.format !== 1) throw Object.assign(new Error("This is not a supported Site Gateway backup."), { status: 400 });
+    const filename = `imported-${new Date().toISOString().replace(/[:.]/g, "-")}.sgbackup`; await fsp.rename(req.file.path, path.join(backupsDir, filename));
+    recordActivity(`Backup imported from this computer.`); res.status(201).json({ filename, manifest });
+  } catch (error) { if (req.file) await fsp.rm(req.file.path, { force: true }); next(error); }
+});
+app.get("/api/backups/:filename/download", async (req, res, next) => {
+  try { const filename = path.basename(req.params.filename); const file = path.join(backupsDir, filename); await fsp.access(file); res.download(file, filename); } catch (error) { next(Object.assign(new Error("Backup not found."), { status: 404 })); }
+});
+app.post("/api/backups/:filename/restore", async (req, res, next) => {
+  try { res.json({ ok: true, manifest: await restoreBackup(path.basename(req.params.filename), String(req.body.password || "")) }); } catch (error) { next(error); }
+});
+app.delete("/api/backups/:filename", async (req, res, next) => {
+  try { const filename = path.basename(req.params.filename); if (!filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Invalid backup." }); await fsp.rm(path.join(backupsDir, filename)); recordActivity(`Backup ${filename} deleted.`); res.status(204).end(); } catch (error) { next(error); }
+});
 app.use((error, req, res, next) => {
   console.error(error);
   recordActivity(`${req.method} ${req.path}: ${error.message || "Unexpected gateway error"}`, "error");
@@ -809,6 +1238,23 @@ app.listen(adminPort, "0.0.0.0", () => {
 
 setTimeout(() => checkAllProxies().catch(error => console.warn("Initial upstream checks failed:", error.message)), 1500).unref();
 setInterval(() => checkAllProxies().catch(error => console.warn("Upstream checks failed:", error.message)), 60000).unref();
+
+async function runScheduledBackup() {
+  const schedule = settings.backups || {}; if (!schedule.enabled || Number(schedule.hour) !== new Date().getHours()) return;
+  const last = schedule.lastRunAt ? new Date(schedule.lastRunAt) : null; const elapsed = last ? Date.now() - last.getTime() : Infinity;
+  const due = schedule.frequency === "monthly" ? elapsed >= 27 * 86400000 : schedule.frequency === "weekly" ? elapsed >= 6 * 86400000 : elapsed >= 20 * 3600000;
+  if (!due) return;
+  try {
+    if (schedule.encrypt && !scheduledBackupPassword) throw new Error("BACKUP_PASSWORD is required for encrypted scheduled backups.");
+    await createBackup(schedule.type, Boolean(schedule.includeLogs), "scheduled", schedule.encrypt ? scheduledBackupPassword : "");
+    schedule.lastRunAt = new Date().toISOString(); schedule.lastStatus = "ok";
+    const backups = (await listBackups()).filter(item => item.filename.startsWith("scheduled-"));
+    for (const item of backups.slice(Math.max(Number(schedule.retention) || 7, 1))) await fsp.rm(path.join(backupsDir, item.filename), { force: true });
+  } catch (error) { schedule.lastRunAt = new Date().toISOString(); schedule.lastStatus = `error: ${error.message}`; recordActivity(`Scheduled backup failed: ${error.message}`, "error"); }
+  await saveSettings();
+}
+setTimeout(() => runScheduledBackup().catch(error => console.warn("Scheduled backup check failed:", error.message)), 5000).unref();
+setInterval(() => runScheduledBackup().catch(error => console.warn("Scheduled backup check failed:", error.message)), 15 * 60000).unref();
 
 async function shutdown() {
   await Promise.all([...activeServers.keys()].map(stopSite));

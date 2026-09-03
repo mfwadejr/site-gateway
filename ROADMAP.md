@@ -62,6 +62,7 @@ The existing Node application remains responsible for authentication, the wizard
 - Certificate inventory and expiration alerts, proxy upstream monitoring, and filtered rotating access logs (v0.5.0-alpha.1)
 - Corrected certificate wording and standardized dashboard, card, and log-control spacing (v0.5.0-alpha.2)
 - Persistent local users, Administrator and Standard User roles, account lifecycle controls, and role-aware sessions (v0.6.0-alpha.1)
+- Redirect Hosts, Access Lists with themed authentication, advanced Proxy Host controls, custom certificates, configurable fallback pages, integrated documentation, Administration, and backup/restore (v0.7.0-alpha.1)
 
 ### Next alpha milestone — visibility and certificate health
 
@@ -86,7 +87,7 @@ This should be the next implementation target. It adds the reporting people rely
 - Certificate status and expiration reporting (next alpha milestone)
 - Guided DNS/router readiness checks (next alpha milestone)
 
-### Phase 2 — Reverse proxy and redirects (proxy hosts implemented; redirects/logs pending)
+### Phase 2 — Reverse proxy and redirects (implemented)
 
 - Proxy to other containers, LAN devices, or URLs
 - WebSocket support
@@ -95,14 +96,14 @@ This should be the next implementation target. It adds the reporting people rely
 - Optional HSTS after HTTPS is verified
 - Per-host access logs and simple health checks
 
-### Phase 3 — Access and advanced certificates
+### Phase 3 — Access and advanced certificates (partially implemented)
 
-- Basic-auth access policies reusable across sites
-- IP allow/deny lists
-- Custom certificate upload
+- Themed-login access policies reusable across proxy hosts (implemented)
+- IP/CIDR allow lists (implemented)
+- Custom certificate upload (implemented)
 - Wildcard certificates through selected DNS providers
-- Backup/export and restore
-- Configuration history and one-click rollback
+- Backup/export and restore, including encryption and scheduling (implemented)
+- Configuration validation and automatic restore rollback (implemented); browsable history remains planned
 
 ### Phase 4 — Multi-user and specialist features
 
@@ -132,11 +133,11 @@ Prioritize reporting before adding more creation options: certificate health, re
 | Certificate expiration and renewal reporting | First-class certificate health page and dashboard alerts | Next |
 | Access logs and traffic reporting | Recent requests, status distribution, bytes, and errors per host; avoid promising full analytics | Next |
 | Upstream health | Reachability, response time, and failure reason per proxy target | Next |
-| Redirect hosts and maintenance responses | Add as simple destination types in the creation wizard | Near term |
-| Access lists and basic authentication | Reusable policies attachable to hosted and proxy entries | Near term |
+| Redirect hosts and maintenance responses | Implemented as Redirect Hosts and configurable Default Site behaviors | Current |
+| Access lists and authentication | Reusable policies with network rules and a themed sign-in flow | Current |
 | DNS and reachability diagnostics | Guided checks for resolution, public IP, ports 80/443, and certificate eligibility | Near term |
-| Custom certificates | Validated certificate/key upload with encrypted-at-rest secrets and expiry reporting | Later |
+| Custom certificates | Validated matching certificate/key upload and complete-backup support | Current |
 | Wildcard certificates | Selected DNS-provider integrations with encrypted API credentials | Later |
-| Advanced proxy options | Safe presets first; constrained expert snippets only after validation and rollback exist | Later |
+| Advanced proxy options | Custom locations, headers, compression, upstream TLS, health expectations, and validated snippets | Current |
 | TCP/UDP streams | Separate advanced area with explicit port-conflict checks | Later |
-| Backup and restore | Export the data model, uploads, policies, and certificate metadata; exclude or separately protect secrets | Near term |
+| Backup and restore | Configuration/complete archives, browser download/import, schedules, retention, encryption, and rollback | Current |

@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], dashboard: null, certificates: null, logs: null, users: [], user: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
+const state = { sites: [], proxies: [], redirects: [], accessLists: [], backups: [], settings: null, dashboard: null, certificates: null, logs: null, users: [], user: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 function applyTheme(preference) {
@@ -38,6 +38,14 @@ function formatDuration(seconds) {
 function formatTime(value) {
   if (!value) return "Just now";
   const date = new Date(value); return Number.isNaN(date.getTime()) ? "Recently" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+function parseHeaderLines(value) { return String(value || "").split("\n").map(line => { const index = line.indexOf(":"); return index > 0 ? { name:line.slice(0,index).trim(), value:line.slice(index+1).trim() } : null; }).filter(Boolean); }
+function advancedFormBody(form, body) {
+  body.hsts = form.has("hsts"); body.hstsSubdomains = form.has("hstsSubdomains"); body.healthEnabled = form.has("healthEnabled"); body.upstreamTlsInsecure = form.has("upstreamTlsInsecure");
+  body.requestHeaders = parseHeaderLines(form.get("requestHeadersText")); body.responseHeaders = parseHeaderLines(form.get("responseHeadersText"));
+  body.locations = String(form.get("customLocationsText") || "").split("\n").map(line => { const [path, target, behavior] = line.split("|").map(value => value.trim()); return path && target ? { path, target, stripPrefix:behavior.toLowerCase() === "strip" } : null; }).filter(Boolean);
+  delete body.requestHeadersText; delete body.responseHeadersText; delete body.customLocationsText;
+  return body;
 }
 
 function healthCopy(group, label) {
@@ -138,17 +146,20 @@ function renderUsers() {
 async function loadFeatureView() {
   if (state.view === "certificates") { state.certificates = await api("/api/certificates"); renderCertificates(); }
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
-  if (state.view === "users") { state.users = await api("/api/users"); renderUsers(); }
+  if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); renderUsers(); window.renderExtendedViews?.(); }
+  if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
 }
 function render() {
-  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
-  document.querySelectorAll("nav [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
+  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
+  document.querySelectorAll("nav [data-view], .aside-utilities [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);
   const management = state.view === "hosted" || state.view === "proxies";
   $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !management);
-  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#users-view").classList.toggle("hidden", state.view !== "users");
-  $("#open-create").classList.toggle("hidden", !(management || state.view === "users") || !canManage());
+  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#users-view").classList.toggle("hidden", state.view !== "administration");
+  $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
+  const adminUsersActive = state.view === "administration" && document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab === "users";
+  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || ["redirects","access"].includes(state.view)) || !canManage());
   if (overview) {
     $("#page-title").textContent = "Dashboard";
     $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
@@ -156,10 +167,10 @@ function render() {
     return;
   }
   if (!management) {
-    $("#page-title").textContent = state.view === "certificates" ? "Certificates" : state.view === "users" ? "Users" : "Access logs";
-    $("#page-subtitle").textContent = state.view === "certificates" ? "Expiration, issuer, and certificate-detection status for automatic HTTPS." : state.view === "users" ? "Create accounts, assign roles, and control access to Site Gateway." : "Recent requests served through the Caddy gateway.";
-    $("#open-create").textContent = state.view === "users" ? "＋ Create user" : $("#open-create").textContent;
-    if (state.view === "certificates") renderCertificates(); else if (state.view === "users") renderUsers(); else renderLogs();
+    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access logs","Recent requests served through the Caddy gateway."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
+    const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
+    $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "redirects" ? "＋ New redirect" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
+    if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs();
     return;
   }
   const items = state.view === "hosted" ? state.sites : state.proxies;
@@ -177,7 +188,7 @@ function render() {
   $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues";
   $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
 }
-async function refresh() { [state.sites, state.proxies, state.dashboard, state.certificates] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/dashboard"), api("/api/certificates")]); render(); }
+async function refresh() { [state.sites, state.proxies, state.redirects, state.accessLists, state.dashboard, state.certificates] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/access-lists"), api("/api/dashboard"), api("/api/certificates")]); render(); window.renderExtendedViews?.(); }
 async function refreshDashboard() {
   const button = $("#refresh-health"); button.disabled = true; button.classList.add("spinning"); $("#health-checked").textContent = "Checking services…";
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
@@ -195,13 +206,15 @@ async function boot() {
 $("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
 $("#logout").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); showLogin(); });
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }
-document.querySelectorAll("nav").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); } }));
+document.querySelectorAll("nav, .aside-utilities").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); } }));
 $("#dashboard-view").addEventListener("click", event => { const card = event.target.closest("[data-target]"); if (card) { state.view = card.dataset.target; render(); loadFeatureView().catch(error => toast(error.message)); } });
 $("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
 function openCreate() {
-  if (state.view === "users") { $("#user-form").reset(); $("#user-error").textContent = ""; return $("#user-dialog").showModal(); }
-  if (state.view === "proxies") { $("#proxy-form").reset(); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
+  if (state.view === "administration") { $("#user-form").reset(); $("#user-error").textContent = ""; return $("#user-dialog").showModal(); }
+  if (state.view === "redirects") { $("#redirect-form").reset(); delete $("#redirect-form").dataset.editing; $("#redirect-error").textContent = ""; return $("#redirect-dialog").showModal(); }
+  if (state.view === "access") { $("#access-form").reset(); delete $("#access-form").dataset.editing; $("#access-error").textContent = ""; return $("#access-dialog").showModal(); }
+  if (state.view === "proxies") { $("#proxy-form").reset(); $("#custom-certificate-fields").classList.remove("custom-certificate-visible"); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
   $("#create-form").reset(); $("#create-error").textContent = ""; const used = new Set(state.sites.map(site => site.port)); let port = state.config.minPort; while (used.has(port)) port++; $("#create-form [name=port]").value = port; $("#create-dialog").showModal();
 }
 $("#open-create").addEventListener("click", openCreate);
@@ -210,14 +223,18 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("close", closeMenus));
 $("#refresh-health").addEventListener("click", () => refreshDashboard().catch(error => toast(error.message)));
 $("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refresh(); toast("Hosted site created and gateway applied."); } catch (error) { $("#create-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
-$("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), body = Object.fromEntries(form); body.hsts = form.has("hsts"); try { await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); $("#proxy-dialog").close(); await refresh(); toast("Proxy host created. Certificate provisioning runs automatically."); } catch (error) { $("#proxy-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
+$("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refresh(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { $("#proxy-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 
 function openSettings(kind, id) {
   const item = (kind === "proxy" ? state.proxies : state.sites).find(value => value.id === id); if (!item) return; state.editing = { kind, id }; const form = $("#settings-form"); form.reset();
-  $("#settings-title").textContent = kind === "proxy" ? "Edit proxy host" : "Domain & TLS"; $("#settings-name-wrap").classList.toggle("hidden", kind !== "proxy"); $("#settings-target-wrap").classList.toggle("hidden", kind !== "proxy");
-  form.elements.name.value = item.name || ""; form.elements.domain.value = item.domain || ""; form.elements.target.value = item.target || ""; form.elements.tls.value = item.tls || "automatic"; form.elements.hsts.checked = Boolean(item.hsts); $("#settings-error").textContent = ""; $("#settings-dialog").showModal();
+  $("#settings-title").textContent = kind === "proxy" ? "Edit proxy host" : "Domain & TLS"; $("#settings-name-wrap").classList.toggle("hidden", kind !== "proxy"); $("#settings-target-wrap").classList.toggle("hidden", kind !== "proxy"); $("#settings-advanced").classList.toggle("hidden", kind !== "proxy");
+  form.elements.name.value = item.name || ""; form.elements.domain.value = item.domain || ""; form.elements.target.value = item.target || ""; form.elements.tls.value = item.tls || "automatic"; form.elements.hsts.checked = Boolean(item.hsts);
+  if (kind === "proxy") { form.elements.accessListId.value = item.accessListId || ""; form.elements.healthPath.value = item.healthPath || "/"; form.elements.healthExpected.value = item.healthExpected || "200-499"; form.elements.healthTimeoutSeconds.value = item.healthTimeoutSeconds || 4; form.elements.healthEnabled.checked = item.healthEnabled !== false; form.elements.compression.value = item.compression || "automatic"; form.elements.customLocationsText.value = (item.locations || []).map(location => `${location.path} | ${location.target} | ${location.stripPrefix ? "strip" : "preserve"}`).join("\n"); form.elements.requestHeadersText.value = (item.requestHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n"); form.elements.responseHeadersText.value = (item.responseHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n"); form.elements.upstreamTlsServerName.value = item.upstreamTlsServerName || ""; form.elements.upstreamTlsInsecure.checked = Boolean(item.upstreamTlsInsecure); form.elements.hstsSubdomains.checked = Boolean(item.hstsSubdomains); form.elements.customConfig.value = item.customConfig || ""; }
+  if (kind === "proxy") form.elements.healthMethod.value = item.healthMethod || "GET";
+  $("#settings-error").textContent = ""; $("#settings-dialog").showModal();
+  document.querySelector("#settings-form .custom-certificate-fields")?.classList.toggle("custom-certificate-visible", kind === "proxy" && form.elements.tls.value === "custom");
 }
-$("#settings-form").addEventListener("submit", async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; button.textContent = "Applying…"; $("#settings-error").textContent = ""; const form = new FormData(event.target), body = Object.fromEntries(form); body.hsts = form.has("hsts"); try { const base = state.editing.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); $("#settings-dialog").close(); await refresh(); toast("Gateway settings applied."); } catch (error) { $("#settings-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Save & apply"; } });
+$("#settings-form").addEventListener("submit", async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; button.textContent = "Applying…"; $("#settings-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"); let body = Object.fromEntries(form); delete body.certificateFile; delete body.privateKeyFile; body = state.editing.kind === "proxy" ? advancedFormBody(form, body) : { domain:body.domain, tls:body.tls, hsts:form.has("hsts") }; const uploadCustom = state.editing.kind === "proxy" && body.tls === "custom" && certificate?.size && privateKey?.size; if (state.editing.kind === "proxy" && body.tls === "custom" && !uploadCustom) { const existing = state.proxies.find(item => item.id === state.editing.id); if (!existing?.certificatePath) { $("#settings-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Save & apply"; return; } } try { const base = state.editing.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (uploadCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${state.editing.id}/certificate`, { method:"POST", body:files }); } $("#settings-dialog").close(); await refresh(); toast("Gateway settings applied."); } catch (error) { $("#settings-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Save & apply"; } });
 
 $("#site-grid").addEventListener("click", async event => {
   const card = event.target.closest(".site-card"); if (!card) return; const action = event.target.closest("[data-action]")?.dataset.action, kind = card.dataset.kind;
