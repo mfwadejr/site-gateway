@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="product-icon-v1.png" alt="Site Gateway icon" width="180">
+  <img src="src/public/icon.png" alt="Site Gateway icon" width="180">
   <h1>Site Gateway</h1>
   <p><strong>Host. Proxy. Secure.</strong></p>
   <p>A friendly, self-hosted gateway for websites, applications, domains, and automatic HTTPS.</p>
@@ -15,6 +15,7 @@
     <a href="#domains-proxy-hosts-and-tls">Domains &amp; TLS</a> ·
     <a href="#unraid-alpha-install">Unraid</a> ·
     <a href="#zimaos-alpha-install">ZimaOS</a> ·
+    <a href="INSTALL-v0.8.0-alpha.1.md">v0.8 install</a> ·
     <a href="ROADMAP.md">Roadmap</a>
   </p>
 </div>
@@ -57,6 +58,8 @@ Site Gateway gives a home server one clear control panel for two jobs: publishin
 - Replace a site's files without recreating it
 - Delete sites and their stored files
 - Persistent configuration and uploads under `/data`
+- Built-in transactional SQLite configuration database at `/data/database/site-gateway.sqlite`
+- Unified certificate storage under `/data/certificates` and fixed backup storage under `/data/backups`
 - Path traversal protection for ZIP extraction and a 250 MB upload limit
 - Clean shutdown and automatic site restart after a container restart
 
@@ -194,17 +197,16 @@ After confirming the sites appear, you may keep the legacy host folder or rename
 | `SITE_PORT_MIN` | `9000` | Lowest allowed site port |
 | `SITE_PORT_MAX` | `9099` | Highest allowed site port |
 | `DATA_DIR` | `/data` | Persistent state location |
-| `BACKUP_DIR` | `/data/backups` | Stored and scheduled backup location; mount `/backups` separately when possible |
 | `BACKUP_PASSWORD` | empty | Encryption password used only when encrypted scheduled backups are enabled |
 | `PUID` | `1000` | UID that owns and runs against persistent files |
 | `PGID` | `1000` | GID that owns and runs against persistent files |
 | `ACME_EMAIL` | empty | Optional certificate account email |
 
-At startup, the container automatically creates `/data/sites` and `/data/.uploads`, applies `PUID`/`PGID` ownership, and then drops root privileges before starting the application. With the ZimaOS bind mount, these appear under `/DATA/AppData/site-gateway` on the host. Unraid commonly uses `PUID=99` and `PGID=100`; ZimaOS typically uses `1000:1000`.
+At startup, the container creates the complete `/data` hierarchy, applies `PUID`/`PGID` ownership, and then drops root privileges. Configuration is stored in SQLite, hosted files remain in `/data/sites`, backups use `/data/backups`, uploaded certificates use `/data/certificates/custom`, and Caddy owns `/data/certificates/managed`. With the ZimaOS bind mount, these appear under `/DATA/AppData/site-gateway` on the host. Unraid commonly uses `PUID=99` and `PGID=100`; ZimaOS typically uses `1000:1000`.
 
 ## Backup and update
 
-Open **Administration → Backup & restore** to create a Configuration or Complete backup. Manual backups download to the browser. Scheduled backups are stored under `BACKUP_DIR`, retained according to the interface setting, and can use AES-256-GCM encryption when `BACKUP_PASSWORD` is configured. A Complete backup contains hosted files, local icons, custom fallback assets, and uploaded certificates; logs are optional.
+Open **Administration → Backup & restore** to create a Configuration or Complete backup. Manual backups download to the browser. Scheduled backups are stored under `/data/backups`, retained according to the interface setting, and can use AES-256-GCM encryption when `BACKUP_PASSWORD` is configured. A Complete backup contains a consistent SQLite snapshot, portable JSON recovery data, hosted files, local icons, custom fallback assets, and both custom and Caddy-managed certificate storage; logs are optional. Because certificate backups contain private keys, encryption is strongly recommended.
 
 Before restoring, Site Gateway checks the archive manifest and creates a complete pre-restore safety backup. It then reloads persisted state and validates the resulting Caddy configuration. Store important backups on a separate disk or NAS share—copies in the same appdata volume do not protect against disk failure.
 
@@ -218,7 +220,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.7.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.7.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.8.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ### Monitoring in v0.5.0-alpha.1
 
@@ -234,7 +236,7 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 - The environment-defined administrator becomes the initial persistent Administrator on first startup after upgrading.
 - Administrators can create users, assign Administrator or Standard User roles, reset passwords, disable accounts, and archive or restore accounts.
 - Standard Users have read-only access to dashboard health, hosted sites, proxy hosts, certificates, and logs. Per-host ownership and granular permissions are planned for a later release.
-- Passwords are stored as salted scrypt hashes in `/data/users.json`; plaintext passwords are never written to disk.
+- Passwords are stored as salted scrypt hashes in the SQLite database; plaintext passwords are never written to disk.
 - Site Gateway prevents removal of the final active Administrator and blocks users from disabling or archiving their own active session.
 
 ### Gateway management in v0.7.0-alpha.1
@@ -244,6 +246,15 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 - Access List credentials are stored as salted password hashes and presented through a Site Gateway-themed login form. Network rules accept exact IP addresses, CIDR ranges, or Caddy's `private_ranges` token.
 - Redirect Hosts and the configurable Default Site compile to native Caddy routes and are validated before reload.
 - Expert Caddy snippets are administrator-only, size-limited, screened against global directives, and validated as part of the complete generated configuration.
+
+### Storage foundation in v0.8.0-alpha.1
+
+- SQLite is built into the container and stores configuration at `/data/database/site-gateway.sqlite`; no external database container or port is required.
+- A seeded Local Gateway instance scopes every stored entity in preparation for future multi-instance management.
+- Existing JSON installations are imported once into SQLite after a complete migration backup is written to `/data/backups`; original JSON snapshots remain under `/data/migrations`.
+- Failed first-time imports remove the incomplete database so the migration safely retries after the source problem is corrected.
+- Caddy-managed certificates and internal CA data live under `/data/certificates/managed`; uploaded certificates live under `/data/certificates/custom`; public exports are reserved under `/data/certificates/exports`.
+- Backups contain a consistent SQLite snapshot, portable JSON recovery records, checksums, and optional complete filesystem content.
 
 ## Security notes
 

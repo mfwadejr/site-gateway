@@ -92,6 +92,8 @@ function renderDashboard() {
   $("#system-disk").title = `${formatBytes(data.system.diskFreeBytes)} available of ${formatBytes(data.system.diskTotalBytes)} on the /data volume`;
   $("#system-app-version").textContent = `v${data.system.appVersion}`;
   $("#system-caddy-version").textContent = data.system.caddyVersion;
+  $("#system-database").textContent = `${data.system.databaseEngine} · ${data.system.databaseStatus}`;
+  $("#system-database-detail").textContent = `${formatBytes(data.system.databaseBytes)} configuration database`;
   $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<div class="dashboard-list-item issue"><span class="status-dot error"></span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></div>`).join("") : '<p class="quiet-state">Everything looks good.</p>';
   $("#activity-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : ""}">${item.status === "error" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No changes recorded yet.</p>';
 }

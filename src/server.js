@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import AdmZip from "adm-zip";
 import express from "express";
 import multer from "multer";
+import { LOCAL_INSTANCE_ID, openStorage } from "./storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
@@ -17,22 +18,19 @@ const appVersion = process.env.APP_VERSION || packageMetadata.version;
 const publicDir = path.join(__dirname, "public");
 const dataDir = path.resolve(process.env.DATA_DIR || "/data");
 const sitesDir = path.join(dataDir, "sites");
-const configPath = path.join(dataDir, "sites.json");
-const proxiesPath = path.join(dataDir, "proxies.json");
-const usersPath = path.join(dataDir, "users.json");
-const redirectsPath = path.join(dataDir, "redirects.json");
-const accessListsPath = path.join(dataDir, "access-lists.json");
-const settingsPath = path.join(dataDir, "settings.json");
 const uploadDir = path.join(dataDir, ".uploads");
 const caddyDir = path.join(dataDir, "caddy");
 const iconsDir = path.join(dataDir, "icons");
 const logsDir = path.join(dataDir, "logs");
-const backupsDir = path.resolve(process.env.BACKUP_DIR || path.join(dataDir, "backups"));
+const backupsDir = path.join(dataDir, "backups");
 const defaultSiteDir = path.join(dataDir, "default-site");
-const customCertificatesDir = path.join(dataDir, "custom-certificates");
+const certificatesRoot = path.join(dataDir, "certificates");
+const customCertificatesDir = path.join(certificatesRoot, "custom");
+const managedCertificatesDir = path.join(certificatesRoot, "managed");
+const certificateExportsDir = path.join(certificatesRoot, "exports");
 const accessLogPath = path.join(logsDir, "access.json");
 const activityLogPath = path.join(logsDir, "activity.jsonl");
-const certificateDir = path.join(caddyDir, "data", "caddy", "certificates");
+const certificateDir = path.join(managedCertificatesDir, "certificates");
 const iconCatalogPath = path.join(iconsDir, "catalog.json");
 const caddyfilePath = path.join(caddyDir, "Caddyfile");
 const execFileAsync = promisify(execFile);
@@ -59,12 +57,14 @@ const upstreamHealth = new Map();
 const loginAttempts = new Map();
 const probeFailures = { gateway: 0, http: 0, https: 0 };
 let iconCatalog = null;
+let storage;
 
 function recordActivity(message, status = "ok") {
   const entry = { message, status, at: new Date().toISOString() };
   recentActivity.unshift(entry);
   recentActivity.splice(20);
   fsp.appendFile(activityLogPath, `${JSON.stringify(entry)}\n`).catch(() => {});
+  try { storage?.recordAudit(message, status); } catch (error) { console.warn("Could not record SQLite audit event:", error.message); }
 }
 
 async function directorySize(directory) {
@@ -130,75 +130,38 @@ function sessionUser(req) {
   return users.find(user => user.id === userId && user.status === "active") || null;
 }
 
-async function saveSites() {
-  await fsp.writeFile(configPath, JSON.stringify(sites, null, 2));
-}
-
-async function saveProxies() {
-  await fsp.writeFile(proxiesPath, JSON.stringify(proxies, null, 2));
-}
-
-async function saveUsers() {
-  const nextPath = `${usersPath}.next`;
-  await fsp.writeFile(nextPath, JSON.stringify(users, null, 2), { mode: 0o600 });
-  await fsp.rename(nextPath, usersPath);
-}
-
-async function atomicJson(filename, value, mode = 0o600) {
-  const nextPath = `${filename}.next`;
-  await fsp.writeFile(nextPath, JSON.stringify(value, null, 2), { mode });
-  await fsp.rename(nextPath, filename);
-}
-
-const saveRedirects = () => atomicJson(redirectsPath, redirects);
-const saveAccessLists = () => atomicJson(accessListsPath, accessLists);
-const saveSettings = () => atomicJson(settingsPath, settings);
-
-async function readJson(filename, fallback) {
-  try { return JSON.parse(await fsp.readFile(filename, "utf8")); }
-  catch (error) {
-    if (error.code !== "ENOENT") console.warn(`Could not read ${path.basename(filename)}:`, error.message);
-    await atomicJson(filename, fallback);
-    return fallback;
-  }
-}
+const saveSites = async () => storage.saveCollection("sites", sites);
+const saveProxies = async () => storage.saveCollection("proxies", proxies);
+const saveUsers = async () => storage.saveCollection("users", users);
+const saveRedirects = async () => storage.saveCollection("redirects", redirects);
+const saveAccessLists = async () => storage.saveCollection("access_lists", accessLists);
+const saveSettings = async () => storage.saveSettings(settings);
 
 async function loadSites() {
-  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(logsDir, { recursive: true }), fsp.mkdir(backupsDir, { recursive: true }), fsp.mkdir(defaultSiteDir, { recursive: true }), fsp.mkdir(customCertificatesDir, { recursive: true })]);
-  try {
-    sites = JSON.parse(await fsp.readFile(configPath, "utf8"));
-  } catch (error) {
-    if (error.code !== "ENOENT") console.error("Could not read sites.json; starting empty:", error.message);
-    sites = [];
-    await saveSites();
-  }
-  try {
-    proxies = JSON.parse(await fsp.readFile(proxiesPath, "utf8"));
-  } catch (error) {
-    if (error.code !== "ENOENT") console.error("Could not read proxies.json; starting empty:", error.message);
-    proxies = [];
-    await saveProxies();
-  }
+  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(logsDir, { recursive: true }), fsp.mkdir(backupsDir, { recursive: true }), fsp.mkdir(defaultSiteDir, { recursive: true }), fsp.mkdir(customCertificatesDir, { recursive: true }), fsp.mkdir(managedCertificatesDir, { recursive: true }), fsp.mkdir(certificateExportsDir, { recursive: true })]);
+  if (!storage) storage = await openStorage(dataDir, backupsDir);
+  if (storage.snapshot) { recordActivity(`Legacy JSON migrated to SQLite. Safety backup: ${storage.snapshot.filename}.`); storage.snapshot = null; }
+  sites = storage.loadCollection("sites");
+  proxies = storage.loadCollection("proxies");
   try {
     const lines = (await fsp.readFile(activityLogPath, "utf8")).trim().split("\n").slice(-20).reverse();
     recentActivity.push(...lines.map(line => JSON.parse(line)));
   } catch { /* Activity history starts empty on a new installation. */ }
-  try {
-    users = JSON.parse(await fsp.readFile(usersPath, "utf8"));
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+  users = storage.loadCollection("users");
+  if (!users.length) {
     const now = new Date().toISOString();
     users = [{ id: crypto.randomUUID(), username: adminUser.toLowerCase(), displayName: "Administrator", role: "administrator", status: "active", password: await passwordRecord(adminPassword), source: "bootstrap", createdAt: now, updatedAt: now, lastLoginAt: null }];
     await saveUsers();
   }
-  redirects = await readJson(redirectsPath, []);
-  accessLists = await readJson(accessListsPath, []);
+  redirects = storage.loadCollection("redirects");
+  accessLists = storage.loadCollection("access_lists");
   const defaultSettings = {
     defaultSite: { mode: "themed404", redirectUrl: "", redirectCode: 302, preservePath: true, title: "Route not found", message: "The gateway is responding, but this address has not been configured.", customHtml: "" },
     backups: { enabled: false, frequency: "daily", hour: 2, retention: 7, type: "configuration", includeLogs: false, encrypt: false, lastRunAt: null, lastStatus: null }
   };
-  const storedSettings = await readJson(settingsPath, defaultSettings);
+  const storedSettings = storage.loadSettings() || defaultSettings;
   settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) } };
+  await saveSettings();
 }
 
 function normalizeDomain(value) {
@@ -327,7 +290,7 @@ async function writeDefaultSitePage() {
 
 function renderCaddyfile() {
   const email = String(process.env.ACME_EMAIL || "").trim();
-  const lines = ["{", "  admin localhost:2019", "  persist_config off"];
+  const lines = ["{", "  admin localhost:2019", "  persist_config off", `  storage file_system ${managedCertificatesDir}`];
   if (email) lines.push(`  email ${email}`);
   const logging = ["  log {", `    output file ${accessLogPath} {`, "      roll_size 10mb", "      roll_keep 5", "      roll_keep_for 168h", "      roll_uncompressed", "    }", "    format json", "  }"];
   lines.push("}", "", ":80 {", ...logging);
@@ -380,8 +343,8 @@ async function syncCaddy() {
     }
     if (previousDefaultPage !== null) await fsp.writeFile(path.join(defaultSiteDir, "index.html"), previousDefaultPage);
     try {
-      sites = JSON.parse(await fsp.readFile(configPath, "utf8")); proxies = JSON.parse(await fsp.readFile(proxiesPath, "utf8")); redirects = JSON.parse(await fsp.readFile(redirectsPath, "utf8")); accessLists = JSON.parse(await fsp.readFile(accessListsPath, "utf8")); settings = JSON.parse(await fsp.readFile(settingsPath, "utf8"));
-    } catch { /* Startup may not have persisted every collection yet. */ }
+      sites = storage.loadCollection("sites"); proxies = storage.loadCollection("proxies"); redirects = storage.loadCollection("redirects"); accessLists = storage.loadCollection("access_lists"); settings = storage.loadSettings() || settings;
+    } catch { /* Startup may not have completed database initialization yet. */ }
     gatewayError = rollbackSucceeded ? null : rejectedReason;
     throw Object.assign(new Error(`Gateway configuration was rejected: ${rejectedReason}${rollbackSucceeded ? " The previous working configuration remains active." : ""}`), { status: 400 });
   }
@@ -423,7 +386,8 @@ async function certificateInventory() {
   const configured = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" }))]
     .filter(item => item.enabled && item.domain && item.tls !== "http");
   const parsed = [];
-  for (const filename of (await walkFiles(certificateDir)).filter(file => /\.(?:crt|pem)$/i.test(file))) {
+  const certificateFiles = [...await walkFiles(certificateDir), ...await walkFiles(customCertificatesDir)];
+  for (const filename of certificateFiles.filter(file => /\.(?:crt|pem)$/i.test(file))) {
     try {
       const certificate = new crypto.X509Certificate(await fsp.readFile(filename));
       const stat = await fsp.stat(filename);
@@ -565,6 +529,7 @@ async function dashboardSnapshot() {
   for (const proxy of proxyHosts.filter(item => item.enabled && item.upstream?.status === "unhealthy")) attention.push({ kind: "upstream", name: proxy.name, message: `Upstream is unavailable${proxy.upstream.error ? ` · ${proxy.upstream.error}` : ""}.` });
   for (const certificate of certificates.certificates.filter(item => ["warning", "critical", "expired"].includes(item.status))) attention.push({ kind: "certificate", name: certificate.domain, message: certificate.status === "expired" ? "Certificate has expired." : `Certificate expires in ${certificate.daysRemaining} day${certificate.daysRemaining === 1 ? "" : "s"}.` });
   const disk = await fsp.statfs(dataDir).catch(() => null);
+  const databaseIntegrity = storage.integrity();
   return {
     checkedAt: new Date().toISOString(),
     gateway: { ...gatewayProbe, lastReload: lastGatewayReload },
@@ -587,7 +552,10 @@ async function dashboardSnapshot() {
       diskTotalBytes: disk ? disk.blocks * disk.bsize : null,
       appVersion,
       caddyVersion,
-      nodeVersion: process.version
+      nodeVersion: process.version,
+      databaseEngine: "SQLite",
+      databaseStatus: databaseIntegrity.length === 1 && databaseIntegrity[0] === "ok" ? "Healthy" : "Needs attention",
+      databaseBytes: (await fsp.stat(storage.databasePath).catch(() => null))?.size || 0
     },
     activity: recentActivity
   };
@@ -663,7 +631,7 @@ async function installUpload(site, file) {
   }
 }
 
-const backupFiles = ["sites.json", "proxies.json", "redirects.json", "access-lists.json", "users.json", "settings.json"];
+const portableCollections = { "sites.json": () => sites, "proxies.json": () => proxies, "redirects.json": () => redirects, "access-lists.json": () => accessLists, "users.json": () => users, "settings.json": () => settings };
 
 async function protectBackup(buffer, password) {
   if (!password) return buffer;
@@ -687,13 +655,12 @@ async function createBackup(type = "configuration", includeLogs = false, prefix 
   const filename = `${prefix}-${stamp}.sgbackup`;
   const destination = path.join(backupsDir, filename);
   const zip = new AdmZip();
-  const manifest = { format: 1, product: "Site Gateway", appVersion, createdAt: new Date().toISOString(), type: safeType, includeLogs: Boolean(includeLogs), encrypted: Boolean(password), files: [] };
-  for (const name of backupFiles) {
-    const source = path.join(dataDir, name);
-    if (fs.existsSync(source)) { const value = await fsp.readFile(source); zip.addFile(`config/${name}`, value); manifest.files.push(`config/${name}`); }
-  }
+  const manifest = { format: 2, product: "Site Gateway", appVersion, database: "sqlite", schemaVersion: 1, instanceId: LOCAL_INSTANCE_ID, createdAt: new Date().toISOString(), type: safeType, includeLogs: Boolean(includeLogs), encrypted: Boolean(password), files: [] };
+  const databaseSnapshot = path.join(uploadDir, `database-${crypto.randomUUID()}.sqlite`);
+  storage.backupTo(databaseSnapshot); zip.addLocalFile(databaseSnapshot, "database", "site-gateway.sqlite"); await fsp.rm(databaseSnapshot, { force: true });
+  for (const [name, getter] of Object.entries(portableCollections)) zip.addFile(`portable-json/${name}`, Buffer.from(JSON.stringify(getter(), null, 2)));
   if (safeType === "complete") {
-    for (const [directory, archivePath] of [[sitesDir, "sites"], [iconsDir, "icons"], [defaultSiteDir, "default-site"], [customCertificatesDir, "custom-certificates"]]) {
+    for (const [directory, archivePath] of [[sitesDir, "sites"], [iconsDir, "icons"], [defaultSiteDir, "default-site"], [certificatesRoot, "certificates"]]) {
       if (fs.existsSync(directory)) zip.addLocalFolder(directory, archivePath);
     }
   }
@@ -720,7 +687,7 @@ async function restoreBackup(filename, password = "", createSafetyBackup = true)
   const source = path.resolve(backupsDir, filename);
   if (!source.startsWith(`${backupsDir}${path.sep}`) || !filename.endsWith(".sgbackup")) throw Object.assign(new Error("Invalid backup selection."), { status: 400 });
   const { zip } = await openBackup(source, password); const manifest = JSON.parse(zip.readAsText("manifest.json") || "null");
-  if (!manifest || manifest.product !== "Site Gateway" || manifest.format !== 1) throw Object.assign(new Error("This is not a supported Site Gateway backup."), { status: 400 });
+  if (!manifest || manifest.product !== "Site Gateway" || ![1,2].includes(manifest.format)) throw Object.assign(new Error("This is not a supported Site Gateway backup."), { status: 400 });
   for (const [name, expected] of Object.entries(manifest.checksums || {})) {
     const entry = zip.getEntry(name); if (!entry || crypto.createHash("sha256").update(entry.getData()).digest("hex") !== expected) throw Object.assign(new Error(`Backup integrity check failed for ${name}.`), { status: 400 });
   }
@@ -733,13 +700,25 @@ async function restoreBackup(filename, password = "", createSafetyBackup = true)
       if (!target.startsWith(`${staging}${path.sep}`)) throw Object.assign(new Error("Unsafe path in backup."), { status: 400 });
       if (entry.isDirectory) await fsp.mkdir(target, { recursive: true }); else { await fsp.mkdir(path.dirname(target), { recursive: true }); await fsp.writeFile(target, entry.getData()); }
     }
-    for (const name of backupFiles) {
-      const candidate = path.join(staging, "config", name);
-      if (fs.existsSync(candidate)) { JSON.parse(await fsp.readFile(candidate, "utf8")); await fsp.copyFile(candidate, path.join(dataDir, name)); }
+    const restoredDatabase = path.join(staging, "database", "site-gateway.sqlite");
+    if (fs.existsSync(restoredDatabase)) {
+      const candidate = new (await import("node:sqlite")).DatabaseSync(restoredDatabase, { readOnly: true }); const check = candidate.prepare("PRAGMA integrity_check").get(); candidate.close();
+      if (Object.values(check)[0] !== "ok") throw Object.assign(new Error("The restored SQLite database failed its integrity check."), { status: 400 });
+      const activeDatabasePath = storage.databasePath; storage.close();
+      await Promise.all([fsp.rm(`${activeDatabasePath}-wal`, { force: true }), fsp.rm(`${activeDatabasePath}-shm`, { force: true })]);
+      await fsp.copyFile(restoredDatabase, activeDatabasePath); storage = await openStorage(dataDir, backupsDir);
+    } else {
+      const legacyRoot = fs.existsSync(path.join(staging, "portable-json")) ? path.join(staging, "portable-json") : fs.existsSync(path.join(staging, "legacy-json")) ? path.join(staging, "legacy-json") : path.join(staging, "config");
+      storage.saveCollection("sites", []); storage.saveCollection("proxies", []); storage.saveCollection("redirects", []);
+      for (const [name, kind] of Object.entries({ "access-lists.json":"access_lists", "sites.json":"sites", "proxies.json":"proxies", "redirects.json":"redirects", "users.json":"users" })) { const candidate = path.join(legacyRoot, name); if (fs.existsSync(candidate)) storage.saveCollection(kind, JSON.parse(await fsp.readFile(candidate, "utf8"))); }
+      const settingsCandidate = path.join(legacyRoot, "settings.json"); if (fs.existsSync(settingsCandidate)) storage.saveSettings(JSON.parse(await fsp.readFile(settingsCandidate, "utf8")));
     }
-    if (manifest.type === "complete") for (const name of ["sites", "icons", "default-site", "custom-certificates"]) {
+    if (manifest.type === "complete") for (const name of ["sites", "icons", "default-site", "certificates"]) {
       const candidate = path.join(staging, name); if (!fs.existsSync(candidate)) continue;
       const destination = path.join(dataDir, name); await fsp.rm(destination, { recursive: true, force: true }); await fsp.cp(candidate, destination, { recursive: true });
+    }
+    if (manifest.type === "complete" && fs.existsSync(path.join(staging, "custom-certificates"))) {
+      await fsp.mkdir(customCertificatesDir, { recursive: true }); await fsp.cp(path.join(staging, "custom-certificates"), customCertificatesDir, { recursive: true });
     }
     await Promise.all([...activeServers.keys()].map(stopSite)); sites = []; proxies = []; users = []; redirects = []; accessLists = []; settings = {}; recentActivity.splice(0); await loadSites();
     for (const site of sites.filter(item => item.enabled)) await startSite(site);
@@ -843,7 +822,7 @@ app.use("/api", (req, res, next) => {
   next();
 });
 app.use("/api", (req, res, next) => req.user.role === "administrator" || req.method === "GET" ? next() : res.status(403).json({ error: "Administrator access is required to make changes." }));
-app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, gateway: { enabled: true, error: gatewayError } }));
+app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError } }));
 app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));
 app.post("/api/users", async (req, res, next) => {
   try {
@@ -1211,7 +1190,7 @@ app.post("/api/backups/import", upload.single("backup"), async (req, res, next) 
   try {
     if (!req.file) return res.status(400).json({ error: "Choose a .sgbackup file." });
     const { zip } = await openBackup(req.file.path, String(req.body.password || "")); const manifest = JSON.parse(zip.readAsText("manifest.json") || "null");
-    if (!manifest || manifest.product !== "Site Gateway" || manifest.format !== 1) throw Object.assign(new Error("This is not a supported Site Gateway backup."), { status: 400 });
+    if (!manifest || manifest.product !== "Site Gateway" || ![1,2].includes(manifest.format)) throw Object.assign(new Error("This is not a supported Site Gateway backup."), { status: 400 });
     const filename = `imported-${new Date().toISOString().replace(/[:.]/g, "-")}.sgbackup`; await fsp.rename(req.file.path, path.join(backupsDir, filename));
     recordActivity(`Backup imported from this computer.`); res.status(201).json({ filename, manifest });
   } catch (error) { if (req.file) await fsp.rm(req.file.path, { force: true }); next(error); }
@@ -1258,6 +1237,7 @@ setInterval(() => runScheduledBackup().catch(error => console.warn("Scheduled ba
 
 async function shutdown() {
   await Promise.all([...activeServers.keys()].map(stopSite));
+  try { storage?.close(); } catch { /* Database may already be closed during restore. */ }
   process.exit(0);
 }
 process.on("SIGTERM", shutdown);

@@ -1,6 +1,6 @@
 services:
   site-gateway:
-    image: ghcr.io/mfwadejr/site-gateway:latest
+    image: ${SITE_GATEWAY_IMAGE:-ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.1}
     container_name: site-gateway
     restart: unless-stopped
     environment:
@@ -11,7 +11,6 @@ services:
       SITE_PORT_MIN: 9000
       SITE_PORT_MAX: 9099
       DATA_DIR: /data
-      BACKUP_DIR: /backups
       BACKUP_PASSWORD: ${BACKUP_PASSWORD:-}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
@@ -19,10 +18,10 @@ services:
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
       - "8080:8080"
       - "9000-9099:9000-9099"
     volumes:
       - ${SITE_GATEWAY_DATA:-/DATA/AppData/site-gateway}:/data
-      - ${SITE_GATEWAY_BACKUPS:-/DATA/Backups/site-gateway}:/backups
     labels:
       com.centurylinklabs.watchtower.enable: "true"

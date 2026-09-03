@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>Site Gateway</Name>
-  <Repository>ghcr.io/mfwadejr/site-gateway:latest</Repository>
+  <Repository>ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.1</Repository>
   <Registry>https://github.com/mfwadejr/site-gateway/pkgs/container/site-gateway</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
@@ -9,7 +9,7 @@
   <Support>https://github.com/mfwadejr/site-gateway/issues</Support>
   <Project>https://github.com/mfwadejr/site-gateway</Project>
   <Overview>An easy self-hosted gateway for publishing static sites, proxying services, managing domains, and automating HTTPS.</Overview>
-  <Icon>https://raw.githubusercontent.com/mfwadejr/site-gateway/main/product-icon-v1.png</Icon>
+  <Icon>https://raw.githubusercontent.com/mfwadejr/site-gateway/main/src/public/icon.png</Icon>
   <Category>Network:Web</Category>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
   <ExtraParams>--restart unless-stopped</ExtraParams>
@@ -22,9 +22,9 @@
   <Config Name="Dashboard" Target="8080" Default="8080" Mode="tcp" Description="Administration dashboard" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
   <Config Name="HTTP Gateway" Target="80" Default="80" Mode="tcp" Description="Public HTTP and ACME validation" Type="Port" Display="always" Required="true" Mask="false">80</Config>
   <Config Name="HTTPS Gateway" Target="443" Default="443" Mode="tcp" Description="Public HTTPS traffic" Type="Port" Display="always" Required="true" Mask="false">443</Config>
+  <Config Name="HTTP/3 Gateway" Target="443" Default="443" Mode="udp" Description="Optional HTTP/3 HTTPS traffic" Type="Port" Display="advanced" Required="false" Mask="false">443</Config>
   <Config Name="Site ports" Target="9000-9099" Default="9000-9099" Mode="tcp" Description="Ports available for hosted sites" Type="Port" Display="always" Required="true" Mask="false">9000-9099</Config>
   <Config Name="Data" Target="/data" Default="/mnt/user/appdata/site-gateway" Mode="rw" Description="Persistent sites and configuration" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/site-gateway</Config>
-  <Config Name="Backups" Target="/backups" Default="/mnt/user/backups/site-gateway" Mode="rw" Description="Scheduled backup destination; use a separately protected share when possible" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/backups/site-gateway</Config>
   <Config Name="Admin username" Target="ADMIN_USERNAME" Default="admin" Mode="" Description="Dashboard login name" Type="Variable" Display="always" Required="true" Mask="false">admin</Config>
   <Config Name="Admin password" Target="ADMIN_PASSWORD" Default="" Mode="" Description="Use a long, unique password" Type="Variable" Display="always" Required="true" Mask="true"/>
   <Config Name="Session secret" Target="SESSION_SECRET" Default="" Mode="" Description="At least 32 random characters" Type="Variable" Display="advanced" Required="true" Mask="true"/>
