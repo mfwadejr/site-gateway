@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], redirects: [], accessLists: [], backups: [], settings: null, dashboard: null, certificates: null, logs: null, users: [], user: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
+const state = { sites: [], proxies: [], redirects: [], accessLists: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 function applyTheme(preference) {
@@ -18,7 +18,7 @@ async function api(url, options = {}) {
   if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Request failed."); }
   return response.status === 204 ? null : response.json();
 }
-function showLogin(message = "") { state.user = null; state.users = []; state.view = "overview"; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; }
+function showLogin(message = "") { state.user = null; state.users = []; state.view = "overview"; const form = $("#login-form"); form.reset(); form.elements.username.value = ""; form.elements.password.value = ""; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; }
 function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); }
 function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
@@ -94,7 +94,7 @@ function renderDashboard() {
   $("#system-caddy-version").textContent = data.system.caddyVersion;
   $("#system-database").textContent = `${data.system.databaseEngine} · ${data.system.databaseStatus}`;
   $("#system-database-detail").textContent = `${formatBytes(data.system.databaseBytes)} configuration database`;
-  $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<div class="dashboard-list-item issue"><span class="status-dot error"></span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></div>`).join("") : '<p class="quiet-state">Everything looks good.</p>';
+  $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<${item.target ? "button" : "div"} class="dashboard-list-item issue ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`).join("") : '<p class="quiet-state">Everything looks good.</p>';
   $("#activity-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : ""}">${item.status === "error" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No changes recorded yet.</p>';
 }
 
@@ -123,14 +123,26 @@ function proxyCard(proxy) {
 function renderCertificates() {
   const data = state.certificates; if (!data) return;
   $("#certificate-count").textContent = data.summary.total;
-  $("#cert-healthy").textContent = data.summary.healthy; $("#cert-warning").textContent = data.summary.warning + data.summary.critical + data.summary.expired; $("#cert-pending").textContent = data.summary.pending;
-  $("#certificate-list").innerHTML = data.certificates.length ? data.certificates.map(cert => `<article class="data-row"><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span><div><strong>${escapeHtml(cert.domain)}</strong><small>${escapeHtml(cert.kind)} · ${escapeHtml(cert.name)}</small></div><div><strong>${cert.expiresAt ? `${cert.daysRemaining} days` : "Not detected"}</strong><small>${cert.expiresAt ? `Expires ${formatTime(cert.expiresAt)}` : "Caddy has not stored a certificate"}</small></div><div><strong>${escapeHtml(cert.issuer || "No issuer detected")}</strong><small>${cert.updatedAt ? `Certificate updated ${formatTime(cert.updatedAt)}` : "Automatic HTTPS is configured"}</small></div></article>`).join("") : '<p class="quiet-state">No automatic HTTPS domains are configured.</p>';
+  $("#cert-healthy").textContent = data.summary.healthy; $("#cert-30").textContent = data.summary.within30Days; $("#cert-7").textContent = data.summary.within7Days; $("#cert-warning").textContent = data.summary.warning + data.summary.critical + data.summary.expired + data.summary.mismatch; $("#cert-pending").textContent = data.summary.pending;
+  const ageMinutes = (Date.now() - new Date(data.checkedAt).getTime()) / 60000, stale = ageMinutes > (data.thresholds?.staleMinutes || 10);
+  $("#cert-last-checked").textContent = `Last checked ${formatTime(data.checkedAt)} · ${stale ? "data may be stale" : "current"}`;
+  $("#cert-event").innerHTML = data.latestError ? `<strong>Latest relevant error</strong><span>${escapeHtml(data.latestError.message)} · ${escapeHtml(formatTime(data.latestError.at))}</span>` : '<strong>Certificate activity</strong><span>No recent certificate or TLS errors have been recorded by Site Gateway.</span>';
+  $("#certificate-list").innerHTML = data.certificates.length ? data.certificates.map(cert => `<details class="certificate-row"><summary><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span><span><strong>${escapeHtml(cert.domain)}</strong><small>${escapeHtml(cert.kind)} · ${escapeHtml(cert.name)} · ${escapeHtml(cert.source)}</small></span><span><strong>${cert.expiresAt ? `${cert.daysRemaining} days remaining` : cert.status === "mismatch" ? "Domain mismatch" : "Not detected"}</strong><small>${cert.expiresAt ? `Expires ${formatTime(cert.expiresAt)}` : cert.mismatch ? `Covers: ${(cert.coveredNames || []).map(escapeHtml).join(", ") || "no DNS names"}` : "No stored certificate was found"}</small></span></summary><dl class="certificate-details"><div><dt>Status</dt><dd>${escapeHtml(cert.status)}</dd></div><div><dt>Valid from</dt><dd>${cert.validFrom ? escapeHtml(formatTime(cert.validFrom)) : "—"}</dd></div><div><dt>Issuer</dt><dd>${escapeHtml(cert.issuer || "—")}</dd></div><div><dt>Covered domains</dt><dd>${escapeHtml((cert.coveredNames || []).join(", ") || "—")}</dd></div><div><dt>Serial number</dt><dd>${escapeHtml(cert.serialNumber || "—")}</dd></div><div><dt>SHA-256 fingerprint</dt><dd>${escapeHtml(cert.fingerprint || "—")}</dd></div><div><dt>Last detected update</dt><dd>${cert.updatedAt ? escapeHtml(formatTime(cert.updatedAt)) : "—"}</dd></div></dl></details>`).join("") : '<p class="quiet-state padded">No HTTPS domains are configured.</p>';
+  renderReadiness();
+}
+
+function renderReadiness() {
+  const routes = state.readiness?.routes || [];
+  $("#readiness-list").innerHTML = routes.length ? routes.map(item => { const dnsOk = item.dns.healthy, portsOk = item.ports.http && item.ports.https !== false, tlsOk = ["healthy","warning","critical","not-configured"].includes(item.tls.status), upstreamOk = !item.upstream || item.upstream.status === "healthy"; const message = !dnsOk ? `DNS failed${item.dns.error ? ` · ${item.dns.error}` : ""}` : !item.ports.http ? "HTTP port 80 is not responding inside the container" : item.ports.https === false ? "HTTPS port 443 is not responding inside the container" : !tlsOk ? `TLS ${item.tls.status.replaceAll("-", " ")}` : !upstreamOk ? `Upstream ${item.upstream.error || "unavailable"}` : `Ready · DNS ${item.dns.addresses.join(", ")}${item.upstream ? ` · upstream ${item.upstream.httpStatus || "responding"}` : ""}`; return `<div class="dashboard-list-item"><span class="status-dot ${dnsOk && portsOk && tlsOk && upstreamOk ? "running" : "error"}"></span><span><strong>${escapeHtml(item.domain)}</strong><small>${escapeHtml(message)}</small></span></div>`; }).join("") : '<p class="quiet-state">No configured domains to check.</p>';
 }
 
 function renderLogs() {
   const data = state.logs; if (!data) return;
   const selected = $("#log-host").value; $("#log-host").innerHTML = '<option value="">All domains</option>' + data.hosts.map(host => `<option value="${escapeHtml(host)}">${escapeHtml(host)}</option>`).join(""); $("#log-host").value = selected;
-  $("#log-rows").innerHTML = data.entries.length ? data.entries.map(entry => `<tr><td>${escapeHtml(formatTime(entry.at))}</td><td>${escapeHtml(entry.host || "—")}</td><td><code>${escapeHtml(entry.method || "")} ${escapeHtml(entry.uri || "")}</code></td><td><span class="http-status ${entry.status >= 500 ? "bad" : ""}">${entry.status ?? "—"}</span></td><td>${entry.durationMs == null ? "—" : `${entry.durationMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No matching requests have been logged yet.</td></tr>';
+  const statusClass = $("#log-status").value, entries = statusClass ? data.entries.filter(entry => String(entry.status || "").startsWith(statusClass)) : data.entries;
+  const errors = entries.filter(entry => entry.status >= 400).length, measured = entries.filter(entry => entry.durationMs != null), average = measured.length ? Math.round(measured.reduce((sum,entry) => sum + entry.durationMs,0) / measured.length) : null;
+  $("#log-summary").textContent = `${entries.length} request${entries.length === 1 ? "" : "s"} · ${errors} error response${errors === 1 ? "" : "s"} · ${average == null ? "no latency data" : `${average} ms average`}`;
+  $("#log-rows").innerHTML = entries.length ? entries.map(entry => `<tr><td>${escapeHtml(formatTime(entry.at))}</td><td>${escapeHtml(entry.host || "—")}</td><td><code>${escapeHtml(entry.method || "")} ${escapeHtml(entry.uri || "")}</code></td><td><span class="http-status ${entry.status >= 500 ? "bad" : ""}">${entry.status ?? "—"}</span></td><td>${entry.durationMs == null ? "—" : `${entry.durationMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No matching requests have been logged yet.</td></tr>';
   $("#gateway-log-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : ""}">${item.status === "error" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No gateway activity recorded yet.</p>';
 }
 
@@ -146,7 +158,7 @@ function renderUsers() {
 }
 
 async function loadFeatureView() {
-  if (state.view === "certificates") { state.certificates = await api("/api/certificates"); renderCertificates(); }
+  if (state.view === "certificates") { [state.certificates, state.readiness] = await Promise.all([api("/api/certificates"), api("/api/readiness")]); renderCertificates(); }
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
   if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); renderUsers(); window.renderExtendedViews?.(); }
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
@@ -209,15 +221,19 @@ async function boot() {
   if (!state.healthTimer) state.healthTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboard().catch(error => toast(error.message)); }, 30000);
 }
 
-$("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
+$("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); event.target.reset(); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
 $("#setup-form").addEventListener("submit", async event => { event.preventDefault(); $("#setup-error").textContent = ""; try { await api("/api/setup/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); $("#setup-dialog").close(); event.target.reset(); await boot(); showLogin("Administrator account saved. Sign in with your finalized credentials."); } catch (error) { $("#setup-error").textContent = error.message; } });
 $("#setup-dialog").addEventListener("cancel", event => event.preventDefault());
 $("#logout").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); showLogin(); });
+$("#check-health").addEventListener("click", async event => { const button = event.currentTarget; button.disabled = true; button.textContent = "Checking…"; try { const result = await api("/api/health/check", { method:"POST" }); state.dashboard = result.dashboard; state.certificates = result.certificates; state.readiness = { routes:result.readiness }; renderCertificates(); toast("Health checks completed."); } catch (error) { toast(error.message); } finally { button.disabled = false; button.textContent = "Check now"; } });
+$("#download-support").addEventListener("click", () => { location.href = "/api/support-report"; });
+$("#attention-list").addEventListener("click", event => { const target = event.target.closest("[data-issue-target]")?.dataset.issueTarget; if (target) { state.view = target; render(); loadFeatureView().catch(error => toast(error.message)); } });
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }
 document.querySelectorAll("nav, .aside-utilities").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); } }));
 $("#dashboard-view").addEventListener("click", event => { const card = event.target.closest("[data-target]"); if (card) { state.view = card.dataset.target; render(); loadFeatureView().catch(error => toast(error.message)); } });
 $("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
+$("#log-status").addEventListener("change", renderLogs);
 function openCreate() {
   if (state.view === "administration") { $("#user-form").reset(); $("#user-error").textContent = ""; return $("#user-dialog").showModal(); }
   if (state.view === "redirects") { $("#redirect-form").reset(); delete $("#redirect-form").dataset.editing; $("#redirect-error").textContent = ""; return $("#redirect-dialog").showModal(); }
@@ -228,7 +244,7 @@ function openCreate() {
 $("#open-create").addEventListener("click", openCreate);
 document.addEventListener("click", event => { if (event.target.closest(".create-trigger")) openCreate(); if (event.target.closest(".close-dialog")) event.target.closest("dialog").close(); if (!event.target.closest(".menu-wrap")) closeMenus(); });
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeMenus(); });
-document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("close", closeMenus));
+document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("close", () => { closeMenus(); dialog.querySelectorAll('input[type="password"]').forEach(input => input.value = ""); }));
 $("#refresh-health").addEventListener("click", () => refreshDashboard().catch(error => toast(error.message)));
 $("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refresh(); toast("Hosted site created and gateway applied."); } catch (error) { $("#create-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 $("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refresh(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { $("#proxy-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });

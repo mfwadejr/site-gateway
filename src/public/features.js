@@ -28,7 +28,12 @@ function renderDefaultSettings() {
   form.elements.preservePath.checked = value.preservePath !== false;
 }
 
-window.renderExtendedViews = function () { renderRedirects(); renderAccessLists(); renderBackups(); renderDefaultSettings(); };
+function renderHealthSettings() {
+  if (!state.settings) return; const form = document.querySelector("#health-settings-form"), value = state.settings.certificateHealth || {};
+  for (const key of ["warningDays","criticalDays","staleMinutes"]) if (value[key] !== undefined) form.elements[key].value = value[key];
+}
+
+window.renderExtendedViews = function () { renderRedirects(); renderAccessLists(); renderBackups(); renderDefaultSettings(); renderHealthSettings(); };
 
 for (let hour = 0; hour < 24; hour++) document.querySelector('#backup-settings-form [name="hour"]').insertAdjacentHTML("beforeend", `<option value="${hour}">${String(hour).padStart(2,"0")}:00</option>`);
 
@@ -57,6 +62,7 @@ document.querySelector(".admin-tabs").addEventListener("click", event => { const
 document.querySelector("#default-site-form").addEventListener("submit", async event => { event.preventDefault(); const form = new FormData(event.target), value = Object.fromEntries(form); value.preservePath = form.has("preservePath"); try { state.settings = await api("/api/settings", { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({defaultSite:value}) }); toast("Default Site validated and applied."); } catch (error) { document.querySelector("#default-error").textContent = error.message; } });
 
 document.querySelector("#backup-settings-form").addEventListener("submit", async event => { event.preventDefault(); const form = new FormData(event.target), backups = Object.fromEntries(form); delete backups.backupPassword; backups.enabled = form.has("enabled"); backups.includeLogs = form.has("includeLogs"); backups.encrypt = form.has("encrypt"); try { state.settings = await api("/api/settings", { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({backups}) }); toast("Backup schedule saved."); } catch (error) { toast(error.message); } });
+document.querySelector("#health-settings-form").addEventListener("submit", async event => { event.preventDefault(); const certificateHealth = Object.fromEntries(new FormData(event.target)); try { state.settings = await api("/api/settings", { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({certificateHealth}) }); renderHealthSettings(); toast("Certificate health thresholds saved."); } catch (error) { toast(error.message); } });
 
 document.querySelector("#create-backup").addEventListener("click", async () => { const form = new FormData(document.querySelector("#backup-settings-form")); try { const result = await api("/api/backups", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type:form.get("type"),includeLogs:form.has("includeLogs"),password:form.get("backupPassword")}) }); state.backups = await api("/api/backups"); renderBackups(); location.href = `/api/backups/${encodeURIComponent(result.filename)}/download`; toast("Backup created. Download starting."); } catch (error) { toast(error.message); } });
 document.querySelector("#import-backup").addEventListener("click", () => document.querySelector("#backup-upload").click());

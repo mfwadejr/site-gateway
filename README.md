@@ -15,7 +15,7 @@
     <a href="#domains-proxy-hosts-and-tls">Domains &amp; TLS</a> ·
     <a href="#unraid-alpha-install">Unraid</a> ·
     <a href="#zimaos-alpha-install">ZimaOS</a> ·
-    <a href="INSTALL-v0.8.0-alpha.2.md">v0.8 installation guide</a> ·
+    <a href="INSTALL-v0.9.0-alpha.1.md">v0.9 installation guide</a> ·
     <a href="ROADMAP.md">Roadmap</a>
   </p>
 </div>
@@ -220,7 +220,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.8.0-alpha.2` publishes `ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.2` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.9.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.9.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ### Monitoring in v0.5.0-alpha.1
 
@@ -262,6 +262,14 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 - After the first successful sign-in, the administrator must confirm or change the display name, username, and password before opening the dashboard.
 - Completing setup rotates the account session identity and requires one final sign-in with the finalized credentials.
 - Existing installations are treated as already configured and are not interrupted by the new workflow.
+
+### Trust and visibility in v0.9.0-alpha.1
+
+- Certificate details include source, covered domains, issuer, validity, serial number, fingerprint, expiration, and the last detected file update.
+- Configurable warning thresholds, 30-day and 7-day totals, uploaded-certificate mismatch detection, and linked dashboard alerts make certificate state actionable.
+- On-demand diagnostics distinguish DNS, HTTP/HTTPS listener, TLS, and upstream failures for each configured domain.
+- Administrators can download a redacted support report that excludes credentials, private keys, cookies, secrets, and expert configuration.
+- Password minimums are eight characters throughout, and authentication forms are cleared after use.
 
 ## Security notes
 

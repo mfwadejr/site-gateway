@@ -65,6 +65,7 @@ The existing Node application remains responsible for authentication, the wizard
 - Redirect Hosts, Access Lists with themed authentication, advanced Proxy Host controls, custom certificates, configurable fallback pages, integrated documentation, Administration, and backup/restore (v0.7.0-alpha.1)
 - Built-in SQLite persistence, Local Gateway instance scoping, JSON migration safeguards, unified certificate storage, and database-aware backups (v0.8.0-alpha.1)
 - First-install sign-in guidance and required one-time administrator account finalization (v0.8.0-alpha.2)
+- Certificate details, configurable expiration thresholds, guided domain diagnostics, on-demand health checks, redacted support reports, and authentication cleanup (v0.9.0-alpha.1)
 
 ### Next alpha milestone — visibility and certificate health
 

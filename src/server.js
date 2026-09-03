@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import dns from "node:dns/promises";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -164,10 +165,11 @@ async function loadSites() {
   accessLists = storage.loadCollection("access_lists");
   const defaultSettings = {
     defaultSite: { mode: "themed404", redirectUrl: "", redirectCode: 302, preservePath: true, title: "Route not found", message: "The gateway is responding, but this address has not been configured.", customHtml: "" },
-    backups: { enabled: false, frequency: "daily", hour: 2, retention: 7, type: "configuration", includeLogs: false, encrypt: false, lastRunAt: null, lastStatus: null }
+    backups: { enabled: false, frequency: "daily", hour: 2, retention: 7, type: "configuration", includeLogs: false, encrypt: false, lastRunAt: null, lastStatus: null },
+    certificateHealth: { warningDays: 30, criticalDays: 7, staleMinutes: 10 }
   };
   const storedSettings = storage.loadSettings() || defaultSettings;
-  settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) } };
+  settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) }, certificateHealth: { ...defaultSettings.certificateHealth, ...(storedSettings.certificateHealth || {}) } };
   await saveSettings();
 }
 
@@ -398,18 +400,36 @@ async function certificateInventory() {
     try {
       const certificate = new crypto.X509Certificate(await fsp.readFile(filename));
       const stat = await fsp.stat(filename);
-      parsed.push({ certificate, names: certificateNames(certificate), updatedAt: stat.mtime.toISOString() });
+      parsed.push({ certificate, names: certificateNames(certificate), updatedAt: stat.mtime.toISOString(), filename, source: filename.startsWith(customCertificatesDir) ? "Custom upload" : "Caddy / ACME" });
     } catch { /* Ignore non-certificate PEM files and unreadable entries. */ }
   }
   const certificates = configured.map(item => {
     const found = parsed.find(entry => entry.names.some(name => name === item.domain || (name.startsWith("*.") && item.domain.endsWith(name.slice(1)))));
-    if (!found) return { domain: item.domain, name: item.name, kind: item.kind, status: "pending", daysRemaining: null, expiresAt: null, issuer: null, updatedAt: null };
+    if (!found) {
+      const customForRoute = item.tls === "custom" ? parsed.find(entry => entry.source === "Custom upload" && entry.filename.includes(item.id)) : null;
+      return { domain: item.domain, name: item.name, kind: item.kind, status: customForRoute ? "mismatch" : "pending", daysRemaining: null, expiresAt: null, issuer: null, updatedAt: customForRoute?.updatedAt || null, source: item.tls === "internal" ? "Caddy internal CA" : item.tls === "custom" ? "Custom upload" : "Caddy / ACME", mismatch: Boolean(customForRoute), coveredNames: customForRoute?.names || [] };
+    }
     const expiresAt = new Date(found.certificate.validTo);
     const daysRemaining = Math.ceil((expiresAt.getTime() - Date.now()) / 86400000);
-    const status = daysRemaining <= 0 ? "expired" : daysRemaining <= 7 ? "critical" : daysRemaining <= 30 ? "warning" : "healthy";
-    return { domain: item.domain, name: item.name, kind: item.kind, status, daysRemaining, expiresAt: expiresAt.toISOString(), issuer: found.certificate.issuer, updatedAt: found.updatedAt, fingerprint: found.certificate.fingerprint256 };
+    const warningDays = settings.certificateHealth?.warningDays || 30, criticalDays = settings.certificateHealth?.criticalDays || 7;
+    const status = daysRemaining <= 0 ? "expired" : daysRemaining <= criticalDays ? "critical" : daysRemaining <= warningDays ? "warning" : "healthy";
+    return { domain: item.domain, name: item.name, kind: item.kind, status, daysRemaining, validFrom: new Date(found.certificate.validFrom).toISOString(), expiresAt: expiresAt.toISOString(), issuer: found.certificate.issuer, subject: found.certificate.subject, serialNumber: found.certificate.serialNumber, updatedAt: found.updatedAt, fingerprint: found.certificate.fingerprint256, coveredNames: found.names, source: item.tls === "internal" ? "Caddy internal CA" : found.source, mismatch: false };
   });
-  return { summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length }, certificates };
+  const latestError = recentActivity.find(item => item.status === "error" && /cert|tls|acme|caddy|gateway/i.test(item.message)) || null;
+  return { checkedAt: new Date().toISOString(), thresholds: settings.certificateHealth, latestError, summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, within30Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 30 && item.daysRemaining > 0).length, within7Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 7 && item.daysRemaining > 0).length, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length, mismatch: certificates.filter(item => item.status === "mismatch").length }, certificates };
+}
+
+async function domainReadiness() {
+  const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.enabled && item.domain);
+  const certs = await certificateInventory();
+  const [httpResponding, httpsResponding] = await Promise.all([tcpProbe(80), tcpProbe(443)]);
+  return Promise.all(routes.map(async item => {
+    let addresses = [], dnsError = null;
+    try { addresses = [...new Set((await dns.lookup(item.domain, { all: true })).map(value => value.address))]; } catch (error) { dnsError = error.code || error.message; }
+    const certificate = certs.certificates.find(cert => cert.domain === item.domain) || null;
+    const upstream = item.kind === "Proxy host" ? upstreamHealth.get(item.id) || null : null;
+    return { id: item.id, domain: item.domain, name: item.name, kind: item.kind, dns: { healthy: addresses.length > 0, addresses, error: dnsError }, ports: { http: httpResponding, https: item.tls === "http" ? null : httpsResponding }, tls: item.tls === "http" ? { status: "not-configured" } : { status: certificate?.status || "pending" }, upstream };
+  }));
 }
 
 async function checkProxy(proxy) {
@@ -534,7 +554,7 @@ async function dashboardSnapshot() {
   for (const site of hosted.filter(item => item.status === "error")) attention.push({ kind: "hosted", name: site.name, message: `Hosted site is not responding on port ${site.port}.` });
   for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention." });
   for (const proxy of proxyHosts.filter(item => item.enabled && item.upstream?.status === "unhealthy")) attention.push({ kind: "upstream", name: proxy.name, message: `Upstream is unavailable${proxy.upstream.error ? ` · ${proxy.upstream.error}` : ""}.` });
-  for (const certificate of certificates.certificates.filter(item => ["warning", "critical", "expired"].includes(item.status))) attention.push({ kind: "certificate", name: certificate.domain, message: certificate.status === "expired" ? "Certificate has expired." : `Certificate expires in ${certificate.daysRemaining} day${certificate.daysRemaining === 1 ? "" : "s"}.` });
+  for (const certificate of certificates.certificates.filter(item => ["warning", "critical", "expired", "mismatch"].includes(item.status))) attention.push({ kind: "certificate", target: "certificates", name: certificate.domain, message: certificate.status === "expired" ? "Certificate has expired." : certificate.status === "mismatch" ? "The uploaded certificate does not cover this domain." : `Certificate expires in ${certificate.daysRemaining} day${certificate.daysRemaining === 1 ? "" : "s"}.` });
   const disk = await fsp.statfs(dataDir).catch(() => null);
   const databaseIntegrity = storage.integrity();
   return {
@@ -839,7 +859,7 @@ app.post("/api/setup/admin", async (req, res, next) => {
     if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return res.status(400).json({ error: "Username must be 3–64 characters using letters, numbers, periods, hyphens, or underscores." });
     if (users.some(user => user.id !== req.user.id && user.username === username)) return res.status(409).json({ error: "That username already exists." });
     if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Display name is required and must be 80 characters or fewer." });
-    if (password.length < 12) return res.status(400).json({ error: "Password must contain at least 12 characters." });
+    if (password.length < 8) return res.status(400).json({ error: "Password must contain at least 8 characters." });
     if (!safeEqual(password, confirmation)) return res.status(400).json({ error: "The passwords do not match." });
     req.user.username = username; req.user.displayName = displayName; req.user.password = await passwordRecord(password);
     req.user.source = "local"; req.user.setupRequired = false; req.user.sessionVersion = crypto.randomBytes(16).toString("hex"); req.user.updatedAt = new Date().toISOString();
@@ -861,7 +881,7 @@ app.post("/api/users", async (req, res, next) => {
     if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return res.status(400).json({ error: "Username must be 3–64 characters using letters, numbers, periods, hyphens, or underscores." });
     if (users.some(user => user.username === username)) return res.status(409).json({ error: "That username already exists." });
     if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Display name is required and must be 80 characters or fewer." });
-    if (password.length < 12) return res.status(400).json({ error: "Password must contain at least 12 characters." });
+    if (password.length < 8) return res.status(400).json({ error: "Password must contain at least 8 characters." });
     const now = new Date().toISOString();
     const user = { id: crypto.randomUUID(), username, displayName, role, status: "active", password: await passwordRecord(password), source: "local", createdAt: now, updatedAt: now, lastLoginAt: null };
     users.push(user); await saveUsers(); recordActivity(`User “${user.username}” created as ${role === "administrator" ? "Administrator" : "Standard User"}.`);
@@ -887,7 +907,7 @@ app.patch("/api/users/:id", async (req, res, next) => {
     }
     if (req.body.password !== undefined) {
       const password = String(req.body.password);
-      if (password.length < 12) return res.status(400).json({ error: "Password must contain at least 12 characters." });
+      if (password.length < 8) return res.status(400).json({ error: "Password must contain at least 8 characters." });
       user.password = await passwordRecord(password);
     }
     user.updatedAt = new Date().toISOString(); await saveUsers(); recordActivity(`User “${user.username}” updated · ${user.role === "administrator" ? "Administrator" : "Standard User"} · ${user.status}.`);
@@ -906,6 +926,20 @@ app.get("/api/dashboard", async (req, res, next) => {
 app.get("/api/certificates", async (req, res, next) => {
   try { res.json(await certificateInventory()); }
   catch (error) { next(error); }
+});
+app.post("/api/health/check", async (req, res, next) => {
+  try { await checkAllProxies(); res.json({ dashboard: await dashboardSnapshot(), certificates: await certificateInventory(), readiness: await domainReadiness() }); }
+  catch (error) { next(error); }
+});
+app.get("/api/readiness", async (req, res, next) => { try { res.json({ checkedAt: new Date().toISOString(), routes: await domainReadiness() }); } catch (error) { next(error); } });
+app.get("/api/support-report", async (req, res, next) => {
+  try {
+    if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+    const certificateReport = await certificateInventory();
+    certificateReport.latestError = certificateReport.latestError ? { present:true, at:certificateReport.latestError.at } : null;
+    const report = { product: "Site Gateway", generatedAt: new Date().toISOString(), version: appVersion, caddyVersion, nodeVersion: process.version, storage: { engine: "SQLite", integrity: storage.integrity() }, gateway: { healthy: !gatewayError, lastReload: lastGatewayReload }, routes: { hosted: sites.map(({ id,name,domain,tls,enabled,port }) => ({ id,name,domain,tls,enabled,port })), proxies: proxies.map(({ id,name,domain,tls,enabled,target,healthEnabled,healthExpected }) => ({ id,name,domain,tls,enabled,target,healthEnabled,healthExpected })), redirects: redirects.map(({ id,name,domain,tls,enabled,code }) => ({ id,name,domain,tls,enabled,code })) }, certificates: certificateReport, readiness: await domainReadiness(), recentEvents: recentActivity.slice(0,20).map(item => ({ at:item.at, status:item.status, message:item.status === "error" ? "Operational error recorded; review the protected in-app event log for details." : item.message })) };
+    res.setHeader("Content-Disposition", `attachment; filename="site-gateway-support-${new Date().toISOString().slice(0,10)}.json"`); res.type("json").send(JSON.stringify(report, null, 2));
+  } catch (error) { next(error); }
 });
 app.get("/api/upstreams", (req, res) => res.json(proxies.map(publicProxy)));
 app.post("/api/upstreams/check", async (req, res, next) => {
@@ -1130,7 +1164,7 @@ app.post("/api/access-lists", async (req, res, next) => {
     const credentials = [];
     for (const entry of Array.isArray(req.body.credentials) ? req.body.credentials.slice(0, 25) : []) {
       const username = String(entry.username || "").trim(); const password = String(entry.password || "");
-      if (!/^[A-Za-z0-9._-]{1,64}$/.test(username) || password.length < 12) return res.status(400).json({ error: "Access usernames must be valid and passwords must contain at least 12 characters." });
+      if (!/^[A-Za-z0-9._-]{1,64}$/.test(username) || password.length < 8) return res.status(400).json({ error: "Access usernames must be valid and passwords must contain at least 8 characters." });
       const { stdout } = await execFileAsync("caddy", ["hash-password", "--plaintext", password]);
       credentials.push({ username, hash: stdout.trim(), password: await passwordRecord(password) });
     }
@@ -1157,7 +1191,7 @@ app.patch("/api/access-lists/:id", async (req, res, next) => {
     }
     if (Array.isArray(req.body.credentials) && req.body.credentials.length) {
       const credentials = [];
-      for (const entry of req.body.credentials.slice(0, 25)) { const username = String(entry.username || "").trim(), password = String(entry.password || ""); if (!/^[A-Za-z0-9._-]{1,64}$/.test(username) || password.length < 12) return res.status(400).json({ error: "Access usernames must be valid and passwords must contain at least 12 characters." }); const { stdout } = await execFileAsync("caddy", ["hash-password", "--plaintext", password]); credentials.push({ username, hash: stdout.trim(), password: await passwordRecord(password) }); }
+      for (const entry of req.body.credentials.slice(0, 25)) { const username = String(entry.username || "").trim(), password = String(entry.password || ""); if (!/^[A-Za-z0-9._-]{1,64}$/.test(username) || password.length < 8) return res.status(400).json({ error: "Access usernames must be valid and passwords must contain at least 8 characters." }); const { stdout } = await execFileAsync("caddy", ["hash-password", "--plaintext", password]); credentials.push({ username, hash: stdout.trim(), password: await passwordRecord(password) }); }
       item.credentials = credentials;
     }
     if (!(item.networks || []).length && !(item.deniedNetworks || []).length && !(item.credentials || []).length) return res.status(400).json({ error: "Keep at least one network rule or login." });
@@ -1206,6 +1240,11 @@ app.patch("/api/settings", async (req, res, next) => {
       settings.defaultSite = { mode, redirectUrl: String(value.redirectUrl || "").trim(), redirectCode: [301,302,307,308].includes(Number(value.redirectCode)) ? Number(value.redirectCode) : 302, preservePath: value.preservePath !== false, title: String(value.title || "").slice(0, 100), message: String(value.message || "").slice(0, 500), customHtml: String(value.customHtml || "").slice(0, 250000) };
     }
     if (req.body.backups) settings.backups = { ...settings.backups, ...req.body.backups, hour: Math.min(Math.max(Number(req.body.backups.hour) || 0, 0), 23), retention: Math.min(Math.max(Number(req.body.backups.retention) || 7, 1), 100) };
+    if (req.body.certificateHealth) {
+      const warningDays = Math.min(Math.max(Number(req.body.certificateHealth.warningDays) || 30, 8), 120);
+      const criticalDays = Math.min(Math.max(Number(req.body.certificateHealth.criticalDays) || 7, 1), warningDays - 1);
+      settings.certificateHealth = { warningDays, criticalDays, staleMinutes: Math.min(Math.max(Number(req.body.certificateHealth.staleMinutes) || 10, 2), 1440) };
+    }
     await syncCaddy(); await saveSettings(); recordActivity("Administration settings updated."); res.json({ ...settings, backupDirectory: backupsDir });
   } catch (error) { next(error); }
 });
