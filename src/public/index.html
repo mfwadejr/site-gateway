@@ -14,14 +14,29 @@
     <form id="login-form" class="login-card">
       <img class="brand-mark product-icon" src="/icon.png" alt="Site Gateway">
       <p class="eyebrow">Host. Proxy. Secure.</p>
-      <h1>Welcome back</h1>
-      <p class="muted">Sign in to manage your sites.</p>
+      <h1 id="login-title">Welcome back</h1>
+      <p id="login-copy" class="muted">Sign in to manage your sites.</p>
       <label>Username<input name="username" autocomplete="username" required></label>
       <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
       <p id="login-error" class="error" role="alert"></p>
       <button class="button primary wide">Sign in</button>
     </form>
   </div>
+
+  <dialog id="setup-dialog" class="setup-dialog">
+    <form id="setup-form" class="dialog-card setup-card">
+      <img class="brand-mark product-icon" src="/icon.png" alt="Site Gateway">
+      <p class="eyebrow">First-time setup</p>
+      <h1>Secure your administrator account</h1>
+      <p class="muted">Confirm or change the administrator details below. The credentials supplied during installation were used only to bootstrap this account.</p>
+      <label>Display name<input name="displayName" value="Administrator" maxlength="80" autocomplete="name" required></label>
+      <label>Administrator username<input name="username" minlength="3" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,63}" autocomplete="username" required></label>
+      <label>New password<input name="password" type="password" minlength="12" autocomplete="new-password" required><small>Use at least 12 characters and a password unique to Site Gateway.</small></label>
+      <label>Confirm password<input name="confirmPassword" type="password" minlength="12" autocomplete="new-password" required></label>
+      <p id="setup-error" class="error" role="alert"></p>
+      <button class="button primary wide">Save administrator account</button>
+    </form>
+  </dialog>
 
   <div id="dashboard" class="app-shell hidden">
     <aside>

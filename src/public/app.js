@@ -18,7 +18,7 @@ async function api(url, options = {}) {
   if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Request failed."); }
   return response.status === 204 ? null : response.json();
 }
-function showLogin() { state.user = null; state.users = []; state.view = "overview"; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); }
+function showLogin(message = "") { state.user = null; state.users = []; state.view = "overview"; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; }
 function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); }
 function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
@@ -197,7 +197,11 @@ async function refreshDashboard() {
   finally { button.disabled = false; button.classList.remove("spinning"); }
 }
 async function boot() {
-  const session = await fetch("/api/session").then(response => response.json()); if (!session.authenticated) return showLogin();
+  const session = await fetch("/api/session").then(response => response.json());
+  $("#login-title").textContent = session.installationSetupPending ? "Welcome to Site Gateway" : "Welcome back";
+  $("#login-copy").textContent = session.installationSetupPending ? "Sign in using the administrator credentials you configured during installation." : "Sign in to manage your sites.";
+  if (!session.authenticated) return showLogin();
+  if (session.setupRequired) { $("#login").classList.add("hidden"); $("#dashboard").classList.add("hidden"); $("#setup-form [name=username]").value = session.user.username; if (!$("#setup-dialog").open) $("#setup-dialog").showModal(); return; }
   state.view = "overview"; state.users = []; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canManage())); state.config = await api("/api/config");
   $("#version-label").textContent = `v${state.config.version || "unknown"}`;
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
@@ -206,6 +210,8 @@ async function boot() {
 }
 
 $("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
+$("#setup-form").addEventListener("submit", async event => { event.preventDefault(); $("#setup-error").textContent = ""; try { await api("/api/setup/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); $("#setup-dialog").close(); event.target.reset(); await boot(); showLogin("Administrator account saved. Sign in with your finalized credentials."); } catch (error) { $("#setup-error").textContent = error.message; } });
+$("#setup-dialog").addEventListener("cancel", event => event.preventDefault());
 $("#logout").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); showLogin(); });
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }
 document.querySelectorAll("nav, .aside-utilities").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); } }));

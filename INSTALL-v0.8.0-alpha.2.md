@@ -1,4 +1,4 @@
-# Site Gateway v0.8.0-alpha.1 installation
+# Site Gateway v0.8.0-alpha.2 installation
 
 This release contains Caddy and SQLite inside one container. It needs no external database and uses one persistent `/data` mount. Backups are stored in `/data/backups`.
 
@@ -11,7 +11,7 @@ name: site-gateway
 
 services:
   site-gateway:
-    image: ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.1
+    image: ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.2
     container_name: site-gateway
     restart: unless-stopped
     environment:
@@ -36,12 +36,12 @@ services:
       - /DATA/AppData/site-gateway:/data
 ```
 
-Open `http://ZIMAOS-IP:8080` after the container starts.
+Open `http://ZIMAOS-IP:8080` after the container starts. Sign in with the administrator credentials from the YAML; Site Gateway then asks you to confirm or change the persistent administrator account before opening the dashboard.
 
 ## Docker CLI
 
 ```bash
-docker pull ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.1
+docker pull ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.2
 
 docker run -d \
   --name site-gateway \
@@ -63,7 +63,7 @@ docker run -d \
   -e PUID=1000 \
   -e PGID=1000 \
   -e ACME_EMAIL='' \
-  ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.1
+  ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.2
 ```
 
 Generate a session secret on a computer with OpenSSL:

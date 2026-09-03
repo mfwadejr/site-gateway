@@ -102,7 +102,7 @@ async function passwordMatches(password, record) {
 }
 
 function publicUser(user) {
-  const { password, ...safe } = user;
+  const { password, sessionVersion, ...safe } = user;
   return safe;
 }
 
@@ -125,9 +125,10 @@ function cookieMap(header = "") {
 function sessionUser(req) {
   const token = cookieMap(req.headers.cookie).webserver_session;
   if (!token) return null;
-  const [userId, expires, signature] = token.split(".");
-  if (!userId || Number(expires) <= Date.now() || !safeEqual(signature || "", sign(`${userId}.${expires}`))) return null;
-  return users.find(user => user.id === userId && user.status === "active") || null;
+  const [userId, expires, sessionVersion, signature] = token.split(".");
+  const user = users.find(item => item.id === userId && item.status === "active");
+  if (!user || !expires || !sessionVersion || Number(expires) <= Date.now() || sessionVersion !== user.sessionVersion || !safeEqual(signature || "", sign(`${userId}.${expires}.${sessionVersion}`))) return null;
+  return user;
 }
 
 const saveSites = async () => storage.saveCollection("sites", sites);
@@ -150,9 +151,15 @@ async function loadSites() {
   users = storage.loadCollection("users");
   if (!users.length) {
     const now = new Date().toISOString();
-    users = [{ id: crypto.randomUUID(), username: adminUser.toLowerCase(), displayName: "Administrator", role: "administrator", status: "active", password: await passwordRecord(adminPassword), source: "bootstrap", createdAt: now, updatedAt: now, lastLoginAt: null }];
+    users = [{ id: crypto.randomUUID(), username: adminUser.toLowerCase(), displayName: "Administrator", role: "administrator", status: "active", password: await passwordRecord(adminPassword), source: "bootstrap", setupRequired: true, sessionVersion: crypto.randomBytes(16).toString("hex"), createdAt: now, updatedAt: now, lastLoginAt: null }];
     await saveUsers();
   }
+  let usersChanged = false;
+  for (const user of users) {
+    if (user.setupRequired === undefined) { user.setupRequired = false; usersChanged = true; }
+    if (!user.sessionVersion) { user.sessionVersion = crypto.randomBytes(16).toString("hex"); usersChanged = true; }
+  }
+  if (usersChanged) await saveUsers();
   redirects = storage.loadCollection("redirects");
   accessLists = storage.loadCollection("access_lists");
   const defaultSettings = {
@@ -762,7 +769,7 @@ app.use("/site-icons", express.static(iconsDir, { immutable: true, maxAge: "30d"
 
 app.get("/api/session", (req, res) => {
   const user = sessionUser(req);
-  res.json({ authenticated: Boolean(user), user: user ? publicUser(user) : null, username: user?.username || null });
+  res.json({ authenticated: Boolean(user), setupRequired: Boolean(user?.setupRequired), installationSetupPending: users.some(item => item.setupRequired), user: user ? publicUser(user) : null, username: user?.username || null });
 });
 app.post("/api/login", async (req, res, next) => {
   try {
@@ -778,8 +785,9 @@ app.post("/api/login", async (req, res, next) => {
     }
     loginAttempts.delete(key);
     user.lastLoginAt = new Date().toISOString(); user.updatedAt = user.lastLoginAt; await saveUsers();
+    if (!user.sessionVersion) user.sessionVersion = crypto.randomBytes(16).toString("hex");
     const expires = String(Date.now() + 12 * 60 * 60 * 1000);
-    const value = `${user.id}.${expires}`;
+    const value = `${user.id}.${expires}.${user.sessionVersion}`;
     res.setHeader("Set-Cookie", `webserver_session=${value}.${sign(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200`);
     res.json({ ok: true, user: publicUser(user) });
   } catch (error) { next(error); }
@@ -821,6 +829,26 @@ app.use("/api", (req, res, next) => {
   req.user = user;
   next();
 });
+app.post("/api/setup/admin", async (req, res, next) => {
+  try {
+    if (!req.user.setupRequired || req.user.source !== "bootstrap" || req.user.role !== "administrator") return res.status(409).json({ error: "Initial administrator setup has already been completed." });
+    const username = String(req.body.username || "").trim().toLowerCase();
+    const displayName = String(req.body.displayName || "").trim();
+    const password = String(req.body.password || "");
+    const confirmation = String(req.body.confirmPassword || "");
+    if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return res.status(400).json({ error: "Username must be 3–64 characters using letters, numbers, periods, hyphens, or underscores." });
+    if (users.some(user => user.id !== req.user.id && user.username === username)) return res.status(409).json({ error: "That username already exists." });
+    if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Display name is required and must be 80 characters or fewer." });
+    if (password.length < 12) return res.status(400).json({ error: "Password must contain at least 12 characters." });
+    if (!safeEqual(password, confirmation)) return res.status(400).json({ error: "The passwords do not match." });
+    req.user.username = username; req.user.displayName = displayName; req.user.password = await passwordRecord(password);
+    req.user.source = "local"; req.user.setupRequired = false; req.user.sessionVersion = crypto.randomBytes(16).toString("hex"); req.user.updatedAt = new Date().toISOString();
+    await saveUsers(); recordActivity(`Initial administrator setup completed for “${username}”.`);
+    res.setHeader("Set-Cookie", "webserver_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+app.use("/api", (req, res, next) => req.user.setupRequired ? res.status(428).json({ error: "Complete the initial administrator setup before continuing." }) : next());
 app.use("/api", (req, res, next) => req.user.role === "administrator" || req.method === "GET" ? next() : res.status(403).json({ error: "Administrator access is required to make changes." }));
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError } }));
 app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));

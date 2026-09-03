@@ -15,7 +15,7 @@
     <a href="#domains-proxy-hosts-and-tls">Domains &amp; TLS</a> ·
     <a href="#unraid-alpha-install">Unraid</a> ·
     <a href="#zimaos-alpha-install">ZimaOS</a> ·
-    <a href="INSTALL-v0.8.0-alpha.1.md">v0.8 install</a> ·
+    <a href="INSTALL-v0.8.0-alpha.2.md">v0.8 installation guide</a> ·
     <a href="ROADMAP.md">Roadmap</a>
   </p>
 </div>
@@ -220,7 +220,7 @@ Your sites remain intact because they live in the mounted data directory.
 
 ## Publishing updates
 
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.8.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
+The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.8.0-alpha.2` publishes `ghcr.io/mfwadejr/site-gateway:0.8.0-alpha.2` and `ghcr.io/mfwadejr/site-gateway:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
 
 ### Monitoring in v0.5.0-alpha.1
 
@@ -256,9 +256,16 @@ The GitHub Actions workflow builds and publishes a fresh multi-architecture cont
 - Caddy-managed certificates and internal CA data live under `/data/certificates/managed`; uploaded certificates live under `/data/certificates/custom`; public exports are reserved under `/data/certificates/exports`.
 - Backups contain a consistent SQLite snapshot, portable JSON recovery records, checksums, and optional complete filesystem content.
 
+### First login in v0.8.0-alpha.2
+
+- Fresh installations explain that the administrator credentials supplied to Docker are bootstrap credentials.
+- After the first successful sign-in, the administrator must confirm or change the display name, username, and password before opening the dashboard.
+- Completing setup rotates the account session identity and requires one final sign-in with the finalized credentials.
+- Existing installations are treated as already configured and are not interrupted by the new workflow.
+
 ## Security notes
 
-- Change the default password before first use.
+- Use unique bootstrap credentials during installation, then finalize the persistent administrator account during first-time setup.
 - Keep the dashboard on a trusted LAN or behind a trusted HTTPS reverse proxy/VPN. The alpha dashboard itself serves plain HTTP.
 - Do not expose the admin dashboard directly to the internet.
 - Uploaded static JavaScript runs for visitors. Only publish files you trust.
