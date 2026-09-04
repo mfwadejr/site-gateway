@@ -170,7 +170,7 @@ function render() {
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);
   const management = state.view === "hosted" || state.view === "proxies";
-  $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !management);
+  $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "redirects"));
   $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#users-view").classList.toggle("hidden", state.view !== "administration");
   $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const adminUsersActive = state.view === "administration" && document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab === "users";
@@ -185,6 +185,9 @@ function render() {
     const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access logs","Recent requests served through the Caddy gateway."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
     const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
     $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
+    if (state.view === "redirects") $(".create-trigger").textContent = "Create a redirect host";
+    if (state.view === "access") $(".create-trigger").textContent = "Create an Access List";
+    if (state.view === "redirects") { const items = state.redirects; const running = items.filter(item => item.enabled !== false).length, disabled = items.length - running; $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = 0; $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = "No issues"; $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = "status-dot inactive"; $(".port-note").classList.add("hidden"); }
     if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs();
     return;
   }
