@@ -51,3 +51,4 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .settings-panel{max-width:none}.log-filters{display:flex;align-items:end;gap:12px}.log-filters label{min-width:210px;margin:0}@media(max-width:760px){.log-filters{align-items:stretch;flex-direction:column}.log-filters label{min-width:0}}
 #app input,#app select,#app textarea{box-sizing:border-box}#app select{height:44px;min-height:44px;padding-top:0;padding-bottom:0;line-height:42px}
 #app .access-summary{margin:6px 0 0;color:var(--muted);font-size:.72rem}
+#app .site-icon img{width:100%;height:100%;object-fit:contain;border-radius:inherit}

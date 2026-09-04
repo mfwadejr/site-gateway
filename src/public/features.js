@@ -1,4 +1,5 @@
 function extendedEscape(value) { return escapeHtml(value); }
+function featureIcon(item, fallback) { return item.icon ? `<img src="${extendedEscape(item.icon)}" alt="">` : fallback; }
 
 function renderRedirects() {
   const list = document.querySelector("#redirect-list"), empty = document.querySelector("#redirect-empty");
