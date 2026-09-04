@@ -67,7 +67,7 @@ The existing Node application remains responsible for authentication, the wizard
 - First-install sign-in guidance and required one-time administrator account finalization (v0.8.0-alpha.2)
 - Certificate details, configurable expiration thresholds, guided domain diagnostics, on-demand health checks, redacted support reports, and authentication cleanup (v0.9.0-alpha.1)
 
-### Next alpha milestone — visibility and certificate health
+### Completed in v0.9.0-alpha.1 — visibility and certificate health
 
 This should be the next implementation target. It adds the reporting people rely on in NGINX Proxy Manager without expanding the creation workflow yet.
 
@@ -80,6 +80,14 @@ This should be the next implementation target. It adds the reporting people rely
 - Recent gateway errors and a concise per-host access-log view
 - Diagnostics that distinguish DNS, inbound port, certificate, and upstream failures
 - Never display private keys, account credentials, or raw sensitive configuration
+
+### v0.10.0-alpha.1 — gateway completeness (in progress)
+
+- Basic Caddy upstream pools for load balancing across multiple targets
+- Universal Dashboard Icons search, custom upload, HTTPS URL, and two-letter fallback
+- Access List assignment visibility on hosts
+- Complete themed Default Site responses
+- Clear certificate renewal-event wording and per-host operational reporting
 
 ### Phase 1 — Domains and automatic HTTPS (gateway alpha implemented)
 
