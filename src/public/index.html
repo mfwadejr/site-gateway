@@ -196,6 +196,7 @@
       <label>Name<input name="name" placeholder="Home Assistant" maxlength="80" required></label>
       <label>Domain<input name="domain" placeholder="home.example.com" required></label>
       <label>Forward to<input name="target" type="url" placeholder="http://192.168.1.20:8123" required><small>Use the container name, LAN address, or application URL.</small></label>
+      <label>Upstream pool <span class="optional">Optional</span><textarea name="upstreamsText" placeholder="http://192.168.1.20:53&#10;http://192.168.1.21:53"></textarea><small>One HTTP/HTTPS target per line. Caddy distributes requests across healthy targets.</small></label>
       <label>TLS<select name="tls"><option value="automatic">Automatic public HTTPS</option><option value="internal">Internal HTTPS for trusted local devices</option><option value="custom">Custom uploaded certificate</option><option value="http">HTTP only</option></select></label>
       <label class="check-control"><input name="hsts" type="checkbox"><span>Enable HSTS after HTTPS is verified</span></label>
       <div id="custom-certificate-fields"><label>Certificate PEM<input name="certificateFile" type="file" accept=".pem,.crt,application/x-pem-file"></label><label>Private key PEM<input name="privateKeyFile" type="file" accept=".pem,.key,application/x-pem-file"></label><small>Both files are required when installing or replacing a custom certificate.</small></div>

@@ -217,6 +217,10 @@ function cleanCustomConfig(value) {
 }
 
 function applyAdvancedSettings(item, body) {
+  if (body.upstreams !== undefined) {
+    if (!Array.isArray(body.upstreams) || body.upstreams.length > 10) throw Object.assign(new Error("Add up to 10 upstream targets."), { status: 400 });
+    item.upstreams = body.upstreams.map(validateTarget);
+  }
   if (body.accessListId !== undefined) item.accessListId = String(body.accessListId || "");
   if (body.compression !== undefined) item.compression = ["off", "gzip", "automatic"].includes(body.compression) ? body.compression : "automatic";
   if (body.hstsSubdomains !== undefined) item.hstsSubdomains = Boolean(body.hstsSubdomains);
@@ -279,7 +283,8 @@ function commonHostDirectives(item) {
 }
 
 function proxyBlock(target, item, indent = "  ") {
-  const output = [`${indent}reverse_proxy ${target} {`];
+  const targets = Array.isArray(item.upstreams) && item.upstreams.length ? item.upstreams : [target];
+  const output = [`${indent}reverse_proxy ${targets.join(" ")} {`];
   const timeout = Math.min(Math.max(Number(item.healthTimeoutSeconds) || 4, 1), 60);
   if (item.upstreamTlsServerName) output.push(`${indent}  transport http {`, `${indent}    tls_server_name ${item.upstreamTlsServerName}`, ...(item.upstreamTlsInsecure ? [`${indent}    tls_insecure_skip_verify`] : []), `${indent}    response_header_timeout ${timeout}s`, `${indent}  }`);
   for (const header of item.requestHeaders || []) output.push(`${indent}  header_up ${header.name} ${caddyQuote(header.value)}`);
