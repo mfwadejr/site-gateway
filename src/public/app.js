@@ -274,7 +274,7 @@ $("#confirm-dialog").addEventListener("close", async () => { if ($("#confirm-dia
 $("#replace-files").addEventListener("change", async event => { if (!event.target.files[0] || !state.pendingReplace) return; const data = new FormData(); data.append("files", event.target.files[0]); try { await api(`/api/sites/${state.pendingReplace}/files`, { method: "POST", body: data }); toast("Site files updated."); } catch (error) { toast(error.message); } event.target.value = ""; state.pendingReplace = null; });
 
 function openIconPicker(kind, id) {
-  state.iconTarget = { kind, id }; $("#icon-search").value = ""; $("#icon-error").textContent = ""; $("#icon-results").innerHTML = '<p class="quiet-state">Enter at least two characters to search.</p>'; $("#icon-dialog").showModal(); setTimeout(() => $("#icon-search").focus(), 0);
+  state.iconTarget = { kind, id }; $("#icon-search").value = ""; $("#icon-url").value = ""; $("#icon-upload").value = ""; $("#icon-error").textContent = ""; $("#icon-results").innerHTML = '<p class="quiet-state">Enter at least two characters to search.</p>'; $("#icon-dialog").showModal(); setTimeout(() => $("#icon-search").focus(), 0);
 }
 let iconSearchTimer;
 $("#icon-search").addEventListener("input", event => {
@@ -298,6 +298,18 @@ async function saveIcon(slug) {
 }
 $("#icon-results").addEventListener("click", event => { const choice = event.target.closest("[data-slug]"); if (choice) saveIcon(choice.dataset.slug); });
 $("#reset-icon").addEventListener("click", event => { event.preventDefault(); saveIcon(""); });
+$("#icon-upload").addEventListener("change", async event => {
+  const file = event.target.files[0]; if (!file || !state.iconTarget) return;
+  const data = new FormData(); data.append("icon", file); $("#icon-error").textContent = "";
+  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
+  catch (error) { $("#icon-error").textContent = error.message; }
+});
+$("#save-icon-url").addEventListener("click", async () => {
+  const value = $("#icon-url").value.trim(); if (!/^https:\/\//i.test(value)) { $("#icon-error").textContent = "Enter a trusted HTTPS image URL."; return; }
+  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : "sites";
+  try { await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: value }) }); $("#icon-dialog").close(); await refresh(); toast("Icon URL saved."); }
+  catch (error) { $("#icon-error").textContent = error.message; }
+});
 $("#user-form").addEventListener("submit", async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true; $("#user-error").textContent = "";
   try {

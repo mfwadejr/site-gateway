@@ -781,6 +781,7 @@ for (let attempt = 0; attempt < 10; attempt++) {
 const app = express();
 const upload = multer({ dest: uploadDir, limits: { fileSize: 250 * 1024 * 1024, files: 1 } });
 const certificateUpload = multer({ dest: uploadDir, limits: { fileSize: 5 * 1024 * 1024, files: 2 } });
+const iconUpload = multer({ dest: uploadDir, limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 app.disable("x-powered-by");
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -970,18 +971,44 @@ app.get("/api/icons/search", async (req, res, next) => {
 });
 app.put("/api/:kind/:id/icon", async (req, res, next) => {
   try {
-    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : null;
+    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : null;
     if (!collection) return res.status(404).json({ error: "Entry type not found." });
     const item = collection.find(entry => entry.id === req.params.id);
     if (!item) return res.status(404).json({ error: "Entry not found." });
+    if (req.body.url !== undefined) {
+      const url = String(req.body.url || "").trim();
+      if (!/^https:\/\//i.test(url) || url.length > 2048) return res.status(400).json({ error: "Icon URL must be a valid HTTPS URL under 2048 characters." });
+      item.iconSlug = null; item.icon = url;
+      if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else await saveAccessLists();
+      recordActivity(`Icon URL updated for “${item.name}”.`);
+      return res.json(item);
+    }
     const slug = String(req.body.slug || "").trim();
     const icon = slug ? await cacheIcon(slug) : null;
     item.iconSlug = slug || null;
     item.icon = icon;
-    if (collection === sites) await saveSites(); else await saveProxies();
+    if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else await saveAccessLists();
     recordActivity(`${slug ? "Icon updated" : "Icon reset"} for “${item.name}”.`);
-    res.json(collection === sites ? publicSite(item) : publicProxy(item));
+    res.json(item);
   } catch (error) { next(error); }
+});
+app.post("/api/:kind/:id/icon", iconUpload.single("icon"), async (req, res, next) => {
+  try {
+    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : null;
+    if (!collection) return res.status(404).json({ error: "Entry type not found." });
+    const item = collection.find(entry => entry.id === req.params.id);
+    if (!item) return res.status(404).json({ error: "Entry not found." });
+    if (!req.file) return res.status(400).json({ error: "Choose an icon image." });
+    if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(req.file.mimetype)) return res.status(400).json({ error: "Use PNG, JPEG, WebP, GIF, or SVG." });
+    const extension = req.file.mimetype === "image/svg+xml" ? "svg" : req.file.mimetype.split("/")[1].replace("jpeg", "jpg");
+    const filename = `${req.params.kind}-${item.id}.${extension}`;
+    await fsp.rename(req.file.path, path.join(iconsDir, filename));
+    item.iconSlug = null; item.icon = `/site-icons/${filename}`;
+    if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else await saveAccessLists();
+    recordActivity(`Custom icon uploaded for “${item.name}”.`);
+    res.json(item);
+  } catch (error) { next(error); }
+  finally { if (req.file?.path) await fsp.rm(req.file.path, { force: true }).catch(() => {}); }
 });
 app.post("/api/sites", upload.single("files"), async (req, res, next) => {
   try {

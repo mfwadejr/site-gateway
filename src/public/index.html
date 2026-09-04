@@ -230,9 +230,11 @@
       <div class="dialog-heading"><div><p class="eyebrow">Appearance</p><h2>Choose an icon</h2></div><button value="cancel" class="icon-button" aria-label="Close">×</button></div>
       <p class="muted">Search Dashboard Icons. Selected icons are validated and stored locally in <code>/data/icons</code>.</p>
       <label>Search icons<input id="icon-search" type="search" placeholder="Jellyfin" autocomplete="off"></label>
+      <label>Upload a custom icon<input id="icon-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"><small>PNG, JPEG, WebP, GIF, or SVG · up to 2 MB. Stored locally in <code>/data/icons</code>.</small></label>
+      <label>Or use an image URL <span class="optional">Optional</span><input id="icon-url" type="url" placeholder="https://example.com/icon.png"><small>Use a trusted HTTPS URL. The two-letter fallback remains available.</small></label>
       <div id="icon-results" class="icon-results" aria-live="polite"><p class="quiet-state">Enter at least two characters to search.</p></div>
       <p id="icon-error" class="error" role="alert"></p>
-      <div class="dialog-actions"><button id="reset-icon" value="none" class="button secondary">Use two-letter fallback</button><button value="cancel" class="button secondary">Cancel</button></div>
+      <div class="dialog-actions"><button id="save-icon-url" type="button" class="button secondary">Save URL</button><button id="reset-icon" value="none" class="button secondary">Use two-letter fallback</button><button value="cancel" class="button secondary">Cancel</button></div>
     </form>
   </dialog>
   <dialog id="user-dialog">
