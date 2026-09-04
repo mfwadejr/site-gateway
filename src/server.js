@@ -1032,7 +1032,7 @@ app.post("/api/sites", upload.single("files"), async (req, res, next) => {
     const site = { id, name, port, domain, tls, hsts, enabled: true, createdAt: new Date().toISOString() };
     await installUpload(site, req.file);
     sites.push(site);
-    try { await startSite(site); } catch (error) { console.error(error); }
+    try { await startSite(site); } catch (error) { sites = sites.filter(item => item.id !== site.id); await fsp.rm(path.join(sitesDir, site.id), { recursive: true, force: true }); throw Object.assign(new Error(`Could not start the hosted site on port ${port}: ${error.message}`), { status: 409 }); }
     await syncCaddy();
     await saveSites();
     recordActivity(`Hosted site “${site.name}” created.`);
