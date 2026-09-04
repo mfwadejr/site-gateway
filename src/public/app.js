@@ -42,6 +42,7 @@ function formatTime(value) {
   if (!value) return "Just now";
   const date = new Date(value); return Number.isNaN(date.getTime()) ? "Recently" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
+function certificateStatusLabel(status) { return ({ healthy:"Healthy", warning:"Renewal due soon", critical:"Renewal required urgently", expired:"Expired", pending:"Awaiting Caddy / ACME certificate", mismatch:"Certificate does not cover this domain" }[status] || String(status || "Unknown")).replaceAll("-", " "); }
 function parseHeaderLines(value) { return String(value || "").split("\n").map(line => { const index = line.indexOf(":"); return index > 0 ? { name:line.slice(0,index).trim(), value:line.slice(index+1).trim() } : null; }).filter(Boolean); }
 function advancedFormBody(form, body) {
   body.hsts = form.has("hsts"); body.hstsSubdomains = form.has("hstsSubdomains"); body.healthEnabled = form.has("healthEnabled"); body.upstreamTlsInsecure = form.has("upstreamTlsInsecure");

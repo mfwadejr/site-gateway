@@ -25,6 +25,7 @@ function renderBackups() {
 
 function renderDefaultSettings() {
   if (!state.settings) return; const form = document.querySelector("#default-site-form"), value = state.settings.defaultSite || {};
+  if (!document.querySelector("#default-site-help")) { const help = document.createElement("p"); help.id = "default-site-help"; help.className = "muted"; help.textContent = "The Default Site handles unknown HTTP hostnames. HTTPS requests still require a matching host and certificate."; form.prepend(help); }
   for (const key of ["mode","title","message","redirectUrl","redirectCode","customHtml"]) if (form.elements[key] && value[key] !== undefined) form.elements[key].value = value[key];
   form.elements.preservePath.checked = value.preservePath !== false;
 }
