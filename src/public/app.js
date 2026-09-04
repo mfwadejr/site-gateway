@@ -277,6 +277,11 @@ $("#site-grid").addEventListener("click", async event => {
   if (action === "replace") { state.pendingReplace = card.dataset.id; $("#replace-files").click(); }
   if (action === "icon") openIconPicker(kind, card.dataset.id);
 });
+document.querySelector("#redirect-list")?.addEventListener("click", event => {
+  const card = event.target.closest(".redirect-card"); if (!card) return;
+  if (event.target.closest(".menu-button")) { const opening = !card.classList.contains("menu-open"); closeMenus(); card.classList.toggle("menu-open", opening); card.querySelector(".menu-button")?.setAttribute("aria-expanded", String(opening)); return; }
+  const action = event.target.closest("[data-redirect-action]")?.dataset.redirectAction; if (action === "icon") { closeMenus(); openIconPicker("redirect", card.dataset.redirectId); }
+});
 $("#confirm-dialog").addEventListener("close", async () => { if ($("#confirm-dialog").returnValue === "confirm" && state.pendingDelete) { const base = state.pendingDelete.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.pendingDelete.id}`, { method: "DELETE" }); await refresh(); toast("Entry deleted and gateway updated."); } state.pendingDelete = null; });
 $("#replace-files").addEventListener("change", async event => { if (!event.target.files[0] || !state.pendingReplace) return; const data = new FormData(); data.append("files", event.target.files[0]); try { await api(`/api/sites/${state.pendingReplace}/files`, { method: "POST", body: data }); toast("Site files updated."); } catch (error) { toast(error.message); } event.target.value = ""; state.pendingReplace = null; });
 
@@ -296,7 +301,7 @@ $("#icon-search").addEventListener("input", event => {
   }, 280);
 });
 async function saveIcon(slug) {
-  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : "sites";
+  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : "sites";
   $("#icon-error").textContent = "";
   try {
     await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug }) });
@@ -308,7 +313,7 @@ $("#reset-icon").addEventListener("click", event => { event.preventDefault(); sa
 $("#icon-upload").addEventListener("change", async event => {
   const file = event.target.files[0]; if (!file || !state.iconTarget) return;
   const data = new FormData(); data.append("icon", file); $("#icon-error").textContent = "";
-  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
+  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
   catch (error) { $("#icon-error").textContent = error.message; }
 });
 $("#save-icon-url").addEventListener("click", async () => {
