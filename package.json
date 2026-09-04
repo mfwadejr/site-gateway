@@ -1,6 +1,6 @@
 {
   "name": "site-gateway",
-  "version": "0.10.0-alpha.3",
+  "version": "0.10.0-alpha.4",
   "private": true,
   "description": "Site Gateway: simple self-hosted website publishing, reverse proxying, and automatic HTTPS.",
   "type": "module",
