@@ -184,7 +184,7 @@ function render() {
   if (!management) {
     const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access logs","Recent requests served through the Caddy gateway."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
     const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
-    $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "redirects" ? "＋ New redirect" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
+    $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
     if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs();
     return;
   }
@@ -196,7 +196,7 @@ function render() {
   $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : "Proxy hosts";
   $("#page-subtitle").textContent = state.view === "hosted" ? "Upload and publish websites on a port or domain." : "Route domains securely to applications and containers.";
   $("#open-create").textContent = state.view === "hosted" ? "＋ New hosted site" : "＋ New proxy host";
-  $(".create-trigger").textContent = state.view === "hosted" ? "Create a hosted site" : "Create a proxy host";
+  $(".create-trigger").textContent = state.view === "hosted" ? "Create a hosted site" : state.view === "redirects" ? "Create a redirect host" : state.view === "access" ? "Create an Access List" : "Create a proxy host";
   $(".port-note").classList.toggle("hidden", state.view === "proxies");
   const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length;
   $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors;
