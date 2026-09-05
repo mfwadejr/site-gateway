@@ -263,7 +263,7 @@ $("#log-status").addEventListener("change", renderLogs);
 function openCreate() {
   if (state.view === "administration") { $("#user-form").reset(); $("#user-error").textContent = ""; return $("#user-dialog").showModal(); }
   if (state.view === "redirects") { $("#redirect-form").reset(); delete $("#redirect-form").dataset.editing; $("#redirect-error").textContent = ""; return $("#redirect-dialog").showModal(); }
-  if (state.view === "access") { $("#access-form").reset(); delete $("#access-form").dataset.editing; $("#access-error").textContent = ""; return $("#access-dialog").showModal(); }
+  if (state.view === "access") { $("#access-form").reset(); delete $("#access-form").dataset.editing; $("#access-error").textContent = ""; window.renderCredentialEditor?.([]); return $("#access-dialog").showModal(); }
   if (state.view === "proxies") { $("#proxy-form").reset(); $("#custom-certificate-fields").classList.remove("custom-certificate-visible"); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
   $("#create-form").reset(); $("#create-error").textContent = ""; const used = new Set(state.sites.map(site => site.port)); let port = state.config.minPort; while (used.has(port)) port++; $("#create-form [name=port]").value = port; $("#create-dialog").showModal();
 }
