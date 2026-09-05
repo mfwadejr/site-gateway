@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>Site Gateway</Name>
-  <Repository>ghcr.io/mfwadejr/site-gateway:0.10.0-alpha.24</Repository>
+  <Repository>ghcr.io/mfwadejr/site-gateway:0.10.0-alpha.25</Repository>
   <Registry>https://github.com/mfwadejr/site-gateway/pkgs/container/site-gateway</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
