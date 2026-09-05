@@ -1,6 +1,6 @@
 services:
   site-gateway:
-    image: ${SITE_GATEWAY_IMAGE:-ghcr.io/mfwadejr/site-gateway:0.10.0-alpha.21}
+    image: ${SITE_GATEWAY_IMAGE:-ghcr.io/mfwadejr/site-gateway:0.10.0-alpha.22}
     container_name: site-gateway
     restart: unless-stopped
     environment:
