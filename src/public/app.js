@@ -320,7 +320,7 @@ $("#icon-search").addEventListener("input", event => {
   }, 280);
 });
 async function saveIcon(slug) {
-  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : "sites";
+  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : "sites";
   $("#icon-error").textContent = "";
   try {
     await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug }) });
@@ -332,12 +332,12 @@ $("#reset-icon").addEventListener("click", event => { event.preventDefault(); sa
 $("#icon-upload").addEventListener("change", async event => {
   const file = event.target.files[0]; if (!file || !state.iconTarget) return;
   const data = new FormData(); data.append("icon", file); $("#icon-error").textContent = "";
-  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
+  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
   catch (error) { $("#icon-error").textContent = error.message; }
 });
 $("#save-icon-url").addEventListener("click", async () => {
   const value = $("#icon-url").value.trim(); if (!/^https:\/\//i.test(value)) { $("#icon-error").textContent = "Enter a trusted HTTPS image URL."; return; }
-  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : "sites";
+  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : "sites";
   try { await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: value }) }); $("#icon-dialog").close(); await refresh(); toast("Icon URL saved."); }
   catch (error) { $("#icon-error").textContent = error.message; }
 });
