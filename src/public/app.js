@@ -174,7 +174,6 @@ function renderLogs() {
 }
 
 function renderUsers() {
-  $("#user-count").textContent = state.users.length;
   $("#user-list").innerHTML = state.users.length ? state.users.map(user => {
     const isSelf = user.id === state.user?.id;
     const statusClass = user.status === "active" ? "running" : user.status === "disabled" ? "disabled" : "inactive";
@@ -259,7 +258,7 @@ $("#download-support").addEventListener("click", () => { location.href = "/api/s
 $("#attention-list").addEventListener("click", event => { const target = event.target.closest("[data-issue-target]")?.dataset.issueTarget; if (target) { state.view = target; render(); loadFeatureView().catch(error => toast(error.message)); } });
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }
 document.querySelectorAll("nav, .aside-utilities").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); } }));
-$("#dashboard-view").addEventListener("click", event => { const card = event.target.closest("[data-target]"); if (card) { state.view = card.dataset.target; render(); loadFeatureView().catch(error => toast(error.message)); } });
+$("#dashboard-view").addEventListener("click", event => { const target = event.target.closest("[data-target], [data-view]"); if (!target) return; state.view = target.dataset.target || target.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); });
 $("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-status").addEventListener("change", renderLogs);
