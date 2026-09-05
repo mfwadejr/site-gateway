@@ -237,6 +237,7 @@ function applyAdvancedSettings(item, body) {
     item.healthExpected = expected;
   }
   if (body.healthTimeoutSeconds !== undefined) item.healthTimeoutSeconds = Math.min(Math.max(Number(body.healthTimeoutSeconds) || 4, 1), 60);
+  if (body.healthRetries !== undefined) item.healthRetries = Math.min(Math.max(Number(body.healthRetries) || 0, 0), 3);
   if (body.customConfig !== undefined) item.customConfig = cleanCustomConfig(body.customConfig);
   if (body.locations !== undefined) item.locations = cleanLocations(body.locations);
 }
@@ -441,16 +442,18 @@ async function checkProxy(proxy) {
   if (!proxy.enabled) return { status: "disabled", checkedAt: new Date().toISOString(), history: [] };
   if (proxy.healthEnabled === false) return { status: "unmonitored", checkedAt: null, history: [] };
   const started = performance.now();
+  const attempts = Math.min(Math.max(Number(proxy.healthRetries) || 0, 0), 3) + 1;
   let result;
-  try {
+  for (let attempt = 0; attempt < attempts; attempt++) try {
     const target = new URL(proxy.healthPath || "/", `${proxy.target}/`).toString();
     const response = await fetch(target, { method: proxy.healthMethod || "GET", redirect: "manual", signal: AbortSignal.timeout((proxy.healthTimeoutSeconds || 4) * 1000), headers: { "user-agent": "Site-Gateway-Health/1.0" } });
     await response.body?.cancel();
     const responseMs = Math.round(performance.now() - started);
     const accepted = expectedStatusMatches(response.status, proxy.healthExpected);
-    result = { status: accepted ? "healthy" : "unhealthy", httpStatus: response.status, responseMs, checkedAt: new Date().toISOString(), error: accepted ? null : `Expected ${proxy.healthExpected || "200-499"}; received HTTP ${response.status}` };
+    result = { status: accepted ? "healthy" : "unhealthy", httpStatus: response.status, responseMs, attempts: attempt + 1, checkedAt: new Date().toISOString(), error: accepted ? null : `Expected ${proxy.healthExpected || "200-499"}; received HTTP ${response.status}` };
+    if (accepted) break;
   } catch (error) {
-    result = { status: "unhealthy", httpStatus: null, responseMs: Math.round(performance.now() - started), checkedAt: new Date().toISOString(), error: error.name === "TimeoutError" ? `Timed out after ${proxy.healthTimeoutSeconds || 4} seconds` : error.message };
+    result = { status: "unhealthy", httpStatus: null, responseMs: Math.round(performance.now() - started), attempts: attempt + 1, checkedAt: new Date().toISOString(), error: error.name === "TimeoutError" ? `Timed out after ${proxy.healthTimeoutSeconds || 4} seconds` : error.message };
   }
   const previous = upstreamHealth.get(proxy.id);
   result.history = [{ status: result.status, responseMs: result.responseMs, httpStatus: result.httpStatus, checkedAt: result.checkedAt }, ...(previous?.history || [])].slice(0, 20);
