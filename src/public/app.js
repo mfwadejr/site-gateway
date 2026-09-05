@@ -147,9 +147,20 @@ function renderReadiness() {
     const check = item.upstream;
     const message = !dnsOk ? `DNS failed${item.dns.error ? ` · ${item.dns.error}` : ""}` : !item.ports.http ? "HTTP port 80 is not responding inside the container" : item.ports.https === false ? "HTTPS port 443 is not responding inside the container" : !tlsOk ? `TLS ${item.tls.status.replaceAll("-", " ")}` : !upstreamOk ? `Upstream ${check?.error || "unavailable"}` : `Ready · DNS ${item.dns.addresses.join(", ")}${check ? ` · upstream ${check.httpStatus || "responding"}` : ""}`;
     const diagnostics = `<details class="readiness-details"><summary>View diagnostics</summary><dl class="readiness-detail-grid"><div><dt>DNS</dt><dd>${dnsOk ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}</dd></div>${check ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${check.httpStatus ?? "no response"}${check.responseMs != null ? ` · ${check.responseMs} ms` : ""} · ${check.attempts || 1} attempt${(check.attempts || 1) === 1 ? "" : "s"}</dd></div><div><dt>Last checked</dt><dd>${escapeHtml(formatTime(check.checkedAt))}</dd></div>${check.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(check.error)}</dd></div>` : ""}` : ""}</dl></details>`;
-    return `<div class="dashboard-list-item"><span class="status-dot ${dnsOk && portsOk && tlsOk && upstreamOk ? "running" : "error"}"></span><span><strong>${escapeHtml(item.domain)}</strong><small>${escapeHtml(message)}</small>${diagnostics}</span></div>`;
+    return `<div class="dashboard-list-item readiness-row" role="button" tabindex="0" data-readiness-id="${escapeHtml(item.id)}" aria-label="View diagnostics for ${escapeHtml(item.domain)}"><span class="status-dot ${dnsOk && portsOk && tlsOk && upstreamOk ? "running" : "error"}"></span><span><strong>${escapeHtml(item.domain)}</strong><small>${escapeHtml(message)}</small><span class="readiness-hint">Click to view diagnostics</span></span></div>`;
   }).join("") : '<p class="quiet-state">No configured domains to check.</p>';
 }
+
+function showReadinessDetails(item) {
+  const check = item.upstream;
+  const upstream = check ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${check.httpStatus ?? "no response"}${check.responseMs != null ? ` · ${check.responseMs} ms` : ""} · ${check.attempts || 1} attempt${(check.attempts || 1) === 1 ? "" : "s"}</dd></div><div><dt>Last checked</dt><dd>${escapeHtml(formatTime(check.checkedAt))}</dd></div>${check.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(check.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>";
+  $("#readiness-title").textContent = item.domain;
+  $("#readiness-detail-content").innerHTML = `<dl class="readiness-detail-grid"><div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}</dd></div>${upstream}</dl>`;
+  $("#readiness-dialog").showModal();
+}
+
+$("#readiness-list").addEventListener("click", event => { const row = event.target.closest("[data-readiness-id]"); const item = state.readiness?.routes?.find(route => route.id === row?.dataset.readinessId); if (item) showReadinessDetails(item); });
+$("#readiness-list").addEventListener("keydown", event => { if (event.key !== "Enter" && event.key !== " ") return; const row = event.target.closest("[data-readiness-id]"); if (row) { event.preventDefault(); row.click(); } });
 
 function renderLogs() {
   const data = state.logs; if (!data) return;
