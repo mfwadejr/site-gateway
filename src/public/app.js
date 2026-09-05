@@ -100,7 +100,7 @@ function renderDashboard() {
   $("#system-database").textContent = `${data.system.databaseEngine} · ${data.system.databaseStatus}`;
   $("#system-database-detail").textContent = `${formatBytes(data.system.databaseBytes)} configuration database`;
   $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<${item.target ? "button" : "div"} class="dashboard-list-item issue ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`).join("") : '<p class="quiet-state">Everything looks good.</p>';
-  $("#activity-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : ""}">${item.status === "error" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No changes recorded yet.</p>';
+  $("#activity-list").innerHTML = data.activity.length ? data.activity.slice(0, 5).map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" || item.status === "warning" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No recent activity.</p>';
 }
 
 function initials(name) {
