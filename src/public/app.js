@@ -167,7 +167,10 @@ function renderLogs() {
   const errors = entries.filter(entry => entry.status >= 400).length, measured = entries.filter(entry => entry.durationMs != null), average = measured.length ? Math.round(measured.reduce((sum,entry) => sum + entry.durationMs,0) / measured.length) : null;
   $("#log-summary").innerHTML = `${entries.length} request${entries.length === 1 ? "" : "s"} · ${errors} error response${errors === 1 ? "" : "s"} · ${average == null ? "no latency data" : `${average} ms average`} <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
   $("#log-rows").innerHTML = entries.length ? entries.map(entry => `<tr><td>${escapeHtml(formatTime(entry.at))}</td><td>${escapeHtml(entry.host || "—")}</td><td><code>${escapeHtml(entry.method || "")} ${escapeHtml(entry.uri || "")}</code></td><td><span class="http-status ${entry.status >= 500 ? "bad" : ""}">${entry.status ?? "—"}</span></td><td>${entry.durationMs == null ? "—" : `${entry.durationMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No matching requests have been logged yet.</td></tr>';
-  $("#gateway-log-list").innerHTML = data.activity.length ? data.activity.map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : ""}">${item.status === "error" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No gateway activity recorded yet.</p>';
+  const categoryOf = message => /cert|tls|https/i.test(message) ? "certificate" : /health|upstream|response|fetch/i.test(message) ? "health" : /login|user|password|access/i.test(message) ? "authentication" : /backup|restore/i.test(message) ? "backup" : /config|route|host|gateway|reload/i.test(message) ? "configuration" : "system";
+  const severity = $("#event-severity").value, category = $("#event-category").value;
+  const activity = data.activity.filter(item => (!severity || item.status === severity) && (!category || categoryOf(item.message) === category));
+  $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const eventCategory = categoryOf(item.message); return `<div class="event-row"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" ? "!" : item.status === "warning" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(eventCategory)} · ${escapeHtml(formatTime(item.at))}</small></span></div>`; }).join("") : '<p class="quiet-state">No gateway events match these filters.</p>';
 }
 
 function renderUsers() {
@@ -260,6 +263,8 @@ $("#dashboard-view").addEventListener("click", event => { const card = event.tar
 $("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-status").addEventListener("change", renderLogs);
+$("#event-severity").addEventListener("change", renderLogs);
+$("#event-category").addEventListener("change", renderLogs);
 function openCreate() {
   if (state.view === "administration") { $("#user-form").reset(); $("#user-error").textContent = ""; return $("#user-dialog").showModal(); }
   if (state.view === "redirects") { $("#redirect-form").reset(); delete $("#redirect-form").dataset.editing; $("#redirect-error").textContent = ""; return $("#redirect-dialog").showModal(); }
