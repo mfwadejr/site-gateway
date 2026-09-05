@@ -1224,9 +1224,9 @@ app.patch("/api/access-lists/:id", async (req, res, next) => {
       if (deniedNetworks.some(value => !/^(?:private_ranges|(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-f:]+(?:\/\d{1,3})?)$/i.test(value))) return res.status(400).json({ error: "Enter valid denied IP addresses or CIDR ranges." });
       item.deniedNetworks = deniedNetworks;
     }
-    if (Array.isArray(req.body.credentials) && req.body.credentials.length) {
+    if (Array.isArray(req.body.credentials)) {
       const credentials = [];
-      for (const entry of req.body.credentials.slice(0, 25)) { const username = String(entry.username || "").trim(), password = String(entry.password || ""); if (!/^[A-Za-z0-9._-]{1,64}$/.test(username) || password.length < 8) return res.status(400).json({ error: "Access usernames must be valid and passwords must contain at least 8 characters." }); const { stdout } = await execFileAsync("caddy", ["hash-password", "--plaintext", password]); credentials.push({ username, hash: stdout.trim(), password: await passwordRecord(password) }); }
+      for (const entry of req.body.credentials.slice(0, 25)) { const username = String(entry.username || "").trim(), password = String(entry.password || ""); if (!/^[A-Za-z0-9._-]{1,64}$/.test(username)) return res.status(400).json({ error: "Access usernames must use letters, numbers, dots, underscores, or hyphens." }); if (!password) { const existing = item.credentials?.find(value => value.username === username); if (!existing) return res.status(400).json({ error: `Enter a password for new user ${username}.` }); credentials.push(existing); continue; } if (password.length < 8) return res.status(400).json({ error: "Passwords must contain at least 8 characters." }); const { stdout } = await execFileAsync("caddy", ["hash-password", "--plaintext", password]); credentials.push({ username, hash: stdout.trim(), password: await passwordRecord(password) }); }
       item.credentials = credentials;
     }
     if (!(item.networks || []).length && !(item.deniedNetworks || []).length && !(item.credentials || []).length) return res.status(400).json({ error: "Keep at least one network rule or login." });
