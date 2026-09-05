@@ -124,7 +124,7 @@
       </section>
       <section id="logs-view" class="feature-view hidden">
         <div class="log-toolbar"><div class="log-filters"><label>Domain<select id="log-host"><option value="">All domains</option></select></label><label>Response status<select id="log-status"><option value="">All responses</option><option value="2">Successful · 2xx</option><option value="3">Redirects · 3xx</option><option value="4">Client errors · 4xx</option><option value="5">Server errors · 5xx</option></select></label></div><button id="refresh-logs" class="button secondary">Refresh logs</button></div>
-        <p id="log-summary" class="muted feature-note">No requests in the current view.</p>
+        <p id="log-summary" class="muted feature-note">No requests in the current view. <span id="log-last-checked">Not checked yet.</span></p>
         <p class="muted feature-note">Recent requests handled by Caddy. Sensitive request headers are never displayed.</p>
         <div class="table-wrap"><table class="log-table"><thead><tr><th>Time</th><th>Domain</th><th>Request</th><th>Status</th><th>Duration</th></tr></thead><tbody id="log-rows"></tbody></table></div>
         <section class="dashboard-panel log-activity"><div class="panel-heading"><div><p class="eyebrow">Gateway events</p><h2>Activity and errors</h2></div></div><div id="gateway-log-list" class="dashboard-list"></div></section>
