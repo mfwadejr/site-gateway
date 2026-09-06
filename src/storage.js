@@ -6,9 +6,9 @@ import { DatabaseSync } from "node:sqlite";
 import AdmZip from "adm-zip";
 
 export const LOCAL_INSTANCE_ID = "local";
-export const ENTITY_KINDS = ["sites", "proxies", "redirects", "access_lists", "users"];
-const legacyFiles = { sites: "sites.json", proxies: "proxies.json", redirects: "redirects.json", access_lists: "access-lists.json", users: "users.json" };
-const entityTables = { sites: "hosted_sites", proxies: "proxy_hosts", redirects: "redirect_hosts", access_lists: "access_lists", users: "users" };
+export const ENTITY_KINDS = ["sites", "proxies", "redirects", "access_lists", "users", "groups"];
+const legacyFiles = { sites: "sites.json", proxies: "proxies.json", redirects: "redirects.json", access_lists: "access-lists.json", users: "users.json", groups: "groups.json" };
+const entityTables = { sites: "hosted_sites", proxies: "proxy_hosts", redirects: "redirect_hosts", access_lists: "access_lists", users: "users", groups: "groups" };
 
 function now() { return new Date().toISOString(); }
 
@@ -52,11 +52,13 @@ export async function openStorage(dataDir, backupsDir) {
     CREATE TABLE IF NOT EXISTS redirect_hosts (id TEXT PRIMARY KEY, instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS access_lists (id TEXT PRIMARY KEY, instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS hosted_sites_instance ON hosted_sites(instance_id);
     CREATE INDEX IF NOT EXISTS proxy_hosts_instance ON proxy_hosts(instance_id);
     CREATE INDEX IF NOT EXISTS redirect_hosts_instance ON redirect_hosts(instance_id);
     CREATE INDEX IF NOT EXISTS access_lists_instance ON access_lists(instance_id);
     CREATE INDEX IF NOT EXISTS users_instance ON users(instance_id);
+    CREATE INDEX IF NOT EXISTS groups_instance ON groups(instance_id);
     CREATE TABLE IF NOT EXISTS access_assignments (instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE, route_kind TEXT NOT NULL, route_id TEXT NOT NULL, access_list_id TEXT NOT NULL REFERENCES access_lists(id) ON DELETE RESTRICT, created_at TEXT NOT NULL, PRIMARY KEY(route_kind,route_id));
     CREATE TABLE IF NOT EXISTS settings (instance_id TEXT PRIMARY KEY REFERENCES instances(id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)), updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), actor_id TEXT, action TEXT NOT NULL, status TEXT NOT NULL, details TEXT, created_at TEXT NOT NULL);

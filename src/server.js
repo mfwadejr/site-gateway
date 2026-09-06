@@ -49,6 +49,7 @@ let proxies = [];
 let users = [];
 let redirects = [];
 let accessLists = [];
+let groups = [];
 let settings = {};
 let gatewayError = null;
 let lastGatewayReload = null;
@@ -135,6 +136,7 @@ function sessionUser(req) {
 const saveSites = async () => storage.saveCollection("sites", sites);
 const saveProxies = async () => storage.saveCollection("proxies", proxies);
 const saveUsers = async () => storage.saveCollection("users", users);
+const saveGroups = async () => storage.saveCollection("groups", groups);
 const saveRedirects = async () => storage.saveCollection("redirects", redirects);
 const saveAccessLists = async () => storage.saveCollection("access_lists", accessLists);
 const saveSettings = async () => storage.saveSettings(settings);
@@ -163,6 +165,7 @@ async function loadSites() {
   if (usersChanged) await saveUsers();
   redirects = storage.loadCollection("redirects");
   accessLists = storage.loadCollection("access_lists");
+  groups = storage.loadCollection("groups");
   const defaultSettings = {
     defaultSite: { mode: "themed404", redirectUrl: "", redirectCode: 302, preservePath: true, title: "Route not found", message: "The gateway is responding, but this address has not been configured.", customHtml: "" },
     backups: { enabled: false, frequency: "daily", hour: 2, retention: 7, type: "configuration", includeLogs: false, encrypt: false, lastRunAt: null, lastStatus: null },
@@ -936,6 +939,10 @@ app.get("/api/sites", (req, res) => res.json(sites.map(publicSite)));
 app.get("/api/proxies", (req, res) => res.json(proxies.map(proxy => publicProxy(proxy, req.user.role === "administrator"))));
 app.get("/api/redirects", (req, res) => res.json(redirects));
 app.get("/api/access-lists", (req, res) => res.json(accessLists.map(({ credentials, ...item }) => ({ ...item, credentials: (credentials || []).map(({ username }) => ({ username })) }))));
+app.get("/api/groups", (req, res) => req.user.role === "administrator" ? res.json(groups.map(group => ({ ...group, members: (group.members || []).map(id => users.find(user => user.id === id)?.username).filter(Boolean) }))) : res.status(403).json({ error: "Administrator access is required." }));
+app.post("/api/groups", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const name = String(req.body.name || "").trim().slice(0, 80); if (!name) return res.status(400).json({ error: "Group name is required." }); if (groups.some(group => group.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ error: "That group already exists." }); const group = { id: "group-" + crypto.randomBytes(4).toString("hex"), name, enabled: true, members: [], createdAt: new Date().toISOString() }; groups.push(group); await saveGroups(); recordActivity("Group “" + name + "” created."); res.status(201).json(group); } catch (error) { next(error); } });
+app.patch("/api/groups/:id", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const group = groups.find(value => value.id === req.params.id); if (!group) return res.status(404).json({ error: "Group not found." }); if (req.body.name !== undefined) { const name = String(req.body.name || "").trim().slice(0, 80); if (!name) return res.status(400).json({ error: "Group name is required." }); group.name = name; } if (req.body.enabled !== undefined) group.enabled = Boolean(req.body.enabled); if (Array.isArray(req.body.members)) group.members = [...new Set(req.body.members)].filter(id => users.some(user => user.id === id)); await saveGroups(); recordActivity("Group “" + group.name + "” updated."); res.json(group); } catch (error) { next(error); } });
+app.delete("/api/groups/:id", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const index = groups.findIndex(value => value.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Group not found." }); const [group] = groups.splice(index, 1); await saveGroups(); recordActivity("Group “" + group.name + "” deleted."); res.status(204).end(); } catch (error) { next(error); } });
 app.get("/api/settings", (req, res) => req.user.role === "administrator" ? res.json({ ...settings, backupDirectory: backupsDir }) : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/dashboard", async (req, res, next) => {
   try { res.json(await dashboardSnapshot()); }
