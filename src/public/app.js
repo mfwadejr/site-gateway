@@ -195,6 +195,7 @@ function renderUsers() {
     const deleteAction = !isSelf ? `<button class="button secondary danger-text" data-user-action="delete">Delete</button>` : "";
     return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${roleLabel}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : roleAction === "viewer" ? "Viewer" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}${deleteAction}</div><div class="card-footer"><span class="status-pill">${user.status === "archived" ? "Archived" : user.status === "active" ? "Enabled" : "Disabled"}</span>${statusToggle}</div></article>`;
   }).join("") : '<p class="quiet-state">No users found.</p>';
+  document.querySelectorAll("#user-list .user-card").forEach(card => { card.style.position = "relative"; card.style.minHeight = "250px"; card.style.paddingBottom = "64px"; });
 }
 
 async function loadFeatureView() {
