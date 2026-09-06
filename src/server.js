@@ -1249,6 +1249,17 @@ app.patch("/api/access-lists/:id", async (req, res, next) => {
     await syncCaddy(); await saveAccessLists(); recordActivity(`Access List “${item.name}” updated.`); res.json({ ...item, credentials: (item.credentials || []).map(({ username }) => ({ username })) });
   } catch (error) { next(error); }
 });
+app.post("/api/access-lists/:id/assignments", async (req, res, next) => {
+  try {
+    const list = accessLists.find(value => value.id === req.params.id); if (!list) return res.status(404).json({ error: "Access List not found." });
+    const collections = { sites, proxies, redirects }; const kind = String(req.body.kind || ""); const collection = collections[kind]; const host = collection?.find(value => value.id === req.body.hostId);
+    if (!host) return res.status(404).json({ error: "Host not found." });
+    host.accessListId = req.body.assigned === false ? "" : list.id;
+    await syncCaddy(); if (kind === "sites") await saveSites(); else if (kind === "proxies") await saveProxies(); else await saveRedirects();
+    recordActivity("Access List " + list.name + (host.accessListId ? " assigned to " : " removed from ") + (host.name || host.domain) + ".");
+    res.json({ ok: true, accessListId: host.accessListId });
+  } catch (error) { next(error); }
+});
 app.delete("/api/access-lists/:id", async (req, res, next) => {
   try {
     if ([...sites, ...proxies, ...redirects].some(item => item.accessListId === req.params.id)) return res.status(409).json({ error: "Remove this Access List from all hosts before deleting it." });
