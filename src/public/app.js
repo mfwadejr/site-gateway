@@ -6,6 +6,9 @@ const state = { sites: [], proxies: [], redirects: [], accessLists: [], backups:
 document.querySelector("#create-form [name=domain]")?.closest("label")?.childNodes[0] && (document.querySelector("#create-form [name=domain]").closest("label").childNodes[0].textContent = "Primary domain ");
 if (!document.querySelector("#create-form [name=accessListId]")) { const anchor = document.querySelector("#create-form [name=domains]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select name="accessListId"><option value="">Public — no Access List</option></select><small>Protect this hosted site and all of its domains.</small>'; anchor.after(label); } }
 if (!document.querySelector("#settings-access-list")) { const anchor = document.querySelector("#settings-form [name=domain]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select id="settings-access-list" name="settingsAccessListId"><option value="">Public — no Access List</option></select><small>Protect this route and all of its domains.</small>'; anchor.after(label); } }
+const proxyAccessLabel = document.querySelector("#proxy-form [name=accessListId]")?.closest("label"); const proxyDomainsLabel = document.querySelector("#proxy-form [name=domainsText]")?.closest("label"); if (proxyAccessLabel && proxyDomainsLabel) proxyDomainsLabel.after(proxyAccessLabel);
+const settingsAccessLabel = document.querySelector("#settings-access-list")?.closest("label"); const settingsDomainsLabel = document.querySelector("#settings-form [name=domainsText]")?.closest("label"); if (settingsAccessLabel && settingsDomainsLabel) settingsDomainsLabel.after(settingsAccessLabel);
+document.querySelector("#settings-advanced [name=accessListId]")?.closest("label")?.remove();
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 function applyTheme(preference) {
@@ -49,6 +52,7 @@ function certificateStatusLabel(status) { return ({ healthy:"Healthy", warning:"
 function parseHeaderLines(value) { return String(value || "").split("\n").map(line => { const index = line.indexOf(":"); return index > 0 ? { name:line.slice(0,index).trim(), value:line.slice(index+1).trim() } : null; }).filter(Boolean); }
 function advancedFormBody(form, body) {
   body.domains = String(form.get("domainsText") || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
+  if (form.get("settingsAccessListId") !== null) body.accessListId = form.get("settingsAccessListId") || "";
   body.hsts = form.has("hsts"); body.hstsSubdomains = form.has("hstsSubdomains"); body.healthEnabled = form.has("healthEnabled"); body.upstreamTlsInsecure = form.has("upstreamTlsInsecure");
   body.requestHeaders = parseHeaderLines(form.get("requestHeadersText")); body.responseHeaders = parseHeaderLines(form.get("responseHeadersText"));
   body.locations = String(form.get("customLocationsText") || "").split("\n").map(line => { const [path, target, behavior] = line.split("|").map(value => value.trim()); return path && target ? { path, target, stripPrefix:behavior.toLowerCase() === "strip" } : null; }).filter(Boolean);
