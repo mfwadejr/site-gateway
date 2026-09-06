@@ -1,5 +1,9 @@
 # Site Gateway product roadmap
 
+## Current release status
+
+`v0.10.0-alpha.95.3` completes the initial configuration audit-log work. Alpha 96 is the integration and release-hardening phase; backup and restore validation is intentionally scheduled last.
+
 ## Product direction
 
 Site Gateway should remain simpler than a general-purpose proxy manager: one dashboard, clear health reporting, and guided setup instead of exposing server configuration. It can still cover most home-server publishing needs with an HTTP/HTTPS gateway alongside the existing static-file service.
