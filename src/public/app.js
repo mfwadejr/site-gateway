@@ -4,6 +4,7 @@ const redirectView = document.querySelector("#redirects-view");
 if (summaryBar && redirectView) redirectView.parentElement.insertBefore(summaryBar, redirectView);
 const state = { sites: [], proxies: [], redirects: [], accessLists: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
 document.querySelector("#create-form [name=domain]")?.closest("label")?.childNodes[0] && (document.querySelector("#create-form [name=domain]").closest("label").childNodes[0].textContent = "Primary domain ");
+if (!document.querySelector("#create-form [name=accessListId]")) { const anchor = document.querySelector("#create-form [name=domains]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select name="accessListId"><option value="">Public — no Access List</option></select><small>Protect this hosted site and all of its domains.</small>'; anchor.after(label); } }
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 function applyTheme(preference) {
