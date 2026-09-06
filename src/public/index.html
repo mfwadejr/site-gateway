@@ -69,7 +69,7 @@
       </nav>
       <header>
         <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Dashboard</h1><p id="page-subtitle" class="muted">Health, activity, and system status at a glance.</p></div>
-        <button id="open-create" class="button primary">＋ New hosted site</button>
+        <button id="open-create" class="button primary">＋ New hosted site</button><button id="check-health" class="button primary hidden">Run certificate check</button>
       </header>
       <section id="dashboard-view" class="dashboard-view" aria-label="Gateway dashboard">
         <div class="metric-grid">
@@ -114,7 +114,7 @@
         </div>
       </section>
       <section id="certificates-view" class="feature-view hidden">
-        <div class="panel-heading"><div><p class="eyebrow">Certificate health</p><h2>Certificates</h2></div><div class="row-actions"><button id="check-health" class="button primary">Run certificate check</button></div></div><p id="cert-last-checked" class="muted checked-time">Last checked —</p>
+        <div class="panel-heading"><div><p class="eyebrow">Certificate health</p><h2>Certificates</h2></div></div><p id="cert-last-checked" class="muted checked-time">Last checked —</p>
         <div class="feature-summary">
           <div><strong id="cert-healthy">0</strong><span>Healthy</span></div><div><strong id="cert-30">0</strong><span>Within 30 days</span></div><div><strong id="cert-7">0</strong><span>Within 7 days</span></div><div><strong id="cert-warning">0</strong><span>Needs attention</span></div><div><strong id="cert-pending">0</strong><span>Not detected</span></div>
         </div>
