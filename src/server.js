@@ -408,6 +408,7 @@ function certificateNames(certificate) {
 async function certificateInventory() {
   const configured = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" }))]
     .filter(item => item.enabled && item.domain && item.tls !== "http");
+  const configuredDomains = configured.flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
   const parsed = [];
   const certificateFiles = [...await walkFiles(certificateDir), ...await walkFiles(customCertificatesDir)];
   for (const filename of certificateFiles.filter(file => /\.(?:crt|pem)$/i.test(file))) {
@@ -417,7 +418,7 @@ async function certificateInventory() {
       parsed.push({ certificate, names: certificateNames(certificate), updatedAt: stat.mtime.toISOString(), filename, source: filename.startsWith(customCertificatesDir) ? "Custom upload" : "Caddy / ACME" });
     } catch { /* Ignore non-certificate PEM files and unreadable entries. */ }
   }
-  const certificates = configured.map(item => {
+  const certificates = configuredDomains.map(item => {
     const found = parsed.find(entry => entry.names.some(name => name === item.domain || (name.startsWith("*.") && item.domain.endsWith(name.slice(1)))));
     if (!found) {
       const customForRoute = item.tls === "custom" ? parsed.find(entry => entry.source === "Custom upload" && entry.filename.includes(item.id)) : null;
@@ -434,7 +435,7 @@ async function certificateInventory() {
 }
 
 async function domainReadiness() {
-  const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.enabled && item.domain);
+  const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.enabled && item.domain).flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
   const certs = await certificateInventory();
   const [httpResponding, httpsResponding] = await Promise.all([tcpProbe(80), tcpProbe(443)]);
   return Promise.all(routes.map(async item => {
@@ -1170,7 +1171,7 @@ app.post("/api/proxies/:id/certificate", certificateUpload.fields([{ name: "cert
     const certificate = new crypto.X509Certificate(certificatePem), privateKey = crypto.createPrivateKey(keyPem), publicFromKey = crypto.createPublicKey(privateKey);
     const certificatePublic = certificate.publicKey.export({ type: "spki", format: "der" }), suppliedPublic = publicFromKey.export({ type: "spki", format: "der" });
     if (!certificatePublic.equals(suppliedPublic)) return res.status(400).json({ error: "The private key does not match the certificate." });
-    if (!certificate.checkHost(proxy.domain)) return res.status(400).json({ error: `The certificate does not cover ${proxy.domain}.` });
+    const certificateDomains = normalizeDomains(proxy.domain, proxy.domains); if (!certificateDomains.every(domain => certificate.checkHost(domain))) return res.status(400).json({ error: "The certificate must cover the primary domain and every additional domain." });
     const destination = path.join(customCertificatesDir, proxy.id); await fsp.mkdir(destination, { recursive: true });
     const certificatePath = path.join(destination, "certificate.pem"), keyPath = path.join(destination, "private-key.pem");
     await fsp.writeFile(certificatePath, certificatePem, { mode: 0o600 }); await fsp.writeFile(keyPath, keyPem, { mode: 0o600 });
