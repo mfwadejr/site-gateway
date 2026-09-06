@@ -181,6 +181,10 @@ function renderLogs() {
 }
 
 function renderUsers() {
+  const counts = { administrator: 0, standard: 0, viewer: 0, disabled: 0, archived: 0 };
+  state.users.forEach(user => { if (user.status === "active") counts[user.role] = (counts[user.role] || 0) + 1; else if (counts[user.status] !== undefined) counts[user.status] += 1; });
+  const summary = $("#user-summary");
+  if (summary) summary.innerHTML = [["Administrators", counts.administrator, "#62e6a7"], ["Standard Users", counts.standard, "#6ea8ff"], ["Viewers", counts.viewer, "#b58cff"], ["Disabled", counts.disabled, "#ff7185"], ["Archived", counts.archived, "#e6a04f"]].map(([label, count, color]) => `<div><span class="status-dot" style="${count ? `background:${color}` : ""}"></span><strong>${count}</strong><span>${label}</span></div>`).join("");
   $("#user-list").innerHTML = state.users.length ? state.users.map(user => {
     const isSelf = user.id === state.user?.id;
     const statusClass = user.status === "active" ? "running" : user.status === "disabled" ? "disabled" : "inactive";
