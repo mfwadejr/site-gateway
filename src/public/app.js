@@ -186,8 +186,9 @@ function renderUsers() {
     const statusClass = user.status === "active" ? "running" : user.status === "disabled" ? "disabled" : "inactive";
     const roleAction = user.role === "administrator" ? "standard" : user.role === "standard" ? "viewer" : "administrator";
     const roleLabel = user.role === "administrator" ? "Administrator" : user.role === "viewer" ? "Viewer" : "Standard User";
-    const lifecycle = user.status === "archived" ? `<button class="button secondary" data-user-action="status" data-value="disabled">Restore</button>` : user.status === "active" ? `<button class="button secondary" data-user-action="status" data-value="disabled">Disable</button><button class="button secondary danger-text" data-user-action="status" data-value="archived">Archive</button>` : `<button class="button secondary" data-user-action="status" data-value="active">Enable</button><button class="button secondary danger-text" data-user-action="status" data-value="archived">Archive</button>`;
-    return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${roleLabel}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : roleAction === "viewer" ? "Viewer" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}</div></article>`;
+    const lifecycle = user.status === "archived" ? `<button class="button secondary" data-user-action="status" data-value="active">Restore</button>` : `<button class="toggle ${user.status === "active" ? "on" : ""}" data-user-action="status" data-value="${user.status === "active" ? "disabled" : "active"}" aria-label="${user.status === "active" ? "Disable" : "Enable"} ${escapeHtml(user.username)}"><span></span></button><button class="button secondary danger-text" data-user-action="status" data-value="archived">Archive</button>`;
+    const deleteAction = !isSelf ? `<button class="button secondary danger-text" data-user-action="delete">Delete</button>` : "";
+    return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${roleLabel}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : roleAction === "viewer" ? "Viewer" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}${deleteAction}</div></article>`;
   }).join("") : '<p class="quiet-state">No users found.</p>';
 }
 
@@ -373,6 +374,12 @@ $("#user-list").addEventListener("click", async event => {
   const card = button.closest("[data-user-id]"); const user = state.users.find(item => item.id === card?.dataset.userId); if (!user) return;
   if (button.dataset.userAction === "password") {
     state.passwordTarget = user.id; $("#password-form").reset(); $("#password-error").textContent = ""; $("#password-title").textContent = `Reset ${user.username} password`; $("#password-dialog").showModal(); return;
+  }
+  if (button.dataset.userAction === "delete") {
+    if (!confirm(`Permanently delete user “${user.username}”? This cannot be undone.`)) return;
+    button.disabled = true;
+    try { await api(`/api/users/${user.id}`, { method: "DELETE" }); await loadFeatureView(); toast("User deleted."); } catch (error) { toast(error.message); } finally { button.disabled = false; }
+    return;
   }
   button.disabled = true;
   try {

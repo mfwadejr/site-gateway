@@ -937,6 +937,19 @@ app.patch("/api/users/:id", async (req, res, next) => {
     res.json(publicUser(user));
   } catch (error) { next(error); }
 });
+app.delete("/api/users/:id", async (req, res, next) => {
+  try {
+    if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+    if (req.params.id === req.user.id) return res.status(400).json({ error: "You cannot delete your own account." });
+    const index = users.findIndex(user => user.id === req.params.id);
+    if (index < 0) return res.status(404).json({ error: "User not found." });
+    const [removed] = users.splice(index, 1);
+    groups.forEach(group => { group.members = (group.members || []).filter(id => id !== removed.id); });
+    await Promise.all([saveUsers(), saveGroups()]);
+    recordActivity(`User “${removed.username}” permanently deleted.`);
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
 app.get("/api/sites", (req, res) => res.json(sites.map(publicSite)));
 app.get("/api/proxies", (req, res) => res.json(proxies.map(proxy => publicProxy(proxy, req.user.role === "administrator"))));
 app.get("/api/redirects", (req, res) => res.json(redirects));
