@@ -36,7 +36,8 @@ function renderHealthSettings() {
 }
 
 function decorateAccessAssignments() { document.querySelectorAll("#access-list [data-access-id]").forEach(card => { const item = state.accessLists.find(value => value.id === card.dataset.accessId); if (!item || card.querySelector(".access-assignment-preview")) return; const assigned = [...state.proxies, ...state.sites, ...state.redirects].filter(host => host.accessListId === item.id); const preview = document.createElement("p"); preview.className = "access-assignment-preview"; preview.textContent = assigned.length ? `Protects: ${assigned.map(host => host.name || host.domain).join(" · ")}` : "Not assigned to a host"; card.querySelector(".card-footer")?.before(preview); }); }
-window.renderExtendedViews = function () { renderRedirects(); renderAccessLists(); decorateAccessAssignments(); decorateAccessGroups(); decorateAccessToggles(); renderBackups(); renderDefaultSettings(); renderHealthSettings(); renderGroups(); decorateGroupCards(); };
+function hideRestrictedControls() { if (state.user?.role === "administrator") return; document.querySelectorAll("#access-list .menu-wrap, #redirect-list .menu-wrap, #access-list [data-access-action=toggle], #redirect-list [data-redirect-action=toggle]").forEach(element => element.remove()); }
+window.renderExtendedViews = function () { renderRedirects(); renderAccessLists(); decorateAccessAssignments(); decorateAccessGroups(); decorateAccessToggles(); renderBackups(); renderDefaultSettings(); renderHealthSettings(); renderGroups(); decorateGroupCards(); hideRestrictedControls(); };
 
 for (let hour = 0; hour < 24; hour++) document.querySelector('#backup-settings-form [name="hour"]').insertAdjacentHTML("beforeend", `<option value="${hour}">${String(hour).padStart(2,"0")}:00</option>`);
 
