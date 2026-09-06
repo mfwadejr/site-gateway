@@ -188,9 +188,11 @@ async function loadFeatureView() {
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
   if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); renderUsers(); window.renderExtendedViews?.(); }
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
+  restoreAdminTab();
 }
 function render() {
-  if (location.hash !== `#${state.view}`) history.replaceState(null, "", `${location.pathname}${location.search}#${state.view}`);
+  const viewHash = state.view === "administration" ? `administration/${state.adminTab || "users"}` : state.view;
+  if (location.hash !== `#${viewHash}`) history.replaceState(null, "", `${location.pathname}${location.search}#${viewHash}`);
   $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
   document.querySelectorAll("nav [data-view], .aside-utilities [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
@@ -237,7 +239,9 @@ async function refreshDashboard() {
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
   finally { button.disabled = false; button.classList.remove("spinning"); }
 }
+function restoreAdminTab() { if (state.view === "administration") document.querySelector(`[data-admin-tab="${state.adminTab || "users"}"]`)?.click(); }
 async function boot() {
+  const requestedHash = location.hash.slice(1); state.adminTab = requestedHash.startsWith("administration/") ? requestedHash.split("/")[1] || "users" : "users"; if (requestedHash.startsWith("administration/")) history.replaceState(null, "", `${location.pathname}${location.search}#administration`);
   const session = await fetch("/api/session").then(response => response.json());
   $("#login-title").textContent = session.installationSetupPending ? "Welcome to Site Gateway" : "Welcome back";
   $("#login-copy").textContent = session.installationSetupPending ? "Sign in using the administrator credentials you configured during installation." : "Sign in to manage your sites.";
