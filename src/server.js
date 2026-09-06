@@ -678,7 +678,7 @@ async function installUpload(site, file) {
   }
 }
 
-const portableCollections = { "sites.json": () => sites, "proxies.json": () => proxies, "redirects.json": () => redirects, "access-lists.json": () => accessLists, "users.json": () => users, "settings.json": () => settings };
+const portableCollections = { "sites.json": () => sites, "proxies.json": () => proxies, "redirects.json": () => redirects, "access-lists.json": () => accessLists, "users.json": () => users, "groups.json": () => groups, "settings.json": () => settings };
 
 async function protectBackup(buffer, password) {
   if (!password) return buffer;
@@ -767,7 +767,7 @@ async function restoreBackup(filename, password = "", createSafetyBackup = true)
     if (manifest.type === "complete" && fs.existsSync(path.join(staging, "custom-certificates"))) {
       await fsp.mkdir(customCertificatesDir, { recursive: true }); await fsp.cp(path.join(staging, "custom-certificates"), customCertificatesDir, { recursive: true });
     }
-    await Promise.all([...activeServers.keys()].map(stopSite)); sites = []; proxies = []; users = []; redirects = []; accessLists = []; settings = {}; recentActivity.splice(0); await loadSites();
+    await Promise.all([...activeServers.keys()].map(stopSite)); sites = []; proxies = []; users = []; redirects = []; accessLists = []; groups = []; settings = {}; recentActivity.splice(0); await loadSites();
     for (const site of sites.filter(item => item.enabled)) await startSite(site);
     await syncCaddy(); recordActivity(`Backup ${filename} restored.`);
   } catch (error) {
