@@ -968,7 +968,7 @@ app.get("/api/logs", async (req, res, next) => {
   try {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 250);
     const host = normalizeDomain(req.query.host);
-    res.json({ entries: await readAccessLogs(limit, host), hosts: [...new Set([...sites, ...proxies].map(item => item.domain).filter(Boolean))].sort(), activity: recentActivity });
+    res.json({ entries: await readAccessLogs(limit, host), hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort(), activity: recentActivity });
   } catch (error) { next(error); }
 });
 app.get("/api/icons/search", async (req, res, next) => {
