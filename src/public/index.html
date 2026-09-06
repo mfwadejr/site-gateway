@@ -69,7 +69,7 @@
       </nav>
       <header>
         <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Dashboard</h1><p id="page-subtitle" class="muted">Health, activity, and system status at a glance.</p></div>
-        <button id="open-create" class="button primary">＋ New hosted site</button><button id="check-health" class="button primary hidden">Run certificate check</button>
+        <button id="open-create" class="button primary">＋ New hosted site</button><button id="check-health" class="button primary hidden">Run certificate check</button><button id="refresh-logs" class="button primary hidden">Refresh logs</button>
       </header>
       <section id="dashboard-view" class="dashboard-view" aria-label="Gateway dashboard">
         <div class="metric-grid">
@@ -123,7 +123,7 @@
         <section class="dashboard-panel readiness-panel"><div class="panel-heading"><div><p class="eyebrow">Guided diagnostics</p><h2>Domain readiness</h2></div></div><div id="readiness-list" class="dashboard-list"><p class="quiet-state">Run a check to inspect configured domains.</p></div></section>
       </section>
       <section id="logs-view" class="feature-view hidden">
-        <div class="log-toolbar"><div class="log-filters"><label>Domain<select id="log-host"><option value="">All domains</option></select></label><label>Response status<select id="log-status"><option value="">All responses</option><option value="2">Successful · 2xx</option><option value="3">Redirects · 3xx</option><option value="4">Client errors · 4xx</option><option value="5">Server errors · 5xx</option></select></label></div><button id="refresh-logs" class="button secondary">Refresh logs</button></div>
+        <div class="log-toolbar"><div class="log-filters"><label>Domain<select id="log-host"><option value="">All domains</option></select></label><label>Response status<select id="log-status"><option value="">All responses</option><option value="2">Successful · 2xx</option><option value="3">Redirects · 3xx</option><option value="4">Client errors · 4xx</option><option value="5">Server errors · 5xx</option></select></label></div></div>
         <p id="log-summary" class="muted feature-note">No requests in the current view. <span id="log-last-checked">Not checked yet.</span></p>
         <p class="muted feature-note">Recent requests handled by Caddy. Sensitive request headers are never displayed.</p>
         <div class="log-section-heading"><h2>Access requests</h2><p class="muted">Requests handled by configured domains. Sensitive headers are never displayed.</p></div><div class="table-wrap log-table-wrap"><table class="log-table"><thead><tr><th>Time</th><th>Domain</th><th>Request</th><th>Status</th><th>Duration</th></tr></thead><tbody id="log-rows"></tbody></table></div>
