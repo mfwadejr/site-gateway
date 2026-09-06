@@ -96,6 +96,7 @@ export async function openStorage(dataDir, backupsDir) {
   function saveSettings(value, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO settings(instance_id,payload,updated_at) VALUES(?,?,?) ON CONFLICT(instance_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at").run(instanceId, JSON.stringify(value), now()); }
   function integrity() { return db.prepare("PRAGMA integrity_check").all().map(row => Object.values(row)[0]); }
   function recordAudit(action, status = "ok", details = null, actorId = null, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO audit_events(instance_id,actor_id,action,status,details,created_at) VALUES(?,?,?,?,?,?)").run(instanceId, actorId, action, status, details ? JSON.stringify(details) : null, now()); }
+  function listAudit(filters = {}, instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT id,actor_id,action,status,details,created_at FROM audit_events WHERE instance_id=? ORDER BY id DESC LIMIT 500").all(instanceId); return rows.filter(row => (!filters.user || row.actor_id === filters.user) && (!filters.action || row.action.toLowerCase().includes(filters.action.toLowerCase())) && (!filters.status || row.status === filters.status)).map(row => ({ ...row, details: row.details ? JSON.parse(row.details) : null })); }
   function backupTo(filename) { try { fs.rmSync(filename, { force: true }); db.exec(`VACUUM INTO '${String(filename).replaceAll("'", "''")}'`); } catch (error) { throw new Error(`Could not create a consistent SQLite backup: ${error.message}`); } }
 
   if (isNew) {
@@ -120,5 +121,5 @@ export async function openStorage(dataDir, backupsDir) {
     }
   }
   const result = integrity(); if (result.length !== 1 || result[0] !== "ok") { db.close(); throw new Error(`SQLite integrity check failed: ${result.join(", ")}`); }
-  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, backupTo, close: () => db.close() };
+  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, backupTo, close: () => db.close() };
 }
