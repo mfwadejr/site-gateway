@@ -92,3 +92,4 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .dashboard-panel .panel-heading .text-button{white-space:nowrap;font-size:.75rem}
 .certificate-status{display:inline-flex;align-items:center;width:max-content;margin:0 0 16px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:rgba(98,230,167,.08);color:var(--muted);font-size:.76rem;font-weight:700}
 .access-assignment-preview{margin:14px 0 0;color:var(--muted);font-size:.72rem;line-height:1.45;overflow-wrap:anywhere}
+.assignment-host-list{display:grid;gap:8px;margin-top:10px}.assignment-host-chip{display:flex;justify-content:space-between;gap:12px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}.assignment-host-chip b{font-size:.78rem}.assignment-host-chip small{color:var(--muted);font-size:.7rem;text-align:right;overflow-wrap:anywhere}
