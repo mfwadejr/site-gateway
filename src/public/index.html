@@ -244,7 +244,7 @@
       <div class="dialog-heading"><div><p class="eyebrow">Administration</p><h2>Create a user</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
       <label>Display name<input name="displayName" placeholder="Marvin Wade" maxlength="80" required></label>
       <label>Username<input name="username" placeholder="marvin" minlength="3" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,63}" autocomplete="off" required></label>
-      <label>Role<select name="role"><option value="standard">Standard User</option><option value="administrator">Administrator</option></select></label>
+      <label>Role<select name="role"><option value="standard">Standard User</option><option value="viewer">Viewer</option><option value="administrator">Administrator</option></select><small>Viewer accounts can inspect gateway data. Standard Users and Administrators retain their assigned management capabilities.</small></label>
       <label>Temporary password<input name="password" type="password" minlength="8" autocomplete="new-password" required><small>At least 8 characters. Share it securely.</small></label>
       <p id="user-error" class="error" role="alert"></p>
       <div class="dialog-actions"><button type="button" class="button secondary close-dialog">Cancel</button><button class="button primary">Create user</button></div>

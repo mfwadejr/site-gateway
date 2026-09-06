@@ -899,14 +899,14 @@ app.post("/api/users", async (req, res, next) => {
     const username = String(req.body.username || "").trim().toLowerCase();
     const displayName = String(req.body.displayName || "").trim();
     const password = String(req.body.password || "");
-    const role = req.body.role === "administrator" ? "administrator" : "standard";
+    const role = ["administrator", "standard", "viewer"].includes(req.body.role) ? req.body.role : "standard";
     if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return res.status(400).json({ error: "Username must be 3–64 characters using letters, numbers, periods, hyphens, or underscores." });
     if (users.some(user => user.username === username)) return res.status(409).json({ error: "That username already exists." });
     if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Display name is required and must be 80 characters or fewer." });
     if (password.length < 8) return res.status(400).json({ error: "Password must contain at least 8 characters." });
     const now = new Date().toISOString();
     const user = { id: crypto.randomUUID(), username, displayName, role, status: "active", password: await passwordRecord(password), source: "local", createdAt: now, updatedAt: now, lastLoginAt: null };
-    users.push(user); await saveUsers(); recordActivity(`User “${user.username}” created as ${role === "administrator" ? "Administrator" : "Standard User"}.`);
+    users.push(user); await saveUsers(); recordActivity(`User “${user.username}” created as ${role === "administrator" ? "Administrator" : role === "viewer" ? "Viewer" : "Standard User"}.`);
     res.status(201).json(publicUser(user));
   } catch (error) { next(error); }
 });
@@ -914,7 +914,8 @@ app.patch("/api/users/:id", async (req, res, next) => {
   try {
     const user = users.find(item => item.id === req.params.id);
     if (!user) return res.status(404).json({ error: "User not found." });
-    const nextRole = req.body.role === undefined ? user.role : req.body.role === "administrator" ? "administrator" : "standard";
+    const nextRole = req.body.role === undefined ? user.role : ["administrator", "standard", "viewer"].includes(req.body.role) ? req.body.role : null;
+    if (!nextRole) return res.status(400).json({ error: "Invalid user role." });
     const nextStatus = req.body.status === undefined ? user.status : ["active", "disabled", "archived"].includes(req.body.status) ? req.body.status : null;
     if (!nextStatus) return res.status(400).json({ error: "Invalid user status." });
     const removesActiveAdmin = user.role === "administrator" && user.status === "active" && (nextRole !== "administrator" || nextStatus !== "active");
@@ -932,7 +933,7 @@ app.patch("/api/users/:id", async (req, res, next) => {
       if (password.length < 8) return res.status(400).json({ error: "Password must contain at least 8 characters." });
       user.password = await passwordRecord(password);
     }
-    user.updatedAt = new Date().toISOString(); await saveUsers(); recordActivity(`User “${user.username}” updated · ${user.role === "administrator" ? "Administrator" : "Standard User"} · ${user.status}.`);
+    user.updatedAt = new Date().toISOString(); await saveUsers(); recordActivity(`User “${user.username}” updated · ${user.role === "administrator" ? "Administrator" : user.role === "viewer" ? "Viewer" : "Standard User"} · ${user.status}.`);
     res.json(publicUser(user));
   } catch (error) { next(error); }
 });
