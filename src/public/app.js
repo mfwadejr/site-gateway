@@ -228,7 +228,7 @@ function render() {
     return;
   }
   if (!management) {
-    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access logs","Recent requests served through the Caddy gateway."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
+    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access Logs & Gateway Events","Recent requests, upstream responses, and gateway health events served through Caddy."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
     const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
     $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
     if (state.view === "redirects") $("#redirect-empty .create-trigger").textContent = "Create a redirect host";
