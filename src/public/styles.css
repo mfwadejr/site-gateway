@@ -97,6 +97,6 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .assignment-search{margin:12px 0 0!important;min-height:42px!important}
 .assignment-search-label{display:block!important;margin:12px 0 0!important;color:var(--muted);font-size:.72rem;font-weight:750}.assignment-search-label input{display:block;width:100%;box-sizing:border-box}
 .assignment-option[hidden]{display:none!important}
-.access-group-selector{display:block!important;margin:14px 0 0!important}.access-group-selector select{min-height:76px!important}.access-group-preview{margin:8px 0 0;color:var(--muted);font-size:.72rem}
+.access-group-selector{display:block!important;margin:18px 0 0!important;padding-top:16px;border-top:1px solid var(--line)}.access-group-selector select{display:block;min-height:76px!important;margin-top:7px}.access-group-selector small{display:block;margin-top:7px;line-height:1.45;color:var(--muted)}.access-group-preview{margin:8px 0 0;color:var(--muted);font-size:.72rem}
 #access-assignment-summary{display:block!important;width:100%;box-sizing:border-box}.assignment-search-label{width:100%;box-sizing:border-box}.assignment-search-label input{margin-top:7px!important}.assignment-editor{width:100%;box-sizing:border-box}
-#access-assignment-summary>strong{display:block;margin-bottom:6px}#access-assignment-summary>p{margin:0;color:var(--muted);line-height:1.45}
+#access-assignment-summary>strong{display:block;margin-bottom:6px}#access-assignment-summary>p{margin:0 0 4px;color:var(--muted);line-height:1.45}
