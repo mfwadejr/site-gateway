@@ -406,7 +406,7 @@ function certificateNames(certificate) {
 }
 
 async function certificateInventory() {
-  const configured = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" }))]
+  const configured = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))]
     .filter(item => item.enabled && item.domain && item.tls !== "http");
   const configuredDomains = configured.flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
   const parsed = [];
@@ -1257,17 +1257,17 @@ app.delete("/api/access-lists/:id", async (req, res, next) => {
 
 app.post("/api/redirects", async (req, res, next) => {
   try {
-    const name = String(req.body.name || "").trim(); const domain = normalizeDomain(req.body.domain); const target = String(req.body.target || "").trim().replace(/\/$/, "");
-    const domainError = validateDomain(domain); if (!name || domainError || !domain) return res.status(400).json({ error: domainError || "Name and source domain are required." });
+    const name = String(req.body.name || "").trim(); const domain = normalizeDomain(req.body.domain); const domains = normalizeDomains(domain, req.body.domains); const target = String(req.body.target || "").trim().replace(/\/$/, "");
+    const domainError = validateDomains(domains); if (!name || domainError || !domain) return res.status(400).json({ error: domainError || "Name and primary source domain are required." });
     try { const parsed = new URL(target); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { return res.status(400).json({ error: "Destination must be a complete HTTP or HTTPS URL." }); }
-    const item = { id: `redirect-${crypto.randomBytes(4).toString("hex")}`, name, domain, target, code: [301,302,307,308].includes(Number(req.body.code)) ? Number(req.body.code) : 302, preservePath: req.body.preservePath !== false, tls: ["http","automatic","internal"].includes(req.body.tls) ? req.body.tls : "automatic", hsts: Boolean(req.body.hsts), accessListId: String(req.body.accessListId || ""), enabled: true, createdAt: new Date().toISOString() };
+    const item = { id: `redirect-${crypto.randomBytes(4).toString("hex")}`, name, domain, domains, target, code: [301,302,307,308].includes(Number(req.body.code)) ? Number(req.body.code) : 302, preservePath: req.body.preservePath !== false, tls: ["http","automatic","internal"].includes(req.body.tls) ? req.body.tls : "automatic", hsts: Boolean(req.body.hsts), accessListId: String(req.body.accessListId || ""), enabled: true, createdAt: new Date().toISOString() };
     redirects.push(item); await syncCaddy(); await saveRedirects(); recordActivity(`Redirect Host “${name}” created.`); res.status(201).json(item);
   } catch (error) { next(error); }
 });
 app.patch("/api/redirects/:id", async (req, res, next) => {
   try {
     const item = redirects.find(value => value.id === req.params.id); if (!item) return res.status(404).json({ error: "Redirect Host not found." });
-    if (req.body.domain !== undefined) { const domain = normalizeDomain(req.body.domain); const error = validateDomain(domain, item.id); if (error || !domain) return res.status(400).json({ error: error || "Source domain is required." }); item.domain = domain; }
+    if (req.body.domain !== undefined || req.body.domains !== undefined) { const domain = normalizeDomain(req.body.domain ?? item.domain); const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : item.domains); const error = validateDomains(domains, item.id); if (error || !domain) return res.status(400).json({ error: error || "Primary source domain is required." }); item.domain = domain; item.domains = domains; }
     if (req.body.enabled !== undefined) item.enabled = Boolean(req.body.enabled);
     for (const key of ["name","target","accessListId"]) if (req.body[key] !== undefined) item[key] = String(req.body[key]).trim();
     if (req.body.target !== undefined) { try { const parsed = new URL(item.target); if (!['http:','https:'].includes(parsed.protocol)) throw new Error(); } catch { return res.status(400).json({ error: "Destination must be a complete HTTP or HTTPS URL." }); } }
