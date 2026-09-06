@@ -74,6 +74,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .danger-zone .danger-card:first-of-type .button{background:var(--warning);color:#2b1b05;border-color:transparent;box-shadow:0 10px 30px rgba(255,191,105,.14)}#check-health{font-size:inherit;font-weight:720}
 .danger-zone .danger-card:first-of-type .button{margin-top:18px}
 .danger-credentials{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 18px;margin-top:12px}.danger-credentials label{margin-top:0}.danger-credentials input{height:44px;min-height:44px;box-sizing:border-box}
+.restore-form .danger-credentials{display:contents}.restore-form .danger-credentials label{margin-top:0}
 .danger-form .button{margin-top:18px}
 .danger-form{row-gap:18px}.danger-form label{margin-top:0}.danger-form .button{margin-top:0}
 .caution-button{background:var(--warning);color:#2b1b05;border-color:transparent;box-shadow:0 10px 30px rgba(255,191,105,.14)}
