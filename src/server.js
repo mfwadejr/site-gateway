@@ -176,11 +176,18 @@ async function loadSites() {
 function normalizeDomain(value) {
   return String(value || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
+function normalizeDomains(primary, aliases = []) {
+  return [...new Set([primary, ...(Array.isArray(aliases) ? aliases : String(aliases || "").split(/[\n,]+/))].map(normalizeDomain).filter(Boolean))];
+}
+function validateDomains(domains, exceptId) {
+  for (const domain of domains) { const error = validateDomain(domain, exceptId); if (error) return error; }
+  return null;
+}
 
 function validateDomain(domain, exceptId) {
   if (!domain) return null;
   if (domain.length > 253 || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) return "Enter a valid public domain such as app.example.com.";
-  if ([...sites, ...proxies, ...redirects].some(item => item.domain === domain && item.id !== exceptId)) return "That domain is already assigned.";
+  if ([...sites, ...proxies, ...redirects].some(item => normalizeDomains(item.domain, item.domains).includes(domain) && item.id !== exceptId)) return "That domain is already assigned.";
   return null;
 }
 
@@ -252,7 +259,8 @@ function expectedStatusMatches(status, specification = "200-499") {
 }
 
 function caddySiteAddress(item) {
-  return item.tls === "http" ? `http://${item.domain}` : item.domain;
+  const domains = normalizeDomains(item.domain, item.domains);
+  return (item.tls === "http" ? domains.map(domain => `http://${domain}`) : domains).join(" ");
 }
 
 function caddyQuote(value) {
@@ -372,13 +380,13 @@ function siteStatus(site) {
 }
 
 function publicSite(site) {
-  return { ...site, status: siteStatus(site), url: `http://${site.host || "localhost"}:${site.port}` };
+  return { ...site, domains: normalizeDomains(site.domain, site.domains), status: siteStatus(site), url: `http://${site.host || "localhost"}:${site.port}` };
 }
 
 function publicProxy(proxy, includeAdvanced = false) {
   const { certificatePath, keyPath, ...safe } = proxy;
   if (!includeAdvanced) { delete safe.customConfig; delete safe.requestHeaders; }
-  return { ...safe, certificatePath: certificatePath ? "installed" : null, hasCustomCertificate: Boolean(certificatePath && keyPath), status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled", upstream: upstreamHealth.get(proxy.id) || null };
+  return { ...safe, domains: normalizeDomains(proxy.domain, proxy.domains), certificatePath: certificatePath ? "installed" : null, hasCustomCertificate: Boolean(certificatePath && keyPath), status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled", upstream: upstreamHealth.get(proxy.id) || null };
 }
 
 async function walkFiles(directory) {
@@ -1023,16 +1031,17 @@ app.post("/api/sites", upload.single("files"), async (req, res, next) => {
     const name = String(req.body.name || "").trim();
     const port = Number.parseInt(req.body.port, 10);
     const domain = normalizeDomain(req.body.domain);
+    const domains = normalizeDomains(domain, req.body.domains);
     const tls = ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : "automatic";
     const hsts = req.body.hsts === "true";
     const id = `${slugify(name) || "site"}-${crypto.randomBytes(3).toString("hex")}`;
     if (!name) throw Object.assign(new Error("Site name is required."), { status: 400 });
     const portError = validatePort(port);
     if (portError) throw Object.assign(new Error(portError), { status: 400 });
-    const domainError = validateDomain(domain);
+    const domainError = validateDomains(domains);
     if (domainError) throw Object.assign(new Error(domainError), { status: 400 });
     if (!req.file) throw Object.assign(new Error("Choose a ZIP file or index.html."), { status: 400 });
-    const site = { id, name, port, domain, tls, hsts, enabled: true, createdAt: new Date().toISOString() };
+    const site = { id, name, port, domain, domains, tls, hsts, enabled: true, createdAt: new Date().toISOString() };
     await installUpload(site, req.file);
     sites.push(site);
     try { await startSite(site); } catch (error) { sites = sites.filter(item => item.id !== site.id); await fsp.rm(path.join(sitesDir, site.id), { recursive: true, force: true }); throw Object.assign(new Error(`Could not start the hosted site on port ${port}: ${error.message}`), { status: 409 }); }
@@ -1086,9 +1095,10 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     const site = sites.find(item => item.id === req.params.id);
     if (!site) return res.status(404).json({ error: "Site not found." });
     const domain = normalizeDomain(req.body.domain);
-    const domainError = validateDomain(domain, site.id);
+    const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : site.domains);
+    const domainError = validateDomains(domains, site.id);
     if (domainError) return res.status(400).json({ error: domainError });
-    site.domain = domain;
+    site.domain = domain; site.domains = domains;
     site.tls = ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : "automatic";
     site.hsts = req.body.hsts === true;
     await syncCaddy();
@@ -1101,13 +1111,14 @@ app.post("/api/proxies", async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim();
     const domain = normalizeDomain(req.body.domain);
+    const domains = normalizeDomains(domain, req.body.domains);
     if (!name) return res.status(400).json({ error: "Proxy name is required." });
-    const domainError = validateDomain(domain);
+    const domainError = validateDomains(domains);
     if (domainError || !domain) return res.status(400).json({ error: domainError || "Domain is required." });
     const proxy = {
       id: `${slugify(name) || "proxy"}-${crypto.randomBytes(3).toString("hex")}`,
       name,
-      domain,
+      domain, domains,
       target: validateTarget(req.body.target),
       tls: ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : "automatic",
       hsts: req.body.hsts === true,
@@ -1128,10 +1139,12 @@ app.patch("/api/proxies/:id", async (req, res, next) => {
     if (!proxy) return res.status(404).json({ error: "Proxy host not found." });
     if (req.body.domain !== undefined) {
       const domain = normalizeDomain(req.body.domain);
-      const domainError = validateDomain(domain, proxy.id);
+      const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : proxy.domains);
+      const domainError = validateDomains(domains, proxy.id);
       if (domainError || !domain) return res.status(400).json({ error: domainError || "Domain is required." });
-      proxy.domain = domain;
+      proxy.domain = domain; proxy.domains = domains;
     }
+    if (req.body.domains !== undefined && req.body.domain === undefined) { const domains = normalizeDomains(proxy.domain, req.body.domains); const domainError = validateDomains(domains, proxy.id); if (domainError) return res.status(400).json({ error: domainError }); proxy.domains = domains; }
     if (req.body.name !== undefined) {
       const name = String(req.body.name).trim();
       if (!name) return res.status(400).json({ error: "Proxy name is required." });

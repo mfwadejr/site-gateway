@@ -177,7 +177,7 @@
       <div class="dialog-heading"><div><p class="eyebrow">New destination</p><h2>Create a site</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
       <label>Site name<input name="name" placeholder="Portfolio" maxlength="80" required></label>
       <label>Port<input name="port" type="number" required><small id="port-help"></small></label>
-      <label>Domain <span class="optional">Optional</span><input name="domain" placeholder="www.example.com"><small>Leave blank for port-only LAN access.</small></label>
+      <label>Domain <span class="optional">Optional</span><input name="domain" placeholder="www.example.com"><small>Leave blank for port-only LAN access.</small></label><label>Additional domains <span class="optional">Optional</span><textarea name="domains" placeholder="www.example.com&#10;example.net"></textarea><small>One alias per line. All domains use the same hosted files and TLS settings.</small></label>
       <label>TLS<select name="tls"><option value="automatic">Automatic public HTTPS</option><option value="internal">Internal HTTPS for trusted local devices</option><option value="http">HTTP only</option></select></label>
       <label class="check-control"><input name="hsts" type="checkbox" value="true"><span>Enable HSTS after HTTPS is verified</span></label>
       <label class="dropzone">Website files<input name="files" type="file" accept=".zip,.html,text/html,application/zip" required><span class="upload-icon">⇧</span><strong>Choose a ZIP or index.html</strong><small>ZIP files must contain index.html · Up to 250 MB</small></label>
@@ -191,6 +191,7 @@
       <div class="dialog-heading"><div><p class="eyebrow">New route</p><h2>Create a proxy host</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
       <label>Name<input name="name" placeholder="Home Assistant" maxlength="80" required></label>
       <label>Domain<input name="domain" placeholder="home.example.com" required></label>
+      <label>Additional domains <span class="optional">Optional</span><textarea name="domainsText" placeholder="www.home.example.com&#10;home.example.net"></textarea><small>One alias per line. All domains use this proxy host’s upstream and TLS settings.</small></label>
       <label>Forward to<input name="target" type="url" placeholder="http://192.168.1.20:8123" required><small>Use the container name, LAN address, or application URL.</small></label>
       <label>Upstream pool <span class="optional">Optional</span><textarea name="upstreamsText" placeholder="http://192.168.1.20:53&#10;http://192.168.1.21:53"></textarea><small>One HTTP/HTTPS target per line. Caddy distributes requests across healthy targets.</small></label>
       <label>TLS<select name="tls"><option value="automatic">Automatic public HTTPS</option><option value="internal">Internal HTTPS for trusted local devices</option><option value="custom">Custom uploaded certificate</option><option value="http">HTTP only</option></select></label>
@@ -209,6 +210,7 @@
       <div class="dialog-heading"><div><p class="eyebrow">Gateway settings</p><h2 id="settings-title">Edit route</h2></div><button type="button" class="icon-button close-dialog" aria-label="Close">×</button></div>
       <label id="settings-name-wrap">Name<input name="name" maxlength="80"></label>
       <label>Domain<input name="domain" placeholder="www.example.com"></label>
+      <label>Additional domains <span class="optional">Optional</span><textarea name="domainsText" placeholder="www.example.com&#10;example.net"></textarea><small>One alias per line. All domains use the same route and TLS settings.</small></label>
       <label id="settings-target-wrap">Forward to<input name="target" type="url" placeholder="http://192.168.1.20:3000"></label>
       <label>TLS<select name="tls"><option value="automatic">Automatic public HTTPS</option><option value="internal">Internal HTTPS for trusted local devices</option><option value="custom">Custom uploaded certificate</option><option value="http">HTTP only</option></select></label>
       <label class="check-control"><input name="hsts" type="checkbox"><span>Enable HSTS after HTTPS is verified</span></label>
