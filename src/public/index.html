@@ -132,7 +132,7 @@
       <section id="users-view" class="feature-view hidden">
         <div class="admin-tabs"><button class="tab-active" data-admin-tab="users">Users</button><button data-admin-tab="defaults">Gateway defaults</button><button data-admin-tab="backups">Backup & restore</button><button data-admin-tab="security">Security & updates</button><button data-admin-tab="danger" class="danger-tab">Danger Zone</button></div>
         <section data-admin-panel="users">
-        <div class="role-callout"><strong>Administrator</strong><span>Full control of users, sites, proxy hosts, certificates, logs, and gateway settings.</span><strong>Standard User</strong><span>Read-only access to dashboard health, configured services, certificates, and logs.</span></div>
+        <details class="role-callout"><summary>Role permissions</summary><div><strong>Administrator</strong><span>Full control of users, sites, proxy hosts, certificates, logs, and gateway settings.</span><strong>Standard User</strong><span>Operational management access without user, group, global settings, or danger-zone controls.</span><strong>Viewer</strong><span>Read-only access to dashboard health, configured services, certificates, and logs.</span></div></details>
         <div id="user-summary" class="summary user-summary" aria-label="User summary"></div>
         <div id="user-list" class="user-grid"><p class="quiet-state">Loading users…</p></div>
         </section>
