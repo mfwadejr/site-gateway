@@ -190,6 +190,7 @@ async function loadFeatureView() {
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
 }
 function render() {
+  if (location.hash !== `#${state.view}`) history.replaceState(null, "", `${location.pathname}${location.search}#${state.view}`);
   $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
   document.querySelectorAll("nav [data-view], .aside-utilities [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
@@ -242,10 +243,10 @@ async function boot() {
   $("#login-copy").textContent = session.installationSetupPending ? "Sign in using the administrator credentials you configured during installation." : "Sign in to manage your sites.";
   if (!session.authenticated) return showLogin();
   if (session.setupRequired) { $("#login").classList.add("hidden"); $("#dashboard").classList.add("hidden"); $("#setup-form [name=username]").value = session.user.username; if (!$("#setup-dialog").open) $("#setup-dialog").showModal(); return; }
-  state.view = "overview"; state.users = []; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canManage())); state.config = await api("/api/config");
+  state.view = location.hash.slice(1) || "overview"; state.users = []; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canManage())); state.config = await api("/api/config");
   $("#version-label").textContent = `v${state.config.version || "unknown"}`;
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
-  $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh();
+  $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh(); if (state.view !== "overview") await loadFeatureView();
   if (!state.healthTimer) state.healthTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboard().catch(error => toast(error.message)); }, 30000);
 }
 
