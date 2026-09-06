@@ -200,6 +200,7 @@ function render() {
   const management = state.view === "hosted" || state.view === "proxies";
   $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "redirects"));
   $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#users-view").classList.toggle("hidden", state.view !== "administration");
+  if (state.view === "administration") { const adminTab = state.adminTab || "users"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
   $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const adminUsersActive = state.view === "administration" && document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab === "users";
   $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || ["redirects","access"].includes(state.view)) || !canManage());
