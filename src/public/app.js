@@ -3,6 +3,7 @@ const summaryBar = document.querySelector("#management-summary");
 const redirectView = document.querySelector("#redirects-view");
 if (summaryBar && redirectView) redirectView.parentElement.insertBefore(summaryBar, redirectView);
 const state = { sites: [], proxies: [], redirects: [], accessLists: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
+document.querySelector("#create-form [name=domain]")?.closest("label")?.childNodes[0] && (document.querySelector("#create-form [name=domain]").closest("label").childNodes[0].textContent = "Primary domain ");
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
 function applyTheme(preference) {
