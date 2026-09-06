@@ -843,10 +843,11 @@ function accessSession(req, listId) {
   if (storedList !== listId || Number(expires) <= Date.now() || !safeEqual(signature || "", sign(`${storedList}.${username}.${expires}`))) return null;
   return username;
 }
+function accessUserAllowed(list, username) { if (list.credentials?.some(item => item.username === username)) return true; return (list.groups || []).some(groupId => { const group = groups.find(item => item.id === groupId && item.enabled !== false); return Boolean(group?.members?.some(userId => users.some(user => user.id === userId && user.status === "active" && user.username === username))); }); }
 app.get("/api/access-check", (req, res) => {
   const listId = String(req.query.list || ""), list = accessLists.find(item => item.id === listId && item.enabled !== false);
   if (!list || !list.credentials?.length) return res.status(204).end();
-  const username = accessSession(req, listId); if (username) { res.setHeader("X-Site-Gateway-User", username); return res.status(204).end(); }
+  const username = accessSession(req, listId); if (username && accessUserAllowed(list, username)) { res.setHeader("X-Site-Gateway-User", username); return res.status(204).end(); }
   const original = String(req.headers["x-forwarded-uri"] || "/"); const safeReturn = original.startsWith("/") && !original.startsWith("//") ? original : "/";
   res.redirect(302, `/_site-gateway/login?list=${encodeURIComponent(listId)}&return=${encodeURIComponent(safeReturn)}`);
 });
@@ -857,7 +858,7 @@ app.get("/_site-gateway/login", (req, res) => {
 });
 app.post("/_site-gateway/login", async (req, res, next) => {
   try {
-    const listId = String(req.body.list || ""), list = accessLists.find(item => item.id === listId && item.enabled !== false), username = String(req.body.username || "").trim(); const credential = list?.credentials?.find(item => item.username === username);
+    const listId = String(req.body.list || ""), list = accessLists.find(item => item.id === listId && item.enabled !== false), username = String(req.body.username || "").trim(); const credential = list?.credentials?.find(item => item.username === username) || ((list && accessUserAllowed(list, username)) ? users.find(user => user.username === username && user.status === "active") : null);
     const safeReturn = String(req.body.return || "/").startsWith("/") && !String(req.body.return).startsWith("//") ? String(req.body.return) : "/";
     if (!credential?.password || !await passwordMatches(req.body.password || "", credential.password)) return res.redirect(303, `/_site-gateway/login?list=${encodeURIComponent(listId)}&return=${encodeURIComponent(safeReturn)}&error=1`);
     const expires = String(Date.now() + 12 * 60 * 60 * 1000), value = `${listId}.${username}.${expires}`; const secure = String(req.headers["x-forwarded-proto"] || "").includes("https") ? "; Secure" : "";
