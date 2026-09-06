@@ -116,7 +116,8 @@ function initials(name) {
   return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2).padEnd(2, words[0][0])).toUpperCase();
 }
 function iconMarkup(item) { return item.icon ? `<img src="${escapeHtml(item.icon)}" alt="">` : escapeHtml(initials(item.name)); }
-function canManage() { return state.user?.role === "administrator"; }
+function canManage() { return ["administrator", "standard"].includes(state.user?.role); }
+function canAdmin() { return state.user?.role === "administrator"; }
 
 function hostedCard(site) {
   const status = site.status === "running" ? "running" : site.status === "error" ? "error" : "disabled";
@@ -250,7 +251,7 @@ function render() {
   $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues";
   $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
 }
-async function refresh() { [state.sites, state.proxies, state.redirects, state.accessLists, state.groups, state.dashboard, state.certificates] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/access-lists"), state.user?.role === "administrator" ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]); render(); window.renderExtendedViews?.(); }
+async function refresh() { [state.sites, state.proxies, state.redirects, state.accessLists, state.groups, state.dashboard, state.certificates] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]); render(); window.renderExtendedViews?.(); }
 async function refreshDashboard() {
   const button = $("#refresh-health"); button.disabled = true; button.classList.add("spinning"); $("#health-checked").textContent = "Checking services…";
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
@@ -264,7 +265,7 @@ async function boot() {
   $("#login-copy").textContent = session.installationSetupPending ? "Sign in using the administrator credentials you configured during installation." : "Sign in to manage your sites.";
   if (!session.authenticated) return showLogin();
   if (session.setupRequired) { $("#login").classList.add("hidden"); $("#dashboard").classList.add("hidden"); $("#setup-form [name=username]").value = session.user.username; if (!$("#setup-dialog").open) $("#setup-dialog").showModal(); return; }
-  state.view = location.hash.slice(1) || "overview"; state.users = []; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canManage())); render(); state.config = await api("/api/config");
+  state.view = location.hash.slice(1) || "overview"; state.users = []; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canAdmin())); render(); state.config = await api("/api/config");
   $("#version-label").textContent = `v${state.config.version || "unknown"}`;
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
   $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh(); if (state.view !== "overview") await loadFeatureView();

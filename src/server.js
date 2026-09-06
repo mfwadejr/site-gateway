@@ -891,7 +891,7 @@ app.post("/api/setup/admin", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.use("/api", (req, res, next) => req.user.setupRequired ? res.status(428).json({ error: "Complete the initial administrator setup before continuing." }) : next());
-app.use("/api", (req, res, next) => req.user.role === "administrator" || req.method === "GET" ? next() : res.status(403).json({ error: "Administrator access is required to make changes." }));
+app.use("/api", (req, res, next) => { if (req.method === "GET" || req.user.role === "administrator") return next(); const operational = /^\/(sites|proxies|redirects|access-lists)(\/|$)/.test(req.path); if (req.user.role === "standard" && operational) return next(); return res.status(403).json({ error: "Administrator access is required for this action." }); });
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError } }));
 app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));
 app.post("/api/users", async (req, res, next) => {
