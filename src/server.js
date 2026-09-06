@@ -1011,7 +1011,7 @@ app.get("/api/icons/search", async (req, res, next) => {
 });
 app.put("/api/:kind/:id/icon", async (req, res, next) => {
   try {
-    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : null;
+    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
     if (!collection) return res.status(404).json({ error: "Entry type not found." });
     const item = collection.find(entry => entry.id === req.params.id);
     if (!item) return res.status(404).json({ error: "Entry not found." });
@@ -1019,7 +1019,7 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
       const url = String(req.body.url || "").trim();
       if (!/^https:\/\//i.test(url) || url.length > 2048) return res.status(400).json({ error: "Icon URL must be a valid HTTPS URL under 2048 characters." });
       item.iconSlug = null; item.icon = url;
-      if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else await saveAccessLists();
+      if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else if (collection === users) await saveUsers(); else await saveAccessLists();
       recordActivity(`Icon URL updated for “${item.name}”.`);
       return res.json(item);
     }
@@ -1034,7 +1034,7 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
 });
 app.post("/api/:kind/:id/icon", iconUpload.single("icon"), async (req, res, next) => {
   try {
-    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : null;
+    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
     if (!collection) return res.status(404).json({ error: "Entry type not found." });
     const item = collection.find(entry => entry.id === req.params.id);
     if (!item) return res.status(404).json({ error: "Entry not found." });
@@ -1044,7 +1044,7 @@ app.post("/api/:kind/:id/icon", iconUpload.single("icon"), async (req, res, next
     const filename = `${req.params.kind}-${item.id}.${extension}`;
     await fsp.rename(req.file.path, path.join(iconsDir, filename));
     item.iconSlug = null; item.icon = `/site-icons/${filename}`;
-    if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else await saveAccessLists();
+    if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else if (collection === users) await saveUsers(); else await saveAccessLists();
     recordActivity(`Custom icon uploaded for “${item.name}”.`);
     res.json(item);
   } catch (error) { next(error); }

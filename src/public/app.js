@@ -195,7 +195,7 @@ function renderUsers() {
     const deleteAction = !isSelf ? `<button class="button secondary danger-text" data-user-action="delete">Delete</button>` : "";
     return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${roleLabel}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : roleAction === "viewer" ? "Viewer" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}${deleteAction}</div><div class="card-footer"><span class="status-pill">${user.status === "archived" ? "Archived" : user.status === "active" ? "Enabled" : "Disabled"}</span>${statusToggle}</div></article>`;
   }).join("") : '<p class="quiet-state">No users found.</p>';
-  document.querySelectorAll("#user-list .user-card").forEach(card => { card.style.position = "relative"; card.style.minHeight = "250px"; card.style.paddingBottom = "64px"; });
+  document.querySelectorAll("#user-list .user-card").forEach(card => { card.style.position = "relative"; card.style.minHeight = "250px"; card.style.paddingBottom = "64px"; const user = state.users.find(item => item.id === card.dataset.userId); const head = card.querySelector(".user-card-head"), status = head?.querySelector(".status-pill"), footer = card.querySelector(".card-footer"); if (!user || !head || !footer) return; if (status) footer.prepend(status); const menu = document.createElement("div"); menu.className = "menu-wrap"; menu.innerHTML = '<button class="icon-button" type="button" aria-label="Change user icon">•••</button>'; menu.querySelector("button").addEventListener("click", () => openIconPicker("users", user.id)); head.append(menu); const avatar = card.querySelector(".user-avatar"); if (user.icon && avatar) avatar.innerHTML = `<img src="${escapeHtml(user.icon)}" alt="">`; });
 }
 
 async function loadFeatureView() {
@@ -346,7 +346,7 @@ $("#icon-search").addEventListener("input", event => {
   }, 280);
 });
 async function saveIcon(slug) {
-  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : "sites";
+  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites";
   $("#icon-error").textContent = "";
   try {
     await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug }) });
@@ -358,12 +358,12 @@ $("#reset-icon").addEventListener("click", event => { event.preventDefault(); sa
 $("#icon-upload").addEventListener("change", async event => {
   const file = event.target.files[0]; if (!file || !state.iconTarget) return;
   const data = new FormData(); data.append("icon", file); $("#icon-error").textContent = "";
-  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
+  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
   catch (error) { $("#icon-error").textContent = error.message; }
 });
 $("#save-icon-url").addEventListener("click", async () => {
   const value = $("#icon-url").value.trim(); if (!/^https:\/\//i.test(value)) { $("#icon-error").textContent = "Enter a trusted HTTPS image URL."; return; }
-  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : "sites";
+  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites";
   try { await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: value }) }); $("#icon-dialog").close(); await refresh(); toast("Icon URL saved."); }
   catch (error) { $("#icon-error").textContent = error.message; }
 });
