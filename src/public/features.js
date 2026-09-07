@@ -120,6 +120,11 @@ function decorateAccessToggles() { document.querySelectorAll("#access-list [data
 function decorateGroupCards() { document.querySelectorAll('[data-admin-panel="groups"] .group-card').forEach(card => { const group = state.groups.find(value => value.id === card.querySelector("[data-group-action]")?.dataset.groupId); if (!group) return; const icon = card.querySelector(".site-icon"); if (icon && icon.textContent.trim() === "GR") icon.innerHTML = featureIcon(group, "GR"); const menu = card.querySelector(".menu"); if (menu && !menu.querySelector("[data-group-action=icon]")) { const button = document.createElement("button"); button.dataset.groupAction = "icon"; button.dataset.groupId = group.id; button.textContent = "Change icon"; menu.prepend(button); } }); }
 document.addEventListener("click", event => { const button = event.target.closest("[data-group-action=icon]"); if (!button) return; event.preventDefault(); event.stopImmediatePropagation(); openIconPicker("groups", button.dataset.groupId); }, true);
 const backupPasswordInput = document.querySelector('#backup-settings-form [name="backupPassword"]');
+const encryptionToggle = document.querySelector('#backup-settings-form .encryption-toggle');
+if (encryptionToggle) {
+  encryptionToggle.className = "encryption-toggle";
+  encryptionToggle.innerHTML = '<span class="field-label">Encrypt scheduled backups</span><span class="encryption-toggle-box"><input name="encrypt" type="checkbox"><span>Uses the container’s <code>BACKUP_PASSWORD</code> value. Enable only after configuring that value.</span></span>';
+}
 if (backupPasswordInput && !document.querySelector("#backup-password-toggle")) {
   backupPasswordInput.insertAdjacentHTML("afterend", '<button type="button" id="backup-password-toggle" class="password-toggle" aria-label="Show backup encryption password" aria-pressed="false">Show</button>');
   const toggle = document.querySelector("#backup-password-toggle");
