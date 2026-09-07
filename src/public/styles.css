@@ -130,6 +130,14 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .backup-settings + .callout + #backup-list{max-height:390px;overflow-y:auto;overscroll-behavior:contain}
 .backup-password-field{position:relative}.backup-password-field input{padding-right:62px!important}.password-toggle{position:absolute;right:10px;top:36px;border:0;background:transparent;color:var(--green);font-size:.72rem;font-weight:750;cursor:pointer;padding:6px}.password-toggle:hover{color:var(--text)}
 .backup-settings .backup-password-field input,.backup-settings .encryption-toggle-box{height:44px!important;min-height:44px!important;box-sizing:border-box}.backup-create-dialog select{height:44px;min-height:44px;margin-top:7px}.backup-dialog-help{display:block;margin-top:6px;color:var(--muted);line-height:1.45}.backup-create-dialog code{color:var(--green)}
+.backup-create-dialog .dialog-heading>.icon-button{display:none}
+#backup-settings-form .encryption-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;align-items:start!important}
+#backup-settings-form .encryption-grid>.backup-password-field,
+#backup-settings-form .encryption-grid>.encryption-toggle{margin-top:16px!important;align-self:start!important}
+#backup-settings-form .encryption-grid>.backup-password-field .field-label,
+#backup-settings-form .encryption-grid>.encryption-toggle .field-label{height:20px;line-height:20px;margin-bottom:7px}
+#backup-settings-form .encryption-grid>.backup-password-field input,
+#backup-settings-form .encryption-grid>.encryption-toggle .encryption-toggle-box{height:44px!important;min-height:44px!important}
 .backup-settings .form-grid>.check-control{height:44px!important;min-height:44px!important;align-self:start!important;margin-top:23px!important;box-sizing:border-box}
 .backup-settings .encryption-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;align-items:start}
 .backup-settings .encryption-toggle{height:auto!important;min-height:0!important;margin-top:16px!important;padding:0!important;background:transparent!important;border:0!important;display:block!important}
