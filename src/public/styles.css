@@ -113,3 +113,13 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .inline-status{grid-column:1/-1;margin:0;color:var(--green);font-size:.8rem;font-weight:700}
 .inline-status.status-success{color:var(--green)}.inline-status.status-warning{color:var(--warning)}
 .encryption-grid{align-items:start}.encryption-toggle{align-items:flex-start;padding-top:28px}.encryption-toggle small{display:block;margin-top:5px;color:var(--muted);font-size:.72rem;line-height:1.4}.backup-settings .inline-status{margin-top:0}
+
+/* Keep backup encryption controls compact and consistent with the rest of the form. */
+.backup-settings .encryption-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 18px}
+.backup-settings .encryption-grid .backup-password-field,
+.backup-settings .encryption-grid .encryption-toggle{grid-column:auto!important}
+.backup-settings .encryption-grid .encryption-toggle{margin-top:16px;min-height:44px}
+.backup-settings .encryption-grid .encryption-toggle span{line-height:1.35}
+.backup-settings .form-section:last-of-type{border-bottom:0}
+.backup-settings > .dialog-actions{border-top:0;padding-top:0}
+@media(max-width:700px){.backup-settings .encryption-grid{grid-template-columns:1fr}}
