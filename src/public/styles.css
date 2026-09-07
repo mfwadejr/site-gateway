@@ -112,3 +112,4 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .docs-intro{text-align:left}.docs-intro>p:not(.eyebrow){margin-left:0;margin-right:0}.docs-search-panel{margin-left:0;margin-right:0}
 .inline-status{grid-column:1/-1;margin:0;color:var(--green);font-size:.8rem;font-weight:700}
 .inline-status.status-success{color:var(--green)}.inline-status.status-warning{color:var(--warning)}
+.encryption-grid{align-items:start}.encryption-toggle{align-items:flex-start;padding-top:28px}.encryption-toggle small{display:block;margin-top:5px;color:var(--muted);font-size:.72rem;line-height:1.4}.backup-settings .inline-status{margin-top:0}
