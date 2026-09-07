@@ -110,3 +110,4 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 /* Manual uses a full-width header, then a two-column reading layout. */
 .docs{display:block}.docs-intro{grid-column:1/-1}.docs-layout{width:100%}
 .docs-intro{text-align:left}.docs-intro>p:not(.eyebrow){margin-left:0;margin-right:0}.docs-search-panel{margin-left:0;margin-right:0}
+.inline-status{grid-column:1/-1;margin:0;color:var(--green);font-size:.8rem;font-weight:700}
