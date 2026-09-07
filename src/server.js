@@ -142,6 +142,22 @@ const saveRedirects = async () => storage.saveCollection("redirects", redirects)
 const saveAccessLists = async () => storage.saveCollection("access_lists", accessLists);
 const saveSettings = async () => storage.saveSettings(settings);
 
+async function clearDirectoryContents(directory) {
+  await fsp.mkdir(directory, { recursive: true });
+  let lastError = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    lastError = null;
+    for (const entry of await fsp.readdir(directory, { withFileTypes: true })) {
+      try { await fsp.rm(path.join(directory, entry.name), { recursive: true, force: true, maxRetries: 2, retryDelay: 100 }); }
+      catch (error) { lastError = error; }
+    }
+    if (!(await fsp.readdir(directory)).length) return;
+    await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+  }
+  if (lastError) throw lastError;
+  throw new Error(`Could not clear ${directory}: directory is not empty.`);
+}
+
 async function loadSites() {
   await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(logsDir, { recursive: true }), fsp.mkdir(backupsDir, { recursive: true }), fsp.mkdir(defaultSiteDir, { recursive: true }), fsp.mkdir(customCertificatesDir, { recursive: true }), fsp.mkdir(managedCertificatesDir, { recursive: true }), fsp.mkdir(certificateExportsDir, { recursive: true })]);
   if (!storage) storage = await openStorage(dataDir, backupsDir);
@@ -1336,7 +1352,7 @@ app.patch("/api/settings", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.post("/api/settings/reset-defaults", async (req, res, next) => { try { if (String(req.body.confirmation || "") !== "RESTORE DEFAULT") return res.status(400).json({ error:"Type RESTORE DEFAULT exactly to continue." }); if (String(req.body.username || "").toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(401).json({ error:"Administrator credentials were not accepted." }); settings.defaultSite = { mode:"themed404", redirectUrl:"", redirectCode:302, preservePath:true, title:"Route not found", message:"The gateway is responding, but this address has not been configured.", customHtml:"" }; settings.backups = { enabled:false, frequency:"daily", hour:2, retention:7, type:"configuration", includeLogs:false, encrypt:false, lastRunAt:null, lastStatus:null }; settings.certificateHealth = { warningDays:30, criticalDays:7, staleMinutes:10 }; await saveSettings(); recordActivity("Gateway preferences restored to defaults."); res.json({ ...settings, backupDirectory:backupsDir }); } catch (error) { next(error); } });
-app.post("/api/factory-reset", async (req, res, next) => { try { if (String(req.body.confirmation || "") !== "FACTORY RESET") return res.status(400).json({ error:"Type FACTORY RESET exactly to continue." }); if (String(req.body.username || "").toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(401).json({ error:"Administrator credentials were not accepted." }); for (const kind of ["sites","proxies","redirects","access_lists","users"]) await storage.saveCollection(kind, []); await storage.saveSettings(null); for (const directory of [sitesDir, uploadDir, caddyDir, iconsDir, logsDir, backupsDir, defaultSiteDir, certificatesRoot, path.join(dataDir,"database")]) await fsp.rm(directory, { recursive:true, force:true }); res.status(202).json({ ok:true }); setTimeout(() => process.exit(0), 250); } catch (error) { next(error); } });
+app.post("/api/factory-reset", async (req, res, next) => { try { if (String(req.body.confirmation || "") !== "FACTORY RESET") return res.status(400).json({ error:"Type FACTORY RESET exactly to continue." }); if (String(req.body.username || "").toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(401).json({ error:"Administrator credentials were not accepted." }); for (const kind of ["sites","proxies","redirects","access_lists","users"]) await storage.saveCollection(kind, []); await storage.saveSettings(null); storage.close(); for (const directory of [sitesDir, uploadDir, caddyDir, iconsDir, logsDir, backupsDir, defaultSiteDir, certificatesRoot, path.join(dataDir,"database")]) await clearDirectoryContents(directory); res.status(202).json({ ok:true }); setTimeout(() => process.exit(0), 250); } catch (error) { next(error); } });
 app.use("/api/backups", (req, res, next) => req.user.role === "administrator" ? next() : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/backups", async (req, res, next) => { try { res.json(await listBackups()); } catch (error) { next(error); } });
 app.post("/api/backups", async (req, res, next) => {
