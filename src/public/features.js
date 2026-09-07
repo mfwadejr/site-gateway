@@ -1,5 +1,7 @@
 function extendedEscape(value) { return escapeHtml(value); }
 function featureIcon(item, fallback) { return item.icon ? `<img src="${extendedEscape(item.icon)}" alt="">` : fallback; }
+const backupDialogTextFix = new MutationObserver(() => { const dialog = document.querySelector("#create-backup-dialog"); if (dialog) dialog.querySelectorAll("p,small").forEach(node => { if (node.textContent.includes("Hosted Site files")) node.textContent = node.textContent.replaceAll("Hosted Site files", "uploaded hosted-site files"); }); });
+backupDialogTextFix.observe(document.body, { childList:true, subtree:true });
 
 function renderRedirects() {
   const list = document.querySelector("#redirect-list"), empty = document.querySelector("#redirect-empty");
