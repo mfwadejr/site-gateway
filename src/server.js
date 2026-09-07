@@ -1261,7 +1261,8 @@ app.post("/api/access-lists", async (req, res, next) => {
       credentials.push({ username, hash: stdout.trim(), password: await passwordRecord(password) });
     }
     if (!networks.length && !deniedNetworks.length && !credentials.length) return res.status(400).json({ error: "Add at least one network rule or login." });
-    const item = { id: `access-${crypto.randomBytes(4).toString("hex")}`, name, networks, deniedNetworks, credentials, enabled: true, createdAt: new Date().toISOString() };
+    const selectedGroups = Array.isArray(req.body.groups) ? [...new Set(req.body.groups)].filter(id => groups.some(group => group.id === id && group.enabled !== false)) : [];
+    const item = { id: `access-${crypto.randomBytes(4).toString("hex")}`, name, networks, deniedNetworks, credentials, groups: selectedGroups, enabled: true, createdAt: new Date().toISOString() };
     accessLists.push(item); await syncCaddy(); await saveAccessLists(); recordActivity(`Access List “${name}” created.`);
     res.status(201).json({ ...item, credentials: credentials.map(({ username }) => ({ username })) });
   } catch (error) { next(error); }
