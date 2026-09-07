@@ -785,6 +785,7 @@ async function restoreBackup(filename, password = "", createSafetyBackup = true)
       await fsp.mkdir(customCertificatesDir, { recursive: true }); await fsp.cp(path.join(staging, "custom-certificates"), customCertificatesDir, { recursive: true });
     }
     await Promise.all([...activeServers.keys()].map(stopSite)); sites = []; proxies = []; users = []; redirects = []; accessLists = []; groups = []; settings = {}; recentActivity.splice(0); await loadSites();
+    if (manifest.type === "complete") for (const site of sites) { const contentRoot = path.join(sitesDir, site.id); if (!fs.existsSync(path.join(contentRoot, "index.html"))) throw new Error(`Restored hosted site “${site.name || site.id}” is missing index.html.`); }
     for (const site of sites.filter(item => item.enabled)) await startSite(site);
     await syncCaddy(); recordActivity(`Backup ${filename} restored.`);
   } catch (error) {
