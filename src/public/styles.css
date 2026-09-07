@@ -120,6 +120,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .backup-settings .encryption-grid .encryption-toggle{grid-column:auto!important}
 .backup-settings .encryption-grid .encryption-toggle{align-self:start!important;margin-top:28px!important;padding-top:0;min-height:44px}
 .backup-settings .encryption-grid .encryption-toggle span{line-height:1.35}
+.backup-settings .form-section:first-child .form-grid>.check-control{align-self:start!important;margin-top:28px!important}
 .backup-settings .form-section:last-of-type{border-bottom:0}
 .backup-settings > .dialog-actions{border-top:0;padding-top:0}
 @media(max-width:700px){.backup-settings .encryption-grid{grid-template-columns:1fr}}
