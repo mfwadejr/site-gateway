@@ -101,3 +101,5 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 #access-assignment-summary{width:100%;box-sizing:border-box}#access-assignment-summary.hidden{display:none!important}#access-form[data-editing] #access-assignment-summary{display:block!important}.assignment-search-label{width:100%;box-sizing:border-box}.assignment-search-label input{margin-top:7px!important}.assignment-editor{width:100%;box-sizing:border-box}
 #access-assignment-summary>strong{display:block;margin-bottom:6px}#access-assignment-summary>p{margin:0 0 4px;color:var(--muted);line-height:1.45}.access-create-guidance{margin:16px 0 0!important;color:var(--muted);font-size:.75rem;line-height:1.45}
 #access-assignment-summary>strong{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}.access-create-guidance{margin-top:18px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}.access-create-guidance strong{display:block}.access-create-guidance p{margin:6px 0 0;color:var(--muted);line-height:1.45}
+
+.danger-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.danger-actions .button{margin:0}
