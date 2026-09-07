@@ -136,3 +136,15 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .backup-settings .encryption-toggle-box{display:flex;align-items:center;gap:10px;height:44px;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:#0b1525;box-sizing:border-box}
 .backup-settings .encryption-toggle-box input{width:17px!important;height:17px!important;margin:0!important;flex:0 0 auto}
 .backup-settings .encryption-toggle-box>span{color:var(--muted);font-size:.72rem;line-height:1.35}
+/* Authoritative backup-form field layout: labels sit above equal-height controls. */
+#backup-settings-form .form-grid{align-items:start;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 18px}
+#backup-settings-form .form-grid>label{margin-top:16px;min-width:0}
+#backup-settings-form .form-grid>label.check-control{height:44px!important;min-height:44px!important;margin-top:39px!important;padding:0 12px!important;align-self:start!important;box-sizing:border-box}
+#backup-settings-form .form-grid>label:not(.check-control) select,
+#backup-settings-form .form-grid>label:not(.check-control) input{height:44px;min-height:44px;box-sizing:border-box}
+#backup-settings-form .encryption-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+#backup-settings-form .encryption-grid>.backup-password-field{margin-top:16px}
+#backup-settings-form .encryption-grid>.encryption-toggle{margin-top:16px!important;height:auto!important;min-height:0!important;padding:0!important}
+#backup-settings-form .encryption-toggle-box{height:44px;min-height:44px}
+@media(max-width:900px){#backup-settings-form .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){#backup-settings-form .form-grid,#backup-settings-form .encryption-grid{grid-template-columns:1fr!important}}
