@@ -128,3 +128,4 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .backup-settings > .dialog-actions{border-top:0;padding-top:0}
 @media(max-width:700px){.backup-settings .encryption-grid{grid-template-columns:1fr}}
 .backup-settings + .callout + #backup-list{max-height:390px;overflow-y:auto;overscroll-behavior:contain}
+.backup-password-field{position:relative}.backup-password-field input{padding-right:62px!important}.password-toggle{position:absolute;right:10px;top:36px;border:0;background:transparent;color:var(--green);font-size:.72rem;font-weight:750;cursor:pointer;padding:6px}.password-toggle:hover{color:var(--text)}
