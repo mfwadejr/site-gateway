@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">Site Gateway logo lockup</title>
+  <desc id="desc">Angular green and blue SG gateway monogram followed by the Site Gateway wordmark.</desc>
+  <rect width="1200" height="300" rx="36" fill="#0b1525"/>
+  <g transform="translate(48 42)">
+    <path d="M92 0 160 40v58l-50-29v-7L92 48 74 62v68l-48-28V40z" fill="#62e6a7"/>
+    <path d="m92 48 18 14v68l50-29v58l-68 40-68-40v-58l48 28v-68z" fill="#1686ff"/>
+    <path d="m92 48 18 14v68l-18 11-18-11V62z" fill="#0b1525"/>
+  </g>
+  <text x="270" y="180" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="104" font-weight="800" letter-spacing="-4">Site</text>
+  <text x="510" y="180" fill="#62e6a7" font-family="Inter,Arial,sans-serif" font-size="104" font-weight="800" letter-spacing="-4">Gateway</text>
+  <path d="M270 215h700" stroke="#223958" stroke-width="3"/>
+</svg>
