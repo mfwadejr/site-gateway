@@ -120,6 +120,10 @@ function decorateAccessToggles() { document.querySelectorAll("#access-list [data
 function decorateGroupCards() { document.querySelectorAll('[data-admin-panel="groups"] .group-card').forEach(card => { const group = state.groups.find(value => value.id === card.querySelector("[data-group-action]")?.dataset.groupId); if (!group) return; const icon = card.querySelector(".site-icon"); if (icon && icon.textContent.trim() === "GR") icon.innerHTML = featureIcon(group, "GR"); const menu = card.querySelector(".menu"); if (menu && !menu.querySelector("[data-group-action=icon]")) { const button = document.createElement("button"); button.dataset.groupAction = "icon"; button.dataset.groupId = group.id; button.textContent = "Change icon"; menu.prepend(button); } }); }
 document.addEventListener("click", event => { const button = event.target.closest("[data-group-action=icon]"); if (!button) return; event.preventDefault(); event.stopImmediatePropagation(); openIconPicker("groups", button.dataset.groupId); }, true);
 const backupPasswordInput = document.querySelector('#backup-settings-form [name="backupPassword"]');
+if (backupPasswordInput) {
+  backupPasswordInput.placeholder = "Optional — enter a password";
+  backupPasswordInput.closest(".backup-password-field")?.querySelector(".optional")?.remove();
+}
 const encryptionToggle = document.querySelector('#backup-settings-form .encryption-toggle');
 if (encryptionToggle) {
   encryptionToggle.className = "encryption-toggle";
