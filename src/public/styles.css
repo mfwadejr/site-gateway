@@ -162,3 +162,6 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 #app .check-control:has(input[name="upstreamTlsInsecure"]){display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:10px;row-gap:3px}
 #app .check-control:has(input[name="upstreamTlsInsecure"]) span,#app .check-control:has(input[name="upstreamTlsInsecure"]) small{grid-column:2}
 #app .check-control:has(input[name="upstreamTlsInsecure"]) small{display:block;margin:0;line-height:1.35}
+#app .check-control:has(input[name="upstreamTlsInsecure"]){display:flex;flex-wrap:wrap;align-items:center;column-gap:10px;row-gap:3px}
+#app .check-control:has(input[name="upstreamTlsInsecure"]) span{flex:1 1 0;min-width:0}
+#app .check-control:has(input[name="upstreamTlsInsecure"]) small{flex:0 0 100%;padding-left:27px}
