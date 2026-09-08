@@ -159,3 +159,6 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 @media(max-width:600px){#backup-settings-form .form-grid,#backup-settings-form .encryption-grid{grid-template-columns:1fr!important}}
 .login-card>.product-icon,.setup-card>.product-icon{width:100%;height:auto;max-height:92px;object-fit:contain;border-radius:0}
 .brand-mark.small{width:40px;height:40px;border-radius:11px}
+#app .check-control:has(input[name="upstreamTlsInsecure"]){display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:10px;row-gap:3px}
+#app .check-control:has(input[name="upstreamTlsInsecure"]) span,#app .check-control:has(input[name="upstreamTlsInsecure"]) small{grid-column:2}
+#app .check-control:has(input[name="upstreamTlsInsecure"]) small{display:block;margin:0;line-height:1.35}
