@@ -251,7 +251,16 @@ function render() {
   $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues";
   $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
 }
-async function refresh() { [state.sites, state.proxies, state.redirects, state.accessLists, state.groups, state.dashboard, state.certificates] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]); render(); window.renderExtendedViews?.(); }
+async function refresh() { [state.sites, state.proxies, state.redirects, state.accessLists, state.groups, state.dashboard, state.certificates] = await Promise.all([api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]); render(); window.renderExtendedViews?.(); const pending = state.proxies.filter(proxy => proxy.enabled !== false && !proxy.upstream).map(proxy => proxy.id); if (pending.length && !state.pendingProxyRefresh) { state.pendingProxyRefresh = true; refreshPendingProxies(pending).finally(() => { state.pendingProxyRefresh = false; }); } }
+async function refreshPendingProxies(ids = []) {
+  const pending = new Set(ids.map(String));
+  for (const delay of [1000, 2000, 3000]) {
+    if (!pending.size) return;
+    await new Promise(resolve => setTimeout(resolve, delay));
+    await refresh();
+    for (const proxy of state.proxies) if (pending.has(String(proxy.id)) && proxy.upstream) pending.delete(String(proxy.id));
+  }
+}
 async function refreshDashboard() {
   const button = $("#refresh-health"); button.disabled = true; button.classList.add("spinning"); $("#health-checked").textContent = "Checking services…";
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
