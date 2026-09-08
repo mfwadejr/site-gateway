@@ -315,7 +315,7 @@ function proxyBlock(target, item, indent = "  ") {
   const targets = Array.isArray(item.upstreams) && item.upstreams.length ? item.upstreams : [target];
   const output = [`${indent}reverse_proxy ${targets.join(" ")} {`];
   const timeout = Math.min(Math.max(Number(item.healthTimeoutSeconds) || 4, 1), 60);
-  if (item.upstreamTlsServerName) output.push(`${indent}  transport http {`, `${indent}    tls_server_name ${item.upstreamTlsServerName}`, ...(item.upstreamTlsInsecure ? [`${indent}    tls_insecure_skip_verify`] : []), `${indent}    response_header_timeout ${timeout}s`, `${indent}  }`);
+  if (item.upstreamTlsServerName || item.upstreamTlsInsecure) output.push(`${indent}  transport http {`, ...(item.upstreamTlsServerName ? [`${indent}    tls_server_name ${item.upstreamTlsServerName}`] : []), ...(item.upstreamTlsInsecure ? [`${indent}    tls_insecure_skip_verify`] : []), `${indent}    response_header_timeout ${timeout}s`, `${indent}  }`);
   for (const header of item.requestHeaders || []) output.push(`${indent}  header_up ${header.name} ${caddyQuote(header.value)}`);
   output.push(`${indent}}`);
   return output;
