@@ -210,6 +210,7 @@ async function loadFeatureView() {
   restoreAdminTab();
   document.querySelector('#management-view')?.style.setProperty('visibility','visible');
   document.querySelector('#empty')?.style.setProperty('visibility','visible');
+  document.querySelector('#redirect-empty')?.style.setProperty('visibility','visible');
 }
 function render() {
   const viewHash = state.view === "administration" ? `administration/${state.adminTab || "users"}` : state.view;
