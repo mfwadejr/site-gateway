@@ -53,7 +53,7 @@ function parseHeaderLines(value) { return String(value || "").split("\n").map(li
 function advancedFormBody(form, body) {
   body.domains = String(form.get("domainsText") || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
   body.hsts = form.has("hsts"); body.hstsSubdomains = form.has("hstsSubdomains"); body.healthEnabled = form.has("healthEnabled"); body.upstreamTlsInsecure = form.has("upstreamTlsInsecure");
-  body.requestHeaders = parseHeaderLines(form.get("requestHeadersText")); body.responseHeaders = parseHeaderLines(form.get("responseHeadersText"));
+  body.requestHeaders = parseHeaderLines(form.get("requestHeadersText")); body.responseHeaders = parseHeaderLines(form.get("responseHeadersText")); body.compression = form.get("compression") || "automatic"; body.customConfig = form.get("customConfig") || "";
   body.locations = String(form.get("customLocationsText") || "").split("\n").map(line => { const [path, target, behavior] = line.split("|").map(value => value.trim()); return path && target ? { path, target, stripPrefix:behavior.toLowerCase() === "strip" } : null; }).filter(Boolean);
   body.upstreams = String(form.get("upstreamsText") || "").split("\n").map(value => value.trim()).filter(Boolean);
   delete body.requestHeadersText; delete body.responseHeadersText; delete body.customLocationsText;
