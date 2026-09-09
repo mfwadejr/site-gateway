@@ -131,6 +131,7 @@ export async function openStorage(dataDir, backupsDir) {
       throw new Error(`Legacy JSON migration failed and was rolled back: ${error.message}`);
     }
   }
+  function humanizeGatewayErrors(instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT id,message FROM activity_events WHERE instance_id=? AND message LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const update = db.prepare("UPDATE activity_events SET message=? WHERE id=?"); for (const row of rows) update.run("Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS.", row.id); return rows.length; }
   const result = integrity(); if (result.length !== 1 || result[0] !== "ok") { db.close(); throw new Error(`SQLite integrity check failed: ${result.join(", ")}`); }
-  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, close: () => db.close() };
+  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, close: () => db.close() };
 }
