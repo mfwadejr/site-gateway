@@ -68,6 +68,8 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .retention-form{position:relative;padding-top:70px!important}
 .retention-form::before{content:"AUTOMATIC LOG PRUNING";position:absolute;top:22px;left:22px;color:var(--green);font-size:.72rem;letter-spacing:.16em;font-weight:800}
 .retention-eyebrow{display:none!important}
+.backup-settings .form-section:first-child>.eyebrow,.retention-form::before{text-transform:none;letter-spacing:.12em}
+.retention-form::before{content:"Automatic Log Pruning"}
 @media(max-width:900px){.retention-form{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.retention-form{grid-template-columns:1fr}}
 .settings-form select,.settings-form input:not([type="checkbox"]),.settings-form textarea{min-height:44px}.settings-form .check-control{min-height:44px;align-self:end}.settings-form .dialog-actions{align-items:center;padding-top:16px;border-top:1px solid var(--line)}.settings-form.compact-grid .dialog-actions{grid-column:1/-1;justify-content:flex-end}.settings-panel .panel-heading{align-items:flex-end;margin-bottom:18px}.settings-panel .panel-heading .row-actions{align-items:center}.settings-panel .callout{align-items:flex-start}
 .settings-form select{display:block;width:100%;height:44px;box-sizing:border-box;padding:0 12px;line-height:42px}
