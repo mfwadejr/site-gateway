@@ -1412,9 +1412,10 @@ app.post("/api/backups/:filename/restore", async (req, res, next) => {
 app.delete("/api/backups/:filename", async (req, res, next) => {
   try { const filename = path.basename(req.params.filename); if (!filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Invalid backup." }); await fsp.rm(path.join(backupsDir, filename)); recordActivity(`Backup ${filename} deleted.`); res.status(204).end(); } catch (error) { next(error); }
 });
+function humanizeGatewayActivityError(message) { const text = String(message || "Unexpected gateway error"); if (/upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(text)) return "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; if (/upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(text)) return "Gateway configuration rejected: HTTPS upstream requires HTTPS transport settings. Change the upstream URL or transport setting."; return text.replace(/^Gateway configuration was rejected:\s*/i, "Gateway configuration rejected: ").replace(/\s+Details:\s+[\s\S]*$/i, ""); }
 app.use((error, req, res, next) => {
   console.error(error);
-  recordActivity(`${req.method} ${req.path}: ${error.message || "Unexpected gateway error"}`, "error");
+  recordActivity(`${req.method} ${req.path}: ${humanizeGatewayActivityError(error.message)}`, "error");
   res.status(error.status || 500).json({ error: error.message || "Something went wrong." });
 });
 
