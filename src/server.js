@@ -400,7 +400,9 @@ async function syncCaddy() {
       sites = storage.loadCollection("sites"); proxies = storage.loadCollection("proxies"); redirects = storage.loadCollection("redirects"); accessLists = storage.loadCollection("access_lists"); settings = storage.loadSettings() || settings;
     } catch { /* Startup may not have completed database initialization yet. */ }
     gatewayError = rollbackSucceeded ? null : rejectedReason;
-    throw Object.assign(new Error(`Gateway configuration was rejected: ${rejectedReason}${rollbackSucceeded ? " The previous working configuration remains active." : ""}`), { status: 400 });
+    const friendly = /upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(rejectedReason) ? "This host forwards to HTTP, but Ignore upstream TLS certificate errors is enabled. Turn that option off or change the upstream to HTTPS." : /upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(rejectedReason) ? "This host forwards to HTTPS, but its upstream transport is configured for plain HTTP. Use HTTPS transport settings or change the upstream to HTTP." : "The gateway rejected this configuration. Check the host, upstream address, and TLS settings.";
+    const detail = `${friendly}${rollbackSucceeded ? " The previous working configuration remains active." : ""}\nDetails: ${rejectedReason}`;
+    throw Object.assign(new Error(detail), { status: 400 });
   }
 }
 
