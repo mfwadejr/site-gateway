@@ -116,6 +116,7 @@ function initials(name) {
   return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2).padEnd(2, words[0][0])).toUpperCase();
 }
 function iconMarkup(item) { return item.icon ? `<img src="${escapeHtml(item.icon)}" alt="">` : escapeHtml(initials(item.name)); }
+document.addEventListener('error', event => { const image = event.target; if (!(image instanceof HTMLImageElement) || !image.closest('.site-icon') || image.dataset.fallback) return; image.dataset.fallback = 'true'; const fallback = document.createElement('span'); fallback.textContent = initials(image.closest('[data-id]')?.querySelector('h2')?.textContent || '?'); image.replaceWith(fallback); }, true);
 function canManage() { return ["administrator", "standard"].includes(state.user?.role); }
 function canAdmin() { return state.user?.role === "administrator"; }
 
