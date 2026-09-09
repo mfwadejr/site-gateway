@@ -65,6 +65,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .control-disabled{opacity:.52}
 .retention-form{grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}.retention-form>label{display:grid;align-content:start;gap:7px}.retention-form>label input:not([type="checkbox"]){height:44px;min-height:44px;box-sizing:border-box}.retention-form .check-control{display:flex;align-items:center;gap:10px}.retention-form .dialog-actions{grid-column:1/-1}
 .retention-form .check-control{align-self:start;margin-top:0;height:44px;min-height:44px;box-sizing:border-box}
+.retention-form>label.check-control{transform:translateY(-40px);margin-bottom:-40px}
 @media(max-width:900px){.retention-form{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.retention-form{grid-template-columns:1fr}}
 .settings-form select,.settings-form input:not([type="checkbox"]),.settings-form textarea{min-height:44px}.settings-form .check-control{min-height:44px;align-self:end}.settings-form .dialog-actions{align-items:center;padding-top:16px;border-top:1px solid var(--line)}.settings-form.compact-grid .dialog-actions{grid-column:1/-1;justify-content:flex-end}.settings-panel .panel-heading{align-items:flex-end;margin-bottom:18px}.settings-panel .panel-heading .row-actions{align-items:center}.settings-panel .callout{align-items:flex-start}
 .settings-form select{display:block;width:100%;height:44px;box-sizing:border-box;padding:0 12px;line-height:42px}
