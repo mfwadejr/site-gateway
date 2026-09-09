@@ -186,10 +186,11 @@ async function loadSites() {
   const defaultSettings = {
     defaultSite: { mode: "themed404", redirectUrl: "", redirectCode: 302, preservePath: true, title: "Route not found", message: "The gateway is responding, but this address has not been configured.", customHtml: "" },
     backups: { enabled: false, frequency: "daily", hour: 2, retention: 7, type: "configuration", includeLogs: false, encrypt: false, lastRunAt: null, lastStatus: null },
-    certificateHealth: { warningDays: 30, criticalDays: 7, staleMinutes: 10 }
+    certificateHealth: { warningDays: 30, criticalDays: 7, staleMinutes: 10 },
+    logsRetention: { accessDays: 30, activityDays: 90, auditDays: 365, certificateDays: 365, securityDays: 365, pruningEnabled: false }
   };
   const storedSettings = storage.loadSettings() || defaultSettings;
-  settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) }, certificateHealth: { ...defaultSettings.certificateHealth, ...(storedSettings.certificateHealth || {}) } };
+  settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) }, certificateHealth: { ...defaultSettings.certificateHealth, ...(storedSettings.certificateHealth || {}) }, logsRetention: { ...defaultSettings.logsRetention, ...(storedSettings.logsRetention || {}) } };
   await saveSettings();
 }
 
