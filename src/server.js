@@ -1355,6 +1355,11 @@ app.patch("/api/settings", async (req, res, next) => {
       const criticalDays = Math.min(Math.max(Number(req.body.certificateHealth.criticalDays) || 7, 1), warningDays - 1);
       settings.certificateHealth = { warningDays, criticalDays, staleMinutes: Math.min(Math.max(Number(req.body.certificateHealth.staleMinutes) || 10, 2), 1440) };
     }
+    if (req.body.logsRetention) {
+      const value = req.body.logsRetention;
+      const days = key => Math.min(Math.max(Number(value[key]) || 30, 7), 3650);
+      settings.logsRetention = { ...settings.logsRetention, accessDays: days("accessDays"), activityDays: days("activityDays"), auditDays: days("auditDays"), certificateDays: days("certificateDays"), securityDays: days("securityDays"), pruningEnabled: value.pruningEnabled === true };
+    }
     await syncCaddy(); await saveSettings(); recordActivity("Administration settings updated."); res.json({ ...settings, backupDirectory: backupsDir });
   } catch (error) { next(error); }
 });
