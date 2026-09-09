@@ -232,3 +232,4 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 #app .check-control:has(input[name="upstreamTlsInsecure"]) small{flex:0 0 100%;padding-left:27px}
 #settings-dialog .dialog-heading>.icon-button{display:none}
 #icon-dialog .dialog-heading>.icon-button{display:none}
+:root[data-theme="light"] .retention-run-status,:root[data-theme="light"] .retention-preview,:root[data-theme="light"] .retention-history{background:var(--panel)!important}
