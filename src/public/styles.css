@@ -188,3 +188,4 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 #app .check-control:has(input[name="upstreamTlsInsecure"]){display:flex;flex-wrap:wrap;align-items:center;column-gap:10px;row-gap:3px}
 #app .check-control:has(input[name="upstreamTlsInsecure"]) span{flex:1 1 0;min-width:0}
 #app .check-control:has(input[name="upstreamTlsInsecure"]) small{flex:0 0 100%;padding-left:27px}
+#settings-dialog .dialog-heading>.icon-button{display:none}
