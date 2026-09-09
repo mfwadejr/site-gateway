@@ -387,6 +387,7 @@ $("#user-form").addEventListener("submit", async event => {
   } catch (error) { $("#user-error").textContent = error.message; }
   finally { button.disabled = false; }
 });
+function themedUserConfirm(message, title = "Confirm action") { let dialog = document.querySelector("#user-confirm-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "user-confirm-dialog"; document.body.append(dialog); } dialog.innerHTML = `<form method="dialog" class="dialog-card compact"><div class="dialog-heading"><div><p class="eyebrow">Administration</p><h2>${escapeHtml(title)}</h2></div></div><p class="muted">${escapeHtml(message)}</p><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button><button value="confirm" class="button danger">Confirm</button></div></form>`; dialog.showModal(); return new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true })); }
 $("#user-list").addEventListener("click", async event => {
   const button = event.target.closest("[data-user-action]"); if (!button) return;
   const card = button.closest("[data-user-id]"); const user = state.users.find(item => item.id === card?.dataset.userId); if (!user) return;
@@ -394,7 +395,7 @@ $("#user-list").addEventListener("click", async event => {
     state.passwordTarget = user.id; $("#password-form").reset(); $("#password-error").textContent = ""; $("#password-title").textContent = `Reset ${user.username} password`; $("#password-dialog").showModal(); return;
   }
   if (button.dataset.userAction === "delete") {
-    if (!confirm(`Permanently delete user “${user.username}”? This cannot be undone.`)) return;
+    if (!await themedUserConfirm(`Permanently delete user “${user.username}”? This cannot be undone.`, "Delete user")) return;
     button.disabled = true;
     try { await api(`/api/users/${user.id}`, { method: "DELETE" }); await loadFeatureView(); toast("User deleted."); } catch (error) { toast(error.message); } finally { button.disabled = false; }
     return;
