@@ -76,7 +76,8 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .retention-actions [data-retention-action="prune"]{order:2;background:var(--green);border-color:var(--green);color:#07131f}
 .retention-actions .button,[data-admin-panel="backups"] .panel-heading .row-actions .button{min-height:44px;height:44px;padding:11px 16px!important;border-radius:10px;font-size:.82rem!important;line-height:1.2;font-weight:720;text-transform:none}
 .retention-run-status{grid-column:1/-1;margin:0;padding:12px 16px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--muted);font-size:.78rem;line-height:1.45}
-.retention-form .dialog-actions{border-top:0!important;padding-top:16px}
+.retention-form{align-content:start!important}
+.retention-form .dialog-actions{border-top:0!important;margin-top:0!important;padding-top:16px;padding-bottom:0!important}
 .backup-settings .form-section:first-child>.eyebrow,.retention-form::before{text-transform:uppercase;letter-spacing:.16em}
 .retention-form::before{content:"AUTOMATIC LOG PRUNING"}
 @media(max-width:900px){.retention-form{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.retention-form{grid-template-columns:1fr}}
