@@ -854,11 +854,11 @@ app.post("/api/login", async (req, res, next) => {
     const key = req.ip || req.socket.remoteAddress || "unknown";
     const attempt = loginAttempts.get(key) || { count: 0, resetAt: Date.now() + 15 * 60 * 1000 };
     if (attempt.resetAt <= Date.now()) { attempt.count = 0; attempt.resetAt = Date.now() + 15 * 60 * 1000; }
-    if (attempt.count >= 8) return res.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." });
+    if (attempt.count >= 8) { recordActivity(`Security: sign-in rate limit reached for ${key}.`, "error"); return res.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." }); }
     const username = String(req.body.username || "").trim().toLowerCase();
     const user = users.find(item => item.username === username);
     if (!user || user.status !== "active" || !await passwordMatches(req.body.password || "", user.password)) {
-      attempt.count += 1; loginAttempts.set(key, attempt);
+      attempt.count += 1; loginAttempts.set(key, attempt); recordActivity(`Security: failed sign-in attempt for ${username || "unknown user"}.`, "error");
       return res.status(401).json({ error: "Incorrect username or password." });
     }
     loginAttempts.delete(key);
