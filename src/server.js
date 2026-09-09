@@ -522,6 +522,15 @@ async function readAccessLogs(limit = 100, host = "") {
   return entries;
 }
 
+async function importAccessLogsToSqlite() {
+  if (!storage?.recordAccessEvents) return;
+  try {
+    const entries = await readAccessLogs(5000);
+    const events = entries.map(entry => ({ ...entry, source: crypto.createHash("sha1").update(JSON.stringify([entry.at, entry.host, entry.method, entry.uri, entry.status, entry.size, entry.durationMs, entry.remoteIp])).digest("hex") }));
+    storage.recordAccessEvents(events);
+  } catch (error) { console.warn("Could not import access logs into SQLite:", error.message); }
+}
+
 function tcpProbe(port, timeoutMs = 1000) {
   return new Promise(resolve => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
@@ -1426,6 +1435,8 @@ async function runScheduledBackup() {
 }
 setTimeout(() => runScheduledBackup().catch(error => console.warn("Scheduled backup check failed:", error.message)), 5000).unref();
 setInterval(() => runScheduledBackup().catch(error => console.warn("Scheduled backup check failed:", error.message)), 15 * 60000).unref();
+setTimeout(() => importAccessLogsToSqlite(), 8000).unref();
+setInterval(() => importAccessLogsToSqlite(), 30000).unref();
 
 async function shutdown() {
   await Promise.all([...activeServers.keys()].map(stopSite));
