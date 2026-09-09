@@ -202,9 +202,9 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .gateway-empty-state{display:grid;justify-items:center;gap:6px;padding:34px 20px;text-align:center;color:var(--muted)}.gateway-empty-state .status-dot{width:9px;height:9px;margin-bottom:3px;background:var(--muted);box-shadow:0 0 0 4px rgba(97,112,138,.1)}.gateway-empty-state strong{color:var(--text);font-size:.86rem}.gateway-empty-state small{font-size:.74rem}
 .dialog-card select,.settings-form select{appearance:none!important;-webkit-appearance:none!important;background-repeat:no-repeat!important;background-position:right 14px center!important;background-size:16px!important}
 :root[data-theme="light"] .dialog-card select,:root[data-theme="light"] .settings-form select{background-color:#fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23132033' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")!important}
-#app .check-control:has(input[name="upstreamTlsInsecure"]){display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;column-gap:10px;row-gap:6px;height:auto;min-height:44px;margin:0;padding:12px}
-#app .check-control:has(input[name="upstreamTlsInsecure"])>input{grid-column:1;grid-row:1;margin-top:2px}
-#app .check-control:has(input[name="upstreamTlsInsecure"])>span{grid-column:2;grid-row:1;min-width:0;white-space:normal;overflow:visible}
-#app .check-control:has(input[name="upstreamTlsInsecure"])>small{grid-column:2;grid-row:2;display:block;margin:0;padding:0;line-height:1.35;white-space:normal}
+#app .check-control:has(input[name="upstreamTlsInsecure"]){display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;grid-template-rows:auto auto!important;align-items:start!important;column-gap:10px!important;row-gap:6px!important;height:auto!important;min-height:44px!important;margin:0!important;padding:12px!important}
+#app .check-control:has(input[name="upstreamTlsInsecure"])>input{grid-column:1!important;grid-row:1!important;margin-top:2px!important}
+#app .check-control:has(input[name="upstreamTlsInsecure"])>span{grid-column:2!important;grid-row:1!important;min-width:0!important;white-space:normal!important;overflow:visible!important}
+#app .check-control:has(input[name="upstreamTlsInsecure"])>small{grid-column:2!important;grid-row:2!important;display:block!important;margin:0!important;padding:0!important;line-height:1.35!important;white-space:normal!important}
 #settings-dialog .dialog-heading>.icon-button{display:none}
 #icon-dialog .dialog-heading>.icon-button{display:none}
