@@ -243,3 +243,4 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 #app .user-avatar img{filter:grayscale(1) sepia(1) saturate(5) hue-rotate(95deg) brightness(1.1)}
 #user-dialog .dialog-heading .close-dialog{display:none}
 #app .user-card{position:relative;background:linear-gradient(145deg,rgba(20,33,54,.95),rgba(13,23,39,.95));border:1px solid var(--line);border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.14);transition:.2s}#app .user-card:hover{transform:translateY(-2px);border-color:#344b6e}:root[data-theme="light"] #app .user-card{background:linear-gradient(145deg,#fff,#f6f9fc);box-shadow:0 14px 40px rgba(34,54,80,.1)}
+#app .user-card .user-avatar{background:var(--panel2)!important;color:var(--green)!important;border:1px solid var(--line)}
