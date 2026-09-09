@@ -192,7 +192,7 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .readiness-panel,.log-activity{background:transparent;border:0;padding:0}
 .readiness-panel .panel-heading,.log-activity .panel-heading{margin:20px 0 0;padding:18px 20px;border:1px solid var(--line);border-bottom:0;border-radius:15px 15px 0 0;background:var(--panel)}
 .log-activity .event-filters{margin:0;padding:0 20px 15px;border-left:1px solid var(--line);border-right:1px solid var(--line);background:var(--panel)}
-.log-activity .diagnostic-list{border:1px solid var(--line);border-radius:0 0 15px 15px;background:var(--panel);overflow:hidden}
+.log-activity .diagnostic-list{border:1px solid var(--line);border-radius:0 0 15px 15px;background:var(--panel);overflow:auto}
 .log-activity .event-row{gap:16px;padding:18px 20px;align-items:center}
 .log-activity .event-row .status-dot{flex:0 0 8px}
 .dialog-card select,.settings-form select{appearance:none!important;-webkit-appearance:none!important;background-repeat:no-repeat!important;background-position:right 14px center!important;background-size:16px!important}
