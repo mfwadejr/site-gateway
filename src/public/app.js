@@ -201,16 +201,11 @@ function renderUsers() {
 }
 
 async function loadFeatureView() {
-  document.querySelector('#management-view')?.style.setProperty('visibility','hidden');
-  document.querySelector('#empty')?.style.setProperty('visibility','hidden');
   if (state.view === "certificates") { [state.certificates, state.readiness] = await Promise.all([api("/api/certificates"), api("/api/readiness")]); renderCertificates(); }
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
   if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); renderUsers(); window.renderExtendedViews?.(); }
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
   restoreAdminTab();
-  document.querySelector('#management-view')?.style.setProperty('visibility','visible');
-  document.querySelector('#empty')?.style.setProperty('visibility','visible');
-  document.querySelector('#redirect-empty')?.style.setProperty('visibility','visible');
 }
 function render() {
   const viewHash = state.view === "administration" ? `administration/${state.adminTab || "users"}` : state.view;
