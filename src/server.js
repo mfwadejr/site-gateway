@@ -56,6 +56,7 @@ let lastGatewayReload = null;
 let caddyVersion = "Unknown";
 const recentActivity = [];
 const upstreamHealth = new Map();
+const certificateStatusCache = new Map();
 const loginAttempts = new Map();
 let currentAuditActor = null;
 const probeFailures = { gateway: 0, http: 0, https: 0 };
@@ -460,6 +461,7 @@ async function certificateInventory() {
     const status = daysRemaining <= 0 ? "expired" : daysRemaining <= criticalDays ? "critical" : daysRemaining <= warningDays ? "warning" : "healthy";
     return { domain: item.domain, name: item.name, kind: item.kind, status, daysRemaining, validFrom: new Date(found.certificate.validFrom).toISOString(), expiresAt: expiresAt.toISOString(), issuer: found.certificate.issuer, subject: found.certificate.subject, serialNumber: found.certificate.serialNumber, updatedAt: found.updatedAt, fingerprint: found.certificate.fingerprint256, coveredNames: found.names, source: item.tls === "internal" ? "Caddy internal CA" : found.source, mismatch: false };
   });
+  for (const certificate of certificates) { const previous = certificateStatusCache.get(certificate.domain); if (previous && previous !== certificate.status) recordActivity(`Certificate status changed for ${certificate.domain}: ${previous} → ${certificate.status}.`, certificate.status === "healthy" ? "ok" : "error"); certificateStatusCache.set(certificate.domain, certificate.status); }
   const latestError = recentActivity.find(item => item.status === "error" && /cert|tls|acme|caddy|gateway/i.test(item.message)) || null;
   return { checkedAt: new Date().toISOString(), thresholds: settings.certificateHealth, latestError, summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, within30Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 30 && item.daysRemaining > 0).length, within7Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 7 && item.daysRemaining > 0).length, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length, mismatch: certificates.filter(item => item.status === "mismatch").length }, certificates };
 }
