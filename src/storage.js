@@ -64,6 +64,8 @@ export async function openStorage(dataDir, backupsDir) {
     CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), actor_id TEXT, action TEXT NOT NULL, status TEXT NOT NULL, details TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS activity_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), message TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS activity_events_instance_created ON activity_events(instance_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS access_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), at TEXT, host TEXT, method TEXT, uri TEXT, status INTEGER, size INTEGER, duration_ms INTEGER, remote_ip TEXT, source TEXT, UNIQUE(instance_id,source));
+    CREATE INDEX IF NOT EXISTS access_events_instance_at ON access_events(instance_id,at DESC);
   `);
   const timestamp = now();
   db.prepare("INSERT OR IGNORE INTO instances(id,name,kind,status,created_at,updated_at) VALUES(?,?,?,?,?,?)").run(LOCAL_INSTANCE_ID, "Local Gateway", "local", "active", timestamp, timestamp);
@@ -100,6 +102,8 @@ export async function openStorage(dataDir, backupsDir) {
   function recordAudit(action, status = "ok", details = null, actorId = null, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO audit_events(instance_id,actor_id,action,status,details,created_at) VALUES(?,?,?,?,?,?)").run(instanceId, actorId, action, status, details ? JSON.stringify(details) : null, now()); }
   function recordActivity(message, status = "ok", instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO activity_events(instance_id,message,status,created_at) VALUES(?,?,?,?)").run(instanceId, message, status, now()); }
   function listActivity(limit = 100, instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT message,status,created_at AS at FROM activity_events WHERE instance_id=? ORDER BY id DESC LIMIT ?").all(instanceId, Math.max(1, Math.min(Number(limit) || 100, 500))); }
+  function recordAccessEvents(events, instanceId = LOCAL_INSTANCE_ID) { const insert = db.prepare("INSERT OR IGNORE INTO access_events(instance_id,at,host,method,uri,status,size,duration_ms,remote_ip,source) VALUES(?,?,?,?,?,?,?,?,?,?)"); transaction(() => { for (const event of events) insert.run(instanceId, event.at || null, event.host || null, event.method || null, event.uri || null, event.status ?? null, event.size ?? null, event.durationMs ?? null, event.remoteIp || null, event.source); }); }
+  function listAccessEvents(limit = 100, host = "", instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT at,host,method,uri,status,size,duration_ms AS durationMs,remote_ip AS remoteIp FROM access_events WHERE instance_id=? AND (?='' OR host=?) ORDER BY id DESC LIMIT ?").all(instanceId, host, host, Math.max(1, Math.min(Number(limit) || 100, 500))); return rows; }
   function listAudit(filters = {}, instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT id,actor_id,action,status,details,created_at FROM audit_events WHERE instance_id=? ORDER BY id DESC LIMIT 500").all(instanceId); return rows.filter(row => (!filters.user || row.actor_id === filters.user) && (!filters.action || row.action.toLowerCase().includes(filters.action.toLowerCase())) && (!filters.status || row.status === filters.status)).map(row => ({ ...row, details: row.details ? JSON.parse(row.details) : null })); }
   function backupTo(filename) { try { fs.rmSync(filename, { force: true }); db.exec(`VACUUM INTO '${String(filename).replaceAll("'", "''")}'`); } catch (error) { throw new Error(`Could not create a consistent SQLite backup: ${error.message}`); } }
 
@@ -125,5 +129,5 @@ export async function openStorage(dataDir, backupsDir) {
     }
   }
   const result = integrity(); if (result.length !== 1 || result[0] !== "ok") { db.close(); throw new Error(`SQLite integrity check failed: ${result.join(", ")}`); }
-  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, backupTo, close: () => db.close() };
+  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, recordAccessEvents, listAccessEvents, backupTo, close: () => db.close() };
 }

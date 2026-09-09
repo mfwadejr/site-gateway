@@ -165,6 +165,7 @@ async function loadSites() {
   if (storage.snapshot) { recordActivity(`Legacy JSON migrated to SQLite. Safety backup: ${storage.snapshot.filename}.`); storage.snapshot = null; }
   sites = storage.loadCollection("sites");
   proxies = storage.loadCollection("proxies");
+  try { const legacyAccess = await readAccessLogs(5000); storage.recordAccessEvents(legacyAccess.map((entry, index) => ({ ...entry, source: `legacy-${entry.at || "unknown"}-${index}` }))); } catch (error) { console.warn("Could not import access logs into SQLite:", error.message); }
   try {
     const storedActivity = storage.listActivity(20);
     if (storedActivity.length) recentActivity.push(...storedActivity);
@@ -1021,7 +1022,7 @@ app.get("/api/logs", async (req, res, next) => {
   try {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 250);
     const host = normalizeDomain(req.query.host);
-    res.json({ entries: await readAccessLogs(limit, host), hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort(), activity: recentActivity });
+    res.json({ entries: storage.listAccessEvents(limit, host), hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort(), activity: recentActivity });
   } catch (error) { next(error); }
 });
 app.get("/api/icons/search", async (req, res, next) => {
