@@ -62,6 +62,8 @@ export async function openStorage(dataDir, backupsDir) {
     CREATE TABLE IF NOT EXISTS access_assignments (instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE, route_kind TEXT NOT NULL, route_id TEXT NOT NULL, access_list_id TEXT NOT NULL REFERENCES access_lists(id) ON DELETE RESTRICT, created_at TEXT NOT NULL, PRIMARY KEY(route_kind,route_id));
     CREATE TABLE IF NOT EXISTS settings (instance_id TEXT PRIMARY KEY REFERENCES instances(id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)), updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), actor_id TEXT, action TEXT NOT NULL, status TEXT NOT NULL, details TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS activity_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), message TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS activity_events_instance_created ON activity_events(instance_id,created_at DESC);
   `);
   const timestamp = now();
   db.prepare("INSERT OR IGNORE INTO instances(id,name,kind,status,created_at,updated_at) VALUES(?,?,?,?,?,?)").run(LOCAL_INSTANCE_ID, "Local Gateway", "local", "active", timestamp, timestamp);
@@ -96,6 +98,8 @@ export async function openStorage(dataDir, backupsDir) {
   function saveSettings(value, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO settings(instance_id,payload,updated_at) VALUES(?,?,?) ON CONFLICT(instance_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at").run(instanceId, JSON.stringify(value), now()); }
   function integrity() { return db.prepare("PRAGMA integrity_check").all().map(row => Object.values(row)[0]); }
   function recordAudit(action, status = "ok", details = null, actorId = null, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO audit_events(instance_id,actor_id,action,status,details,created_at) VALUES(?,?,?,?,?,?)").run(instanceId, actorId, action, status, details ? JSON.stringify(details) : null, now()); }
+  function recordActivity(message, status = "ok", instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO activity_events(instance_id,message,status,created_at) VALUES(?,?,?,?)").run(instanceId, message, status, now()); }
+  function listActivity(limit = 100, instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT message,status,created_at AS at FROM activity_events WHERE instance_id=? ORDER BY id DESC LIMIT ?").all(instanceId, Math.max(1, Math.min(Number(limit) || 100, 500))); }
   function listAudit(filters = {}, instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT id,actor_id,action,status,details,created_at FROM audit_events WHERE instance_id=? ORDER BY id DESC LIMIT 500").all(instanceId); return rows.filter(row => (!filters.user || row.actor_id === filters.user) && (!filters.action || row.action.toLowerCase().includes(filters.action.toLowerCase())) && (!filters.status || row.status === filters.status)).map(row => ({ ...row, details: row.details ? JSON.parse(row.details) : null })); }
   function backupTo(filename) { try { fs.rmSync(filename, { force: true }); db.exec(`VACUUM INTO '${String(filename).replaceAll("'", "''")}'`); } catch (error) { throw new Error(`Could not create a consistent SQLite backup: ${error.message}`); } }
 
@@ -121,5 +125,5 @@ export async function openStorage(dataDir, backupsDir) {
     }
   }
   const result = integrity(); if (result.length !== 1 || result[0] !== "ok") { db.close(); throw new Error(`SQLite integrity check failed: ${result.join(", ")}`); }
-  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, backupTo, close: () => db.close() };
+  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, backupTo, close: () => db.close() };
 }

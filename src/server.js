@@ -66,6 +66,7 @@ function recordActivity(message, status = "ok") {
   const entry = { message, status, at: new Date().toISOString() };
   recentActivity.unshift(entry);
   recentActivity.splice(20);
+  try { storage?.recordActivity(message, status); } catch (error) { console.warn("Could not record SQLite activity event:", error.message); }
   fsp.appendFile(activityLogPath, `${JSON.stringify(entry)}\n`).catch(() => {});
   try { storage?.recordAudit(message, status, null, currentAuditActor); } catch (error) { console.warn("Could not record SQLite audit event:", error.message); }
 }
@@ -165,8 +166,14 @@ async function loadSites() {
   sites = storage.loadCollection("sites");
   proxies = storage.loadCollection("proxies");
   try {
-    const lines = (await fsp.readFile(activityLogPath, "utf8")).trim().split("\n").slice(-20).reverse();
-    recentActivity.push(...lines.map(line => JSON.parse(line)));
+    const storedActivity = storage.listActivity(20);
+    if (storedActivity.length) recentActivity.push(...storedActivity);
+    else {
+      const lines = (await fsp.readFile(activityLogPath, "utf8")).trim().split("\n").slice(-20).reverse();
+      const legacy = lines.filter(Boolean).map(line => JSON.parse(line));
+      recentActivity.push(...legacy);
+      for (const entry of legacy.reverse()) storage.recordActivity(entry.message, entry.status);
+    }
   } catch { /* Activity history starts empty on a new installation. */ }
   users = storage.loadCollection("users");
   if (!users.length) {
