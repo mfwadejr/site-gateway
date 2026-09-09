@@ -414,3 +414,18 @@ $("#password-form").addEventListener("submit", async event => {
   finally { button.disabled = false; }
 });
 boot().catch(error => toast(error.message));
+
+function syncUpstreamTlsControls(form) {
+  if (!form || !form.elements.target) return;
+  const targets = [form.elements.target.value, form.elements.upstreamsText?.value || ""].join("\n").split(/\n+/).map(value => value.trim()).filter(Boolean);
+  const https = targets.length > 0 && targets.every(value => /^https:\/\//i.test(value));
+  const tlsName = form.elements.upstreamTlsServerName, tlsSkip = form.elements.upstreamTlsInsecure;
+  [tlsName, tlsSkip].forEach(input => { if (!input) return; input.disabled = !https; input.closest("label")?.classList.toggle("control-disabled", !https); });
+  if (tlsSkip && !https) tlsSkip.checked = false;
+  const help = tlsSkip?.closest("label")?.querySelector("small");
+  if (help) help.textContent = https ? "Use only for a trusted internal HTTPS service with a self-signed or hostname-mismatched certificate." : "Available only when the upstream uses HTTPS.";
+}
+document.addEventListener("input", event => { if (event.target.matches('#proxy-form [name="target"],#proxy-form [name="upstreamsText"],#settings-form [name="target"],#settings-form [name="upstreamsText"]')) syncUpstreamTlsControls(event.target.form); });
+document.addEventListener("change", event => { if (event.target.matches('#proxy-form [name="target"],#proxy-form [name="upstreamsText"],#settings-form [name="target"],#settings-form [name="upstreamsText"]')) syncUpstreamTlsControls(event.target.form); });
+document.querySelectorAll("#proxy-form,#settings-form").forEach(form => syncUpstreamTlsControls(form));
+document.addEventListener("click", event => { if (event.target.closest(".create-trigger,[data-action=edit],[data-card-action=edit]")) setTimeout(() => { syncUpstreamTlsControls(document.querySelector("#proxy-form")); syncUpstreamTlsControls(document.querySelector("#settings-form")); }, 0); });
