@@ -69,7 +69,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .retention-form::before{content:"AUTOMATIC LOG PRUNING";position:absolute;top:30px;left:22px;color:var(--green);font-size:.7rem;line-height:normal;letter-spacing:.16em;font-weight:800}
 .retention-form[data-normalized="true"]{padding-top:22px!important}
 .retention-form[data-normalized="true"]::before{display:none}
-.retention-form[data-normalized="true"] .form-grid>.check-control{align-self:start!important;margin-top:55px!important;height:44px!important;min-height:44px!important;max-width:420px!important;box-sizing:border-box}
+.retention-form[data-normalized="true"] .form-grid>.check-control{align-self:start!important;margin-top:39px!important;height:44px!important;min-height:44px!important;max-width:420px!important;box-sizing:border-box}
 .retention-eyebrow{display:none!important}
 .retention-actions{justify-content:flex-end!important;align-items:center!important}
 .retention-actions [data-retention-action="download"]{order:1}
