@@ -239,3 +239,4 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 :root .retention-load-more{display:none!important}
 #create-dialog .dialog-heading .close-dialog,#settings-dialog .dialog-heading .close-dialog{display:none}
 #app .site-card.access-card .site-icon{background:#193d38;color:var(--green)}:root[data-theme="light"] #app .site-card.access-card .site-icon{background:#e2f5ed;color:#138a5b}
+#app .user-avatar{background:#193d38;color:var(--green)}:root[data-theme="light"] #app .user-avatar{background:#e2f5ed;color:#138a5b}
