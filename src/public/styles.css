@@ -238,4 +238,3 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 :root .retention-load-more{display:block;margin:10px auto 0;padding:8px 14px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--text);font-size:.72rem;font-weight:700}:root .retention-load-more:hover{border-color:var(--green);color:var(--green)}
 :root .retention-load-more{display:none!important}
 #create-dialog .dialog-heading .close-dialog,#settings-dialog .dialog-heading .close-dialog{display:none}
-#access-view #access-list>.quiet-state{margin:20px 0 0;padding:64px 24px;border:1px dashed var(--line);border-radius:16px;background:var(--panel);text-align:center;color:var(--muted);font-size:.95rem}
