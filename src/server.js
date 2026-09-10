@@ -414,7 +414,7 @@ function siteStatus(site) {
 }
 
 function publicSite(site) {
-  return { ...site, domains: normalizeDomains(site.domain, site.domains), status: siteStatus(site), url: `http://${site.host || "localhost"}:${site.port}` };
+  return { ...site, domains: normalizeDomains(site.domain, site.domains), status: siteStatus(site), url: `http://${site.host || "localhost"}:${site.port}`, upstream: upstreamHealth.get(site.id) || null };
 }
 
 function publicProxy(proxy, includeAdvanced = false) {
@@ -506,7 +506,7 @@ async function checkProxy(proxy) {
 }
 
 async function checkAllProxies() {
-  await Promise.all(proxies.map(checkProxy));
+  await Promise.all([...proxies.map(checkProxy), ...sites.map(site => checkProxy({ ...site, target: `http://127.0.0.1:${site.port}`, healthPath: "/", healthExpected: "200-499", healthTimeoutSeconds: 4, healthRetries: 0 }))]);
   return proxies.map(publicProxy);
 }
 
