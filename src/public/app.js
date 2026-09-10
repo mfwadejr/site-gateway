@@ -74,8 +74,10 @@ function probeCopy(service, ready, error, unconfigured = "Not configured") {
   return service.status === "ready" ? ready : error;
 }
 
+function renderDashboardJobs(system) { let panel = document.querySelector("#dashboard-jobs"); if (!panel) { panel = document.createElement("section"); panel.id = "dashboard-jobs"; panel.className = "dashboard-panel dashboard-jobs-panel"; document.querySelector("#dashboard-view .dashboard-columns")?.before(panel); } panel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div><span class="muted" data-dash-uptime></span></div><div class="dashboard-jobs-list">${(system.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${escapeHtml(job.name)}</strong><small>${job.enabled ? `Active · ${escapeHtml(job.schedule)}` : "Disabled"}</small></span></div>`).join("")}</div>`; const started = Date.now() - Number(system.uptimeSeconds || 0) * 1000; const tick = () => { const target = document.querySelector("[data-dash-uptime]"); if (!target) return; const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000)); target.textContent = `Uptime ${Math.floor(seconds / 86400)}d ${Math.floor(seconds / 3600) % 24}h ${Math.floor(seconds / 60) % 60}m ${seconds % 60}s`; }; tick(); if (!panel.dataset.uptimeTimer) panel.dataset.uptimeTimer = String(setInterval(tick, 1000)); }
 function renderDashboard() {
   const data = state.dashboard; if (!data) return;
+  if (data.system) renderDashboardJobs(data.system);
   $("#dash-hosted-total").textContent = data.hosted.total;
   $("#dash-hosted-detail").textContent = healthCopy(data.hosted, "sites");
   $("#dash-proxy-total").textContent = data.proxies.total;

@@ -643,7 +643,8 @@ async function dashboardSnapshot() {
       nodeVersion: process.version,
       databaseEngine: "SQLite",
       databaseStatus: databaseIntegrity.length === 1 && databaseIntegrity[0] === "ok" ? "Healthy" : "Needs attention",
-      databaseBytes: (await fsp.stat(storage.databasePath).catch(() => null))?.size || 0
+      databaseBytes: (await fsp.stat(storage.databasePath).catch(() => null))?.size || 0,
+      jobs: [{ name: "Upstream checks", enabled: true, schedule: "60s" }, { name: "Scheduled backups", enabled: Boolean(settings.backups?.enabled), schedule: settings.backups?.enabled ? settings.backups.frequency : "off" }, { name: "Log pruning", enabled: Boolean(settings.logsRetention?.pruningEnabled), schedule: settings.logsRetention?.pruningEnabled ? "15m" : "off" }, { name: "Access-log import", enabled: true, schedule: "30s" }]
     },
     activity: recentActivity
   };
