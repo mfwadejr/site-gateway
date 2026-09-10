@@ -1175,7 +1175,7 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     site.hsts = req.body.hsts === true;
     applyAdvancedSettings(site, { accessListId: req.body.accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains, requestHeaders: req.body.requestHeaders, responseHeaders: req.body.responseHeaders, customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled, healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
     if (site.healthEnabled === false) upstreamHealth.set(site.id, { status: "unmonitored", checkedAt: null, history: [] });
-    else await checkProxy({ ...site, target: `http://127.0.0.1:${site.port}` });
+    else { upstreamHealth.set(site.id, { status: "pending", checkedAt: null, history: [] }); checkProxy({ ...site, target: `http://127.0.0.1:${site.port}` }).catch(error => console.warn("Hosted site health check failed:", error.message)); }
     await syncCaddy();
     await saveSites();
     recordActivity(`Gateway settings updated for “${site.name}”.`);
@@ -1202,7 +1202,7 @@ app.post("/api/proxies", async (req, res, next) => {
     };
     applyAdvancedSettings(proxy, req.body);
     if (proxy.healthEnabled === false) upstreamHealth.set(proxy.id, { status: "unmonitored", checkedAt: null, history: [] });
-    else await checkProxy(proxy);
+    else { upstreamHealth.set(proxy.id, { status: "pending", checkedAt: null, history: [] }); checkProxy(proxy).catch(error => console.warn("Proxy health check failed:", error.message)); }
     proxies.push(proxy);
     await syncCaddy();
     await saveProxies();
