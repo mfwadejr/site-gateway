@@ -1175,6 +1175,7 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     site.hsts = req.body.hsts === true;
     applyAdvancedSettings(site, { accessListId: req.body.accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains, requestHeaders: req.body.requestHeaders, responseHeaders: req.body.responseHeaders, customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled, healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
     if (site.healthEnabled === false) upstreamHealth.set(site.id, { status: "unmonitored", checkedAt: null, history: [] });
+    else await checkProxy({ ...site, target: `http://127.0.0.1:${site.port}` });
     await syncCaddy();
     await saveSites();
     recordActivity(`Gateway settings updated for “${site.name}”.`);
@@ -1201,6 +1202,7 @@ app.post("/api/proxies", async (req, res, next) => {
     };
     applyAdvancedSettings(proxy, req.body);
     if (proxy.healthEnabled === false) upstreamHealth.set(proxy.id, { status: "unmonitored", checkedAt: null, history: [] });
+    else await checkProxy(proxy);
     proxies.push(proxy);
     await syncCaddy();
     await saveProxies();
