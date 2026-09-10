@@ -1456,4 +1456,3 @@ async function shutdown() {
 }
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
-app.get("/api/system/status", (req, res) => { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const backup = settings.backups || {}; const retention = settings.logsRetention || {}; res.json({ version: appVersion, uptime: process.uptime(), memory: process.memoryUsage(), jobs: [{ name: "Upstream health checks", schedule: "Every 60 minutes", enabled: true }, { name: "Scheduled backup", schedule: `${backup.enabled ? `Enabled · ${backup.frequency} at ${backup.hour}:00` : "Disabled"}`, enabled: Boolean(backup.enabled) }, { name: "Scheduled log pruning", schedule: retention.pruningEnabled ? "Enabled · every 15 minutes" : "Disabled", enabled: Boolean(retention.pruningEnabled) }, { name: "Access log import", schedule: "Every 30 seconds", enabled: true }] }); });
