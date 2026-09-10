@@ -60,6 +60,19 @@ function advancedFormBody(form, body) {
   delete body.requestHeadersText; delete body.responseHeadersText; delete body.customLocationsText;
   return body;
 }
+// Single capture-path for monitoring settings: unchecked checkboxes must be sent as false.
+document.addEventListener("submit", async event => {
+  if (event.target?.id !== "settings-form" || !state.editing) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  const form = new FormData(event.target), button = event.submitter;
+  let body = Object.fromEntries(form); delete body.certificateFile; delete body.privateKeyFile;
+  if (state.editing.kind === "proxy") body = advancedFormBody(form, body);
+  else body = { domain: body.domain, tls: body.tls, hsts: form.has("hsts"), accessListId: form.get("accessListId") || "", healthEnabled: form.has("healthEnabled"), healthPath: form.get("healthPath") || "/", healthMethod: form.get("healthMethod") || "GET", healthExpected: form.get("healthExpected") || "200-499", healthTimeoutSeconds: Number(form.get("healthTimeoutSeconds") || 4), healthRetries: Number(form.get("healthRetries") || 0), compression: form.get("compression") || "automatic", requestHeaders: parseHeaderLines(form.get("requestHeadersText")), responseHeaders: parseHeaderLines(form.get("responseHeadersText")), hstsSubdomains: form.has("hstsSubdomains"), customConfig: form.get("customConfig") || "" };
+  button.disabled = true;
+  try { await api(`/api/${state.editing.kind === "proxy" ? "proxies" : "sites"}/${state.editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); $("#settings-dialog").close(); await refresh(); toast("Gateway settings applied."); }
+  catch (error) { $("#settings-error").textContent = error.message; }
+  finally { button.disabled = false; }
+}, true);
 
 function healthCopy(group, label) {
   if (!group.total) return "Nothing configured";
