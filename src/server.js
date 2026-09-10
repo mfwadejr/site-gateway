@@ -266,7 +266,7 @@ function applyAdvancedSettings(item, body) {
   if (body.responseHeaders !== undefined) item.responseHeaders = cleanHeaders(body.responseHeaders);
   if (body.upstreamTlsServerName !== undefined) item.upstreamTlsServerName = String(body.upstreamTlsServerName || "").trim().slice(0, 253);
   if (body.upstreamTlsInsecure !== undefined) item.upstreamTlsInsecure = Boolean(body.upstreamTlsInsecure);
-  if (body.healthEnabled !== undefined) item.healthEnabled = Boolean(body.healthEnabled);
+  if (body.healthEnabled !== undefined) item.healthEnabled = body.healthEnabled === true || (typeof body.healthEnabled === "string" && body.healthEnabled.toLowerCase() === "true");
   if (body.healthPath !== undefined) item.healthPath = /^\//.test(body.healthPath || "") ? String(body.healthPath).slice(0, 500) : "/";
   if (body.healthMethod !== undefined) item.healthMethod = ["GET", "HEAD"].includes(body.healthMethod) ? body.healthMethod : "GET";
   if (body.healthExpected !== undefined) {
