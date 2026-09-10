@@ -1113,7 +1113,7 @@ app.post("/api/sites", upload.single("files"), async (req, res, next) => {
     if (!req.file) throw Object.assign(new Error("Choose a ZIP file or index.html."), { status: 400 });
     const accessListId = String(req.body.accessListId || "");
     const site = { id, name, port, domain, domains, accessListId, tls, hsts, enabled: true, createdAt: new Date().toISOString() };
-    applyAdvancedSettings(site, { accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains === "true", customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled !== "false", healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
+    applyAdvancedSettings(site, { accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains === "true", customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled === true || (typeof req.body.healthEnabled === "string" && req.body.healthEnabled.toLowerCase() === "true"), healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
     await installUpload(site, req.file);
     sites.push(site);
     try { await startSite(site); } catch (error) { sites = sites.filter(item => item.id !== site.id); await fsp.rm(path.join(sitesDir, site.id), { recursive: true, force: true }); throw Object.assign(new Error(`Could not start the hosted site on port ${port}: ${error.message}`), { status: 409 }); }
