@@ -483,8 +483,8 @@ async function domainReadiness() {
 }
 
 async function checkProxy(proxy) {
-  if (!proxy.enabled) return { status: "disabled", checkedAt: new Date().toISOString(), history: [] };
-  if (proxy.healthEnabled === false) return { status: "unmonitored", checkedAt: null, history: [] };
+  if (!proxy.enabled) { const result = { status: "disabled", checkedAt: new Date().toISOString(), history: [] }; upstreamHealth.set(proxy.id, result); return result; }
+  if (proxy.healthEnabled === false) { const result = { status: "unmonitored", checkedAt: null, history: [] }; upstreamHealth.set(proxy.id, result); return result; }
   const started = performance.now();
   const attempts = Math.min(Math.max(Number(proxy.healthRetries) || 0, 0), 3) + 1;
   let result;
@@ -506,7 +506,7 @@ async function checkProxy(proxy) {
 }
 
 async function checkAllProxies() {
-  await Promise.all([...proxies.map(checkProxy), ...sites.map(site => checkProxy({ ...site, target: `http://127.0.0.1:${site.port}`, healthPath: "/", healthExpected: "200-499", healthTimeoutSeconds: 4, healthRetries: 0 }))]);
+  await Promise.all([...proxies.map(checkProxy), ...sites.map(site => checkProxy({ ...site, target: `http://127.0.0.1:${site.port}`, healthPath: site.healthPath || "/", healthMethod: site.healthMethod || "GET", healthExpected: site.healthExpected || "200-499", healthTimeoutSeconds: site.healthTimeoutSeconds || 4, healthRetries: site.healthRetries || 0, healthEnabled: site.healthEnabled }))]);
   return proxies.map(publicProxy);
 }
 
