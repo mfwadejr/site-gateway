@@ -165,8 +165,8 @@ async function loadSites() {
   if (!storage) storage = await openStorage(dataDir, backupsDir);
   storage.humanizeGatewayErrors?.();
   if (storage.snapshot) { recordActivity(`Legacy JSON migrated to SQLite. Safety backup: ${storage.snapshot.filename}.`); storage.snapshot = null; }
-  sites = storage.loadCollection("sites");
-  proxies = storage.loadCollection("proxies");
+  sites = storage.loadCollection("sites").map(item => ({ ...item, healthEnabled: !(item.healthEnabled === false || String(item.healthEnabled).toLowerCase() === "false") }));
+  proxies = storage.loadCollection("proxies").map(item => ({ ...item, healthEnabled: !(item.healthEnabled === false || String(item.healthEnabled).toLowerCase() === "false") }));
   try { const legacyAccess = await readAccessLogs(5000); storage.recordAccessEvents(legacyAccess.map((entry, index) => ({ ...entry, source: `legacy-${entry.at || "unknown"}-${index}` }))); } catch (error) { console.warn("Could not import access logs into SQLite:", error.message); }
   try {
     const storedActivity = storage.listActivity(20);
