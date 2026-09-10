@@ -254,3 +254,4 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 #dashboard-view>.dashboard-columns:not(.lower)>.dashboard-panel{align-self:stretch;height:auto}#dashboard-view>.dashboard-columns:not(.lower)>.dashboard-jobs-panel{min-height:100%}
 #dashboard-view>.dashboard-columns:not(.lower){align-items:stretch}#dashboard-view>.dashboard-columns:not(.lower)>.dashboard-panel{height:auto;min-height:0}#dashboard-view>.dashboard-columns:not(.lower)>.dashboard-jobs-panel{min-height:0}
 #dashboard-view>.dashboard-columns #dashboard-jobs{margin:0;align-self:start}
+#dashboard-view>.dashboard-columns #dashboard-jobs{align-self:stretch;height:auto}
