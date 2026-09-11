@@ -2,7 +2,7 @@ const $ = selector => document.querySelector(selector);
 const summaryBar = document.querySelector("#management-summary");
 const redirectView = document.querySelector("#redirects-view");
 if (summaryBar && redirectView) redirectView.parentElement.insertBefore(summaryBar, redirectView);
-const state = { sites: [], proxies: [], redirects: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
+const state = { sites: [], proxies: [], redirects: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
 document.querySelector("#create-form [name=domain]")?.closest("label")?.childNodes[0] && (document.querySelector("#create-form [name=domain]").closest("label").childNodes[0].textContent = "Primary domain ");
 if (!document.querySelector("#create-form [name=accessListId]")) { const anchor = document.querySelector("#create-form [name=tls]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select name="accessListId"><option value="">Public — no Access List</option></select><small>Protect this hosted site and all of its domains.</small>'; anchor.before(label); } }
 if (!document.querySelector("#settings-access-list")) { const anchor = document.querySelector("#settings-form [name=domain]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select id="settings-access-list" name="accessListId"><option value="">Public — no Access List</option></select><small>Protect this route and all of its domains.</small>'; anchor.after(label); } }
@@ -259,7 +259,7 @@ function render() {
   }
   const items = state.view === "hosted" ? state.sites : state.proxies;
   $("#site-grid").innerHTML = items.map(state.view === "hosted" ? hostedCard : proxyCard).join("");
-  $("#empty").classList.toggle("hidden", items.length > 0);
+  $("#empty").classList.toggle("hidden", !state.loaded || items.length > 0);
   $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : "Create your first proxy host";
   $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : "Connect a domain to another container, application, or LAN service.";
   $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : "Proxy hosts";
@@ -272,7 +272,7 @@ function render() {
   $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues";
   $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
 }
-async function refresh() { const requests = [api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]; const results = await Promise.allSettled(requests); results.forEach((result, index) => { if (result.status !== "fulfilled") return; const keys = ["sites", "proxies", "redirects", "accessLists", "groups", "dashboard", "certificates"]; state[keys[index]] = result.value; }); render(); window.renderExtendedViews?.(); const pending = state.proxies.filter(proxy => proxy.enabled !== false && !proxy.upstream).map(proxy => proxy.id); if (pending.length && !state.pendingProxyRefresh) { state.pendingProxyRefresh = true; refreshPendingProxies(pending).finally(() => { state.pendingProxyRefresh = false; }); } }
+async function refresh() { const requests = [api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]; const results = await Promise.allSettled(requests); results.forEach((result, index) => { if (result.status !== "fulfilled") return; const keys = ["sites", "proxies", "redirects", "accessLists", "groups", "dashboard", "certificates"]; state[keys[index]] = result.value; }); state.loaded = true; render(); window.renderExtendedViews?.(); const pending = state.proxies.filter(proxy => proxy.enabled !== false && !proxy.upstream).map(proxy => proxy.id); if (pending.length && !state.pendingProxyRefresh) { state.pendingProxyRefresh = true; refreshPendingProxies(pending).finally(() => { state.pendingProxyRefresh = false; }); } }
 async function refreshPendingProxies(ids = []) {
   const pending = new Set(ids.map(String));
   for (const delay of [1000, 2000, 3000]) {
