@@ -1,0 +1,27 @@
+services:
+  site-gateway:
+    build: .
+    container_name: site-gateway
+    restart: unless-stopped
+    environment:
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: change-this-password
+      # Optional: set a long random SESSION_SECRET to keep sessions valid across
+      # container rebuilds. If omitted, one is derived from ADMIN_USERNAME/ADMIN_PASSWORD.
+      # SESSION_SECRET: ""
+      ADMIN_PORT: 8080
+      SITE_PORT_MIN: 9000
+      SITE_PORT_MAX: 9099
+      DATA_DIR: /data
+      BACKUP_PASSWORD: ""
+      PUID: 1000
+      PGID: 1000
+      ACME_EMAIL: ""
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+      - "8080:8080"
+      - "9000-9099:9000-9099"
+    volumes:
+      - ./data:/data
