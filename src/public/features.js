@@ -5,6 +5,9 @@ backupDialogTextFix.observe(document.body, { childList:true, subtree:true });
 
 function renderRedirects() {
   const list = document.querySelector("#redirect-list"), empty = document.querySelector("#redirect-empty");
+  // Keep the existing cards or empty state mounted while the shared refresh is pending.
+  // The completed response is the only point at which this view should be replaced.
+  if (!state.loaded) return;
   empty.classList.toggle("hidden", !state.loaded || state.redirects.length > 0);
   list.innerHTML = state.redirects.map(item => `<article class="site-card redirect-card" data-redirect-id="${item.id}" data-kind="redirect"><div class="card-top"><div class="site-icon">${featureIcon(item,"RD")}</div><div class="menu-wrap"><button class="icon-button menu-button" aria-label="Redirect options" aria-expanded="false">•••</button><div class="menu"><button data-redirect-action="edit">Edit redirect host</button><button data-redirect-action="icon">Change icon</button><button data-redirect-action="toggle">${item.enabled ? "Disable" : "Enable"}</button><button data-redirect-action="delete" class="danger-text">Delete redirect host</button></div></div></div><h2>${extendedEscape(item.name)}</h2><p class="address">${extendedEscape(item.domain)}</p><p class="gateway-address">→ ${extendedEscape(item.target)}${item.preservePath ? " · preserves path" : ""}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${item.enabled ? "running" : "disabled"}"></span>${item.enabled ? "Running" : "Disabled"}</span><div class="card-actions"><span class="chip">HTTP ${item.code}</span></div></div></article>`).join("");
 }
