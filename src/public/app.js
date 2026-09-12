@@ -231,7 +231,7 @@ async function loadFeatureView() {
 function render() {
   const viewHash = state.view === "administration" ? `administration/${state.adminTab || "users"}` : state.view;
   if (location.hash !== `#${viewHash}`) history.replaceState(null, "", `${location.pathname}${location.search}#${viewHash}`);
-  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
+  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#streaming-count").textContent = "0"; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
   document.querySelectorAll("nav [data-view], .aside-utilities [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);
@@ -261,11 +261,13 @@ function render() {
   $("#site-grid").innerHTML = items.map(state.view === "hosted" ? hostedCard : proxyCard).join("");
   $("#empty").classList.toggle("hidden", !state.loaded || items.length > 0);
   $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : state.view === "proxies" ? "Create your first proxy host" : "Create your first streaming host";
-  $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : "Connect a domain to another container, application, or LAN service.";
-  $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : "Proxy hosts";
-  $("#page-subtitle").textContent = state.view === "hosted" ? "Upload and publish websites on a port or domain." : "Route domains securely to applications and containers.";
+  $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : state.view === "proxies" ? "Connect a domain to another container, application, or LAN service." : "Streaming host management is coming soon.";
+  $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : state.view === "proxies" ? "Proxy hosts" : "Streaming hosts";
+  $("#page-subtitle").textContent = state.view === "hosted" ? "Upload and publish websites on a port or domain." : state.view === "proxies" ? "Route domains securely to applications and containers." : "Prepare and monitor streaming services from one place.";
   $("#open-create").textContent = state.view === "hosted" ? "＋ New hosted site" : "＋ New proxy host";
-  $("#empty .create-trigger").textContent = state.view === "hosted" ? "Create a hosted site" : "Create a proxy host";
+  $("#open-create").classList.toggle("hidden", state.view === "streaming" || !canManage());
+  $("#empty .create-trigger").textContent = state.view === "hosted" ? "Create a hosted site" : state.view === "proxies" ? "Create a proxy host" : "Streaming hosts coming soon";
+  $("#empty .create-trigger").disabled = state.view === "streaming";
   $(".port-note").classList.toggle("hidden", state.view === "proxies");
   const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length;
   $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors;
@@ -318,6 +320,7 @@ $("#log-status").addEventListener("change", renderLogs);
 $("#event-severity").addEventListener("change", renderLogs);
 $("#event-category").addEventListener("change", renderLogs);
 function openCreate() {
+  if (state.view === "streaming") return toast("Streaming host management is coming soon.");
   if (state.view === "administration") { $("#user-form").reset(); $("#user-error").textContent = ""; return $("#user-dialog").showModal(); }
   if (state.view === "redirects") { $("#redirect-form").reset(); delete $("#redirect-form").dataset.editing; $("#redirect-error").textContent = ""; return $("#redirect-dialog").showModal(); }
   if (state.view === "access") { $("#access-form").reset(); delete $("#access-form").dataset.editing; $("#access-error").textContent = ""; $("#access-form .access-create-guidance")?.remove(); const assignmentSummary = $("#access-assignment-summary"); assignmentSummary?.classList.add("hidden"); if (assignmentSummary) assignmentSummary.innerHTML = ""; window.renderCredentialEditor?.([]); return $("#access-dialog").showModal(); }
