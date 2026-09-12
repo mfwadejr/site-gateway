@@ -53,7 +53,7 @@ jobs:
         run: docker run --rm --entrypoint node site-gateway:smoke-test --input-type=module -e "import { DatabaseSync } from 'node:sqlite'; const db = new DatabaseSync(':memory:'); db.exec('CREATE TABLE smoke (id INTEGER)'); db.close();"
 
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: site-gateway:smoke-test
           severity: CRITICAL,HIGH
