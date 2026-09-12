@@ -469,6 +469,24 @@ async function certificateInventory() {
   return { checkedAt: new Date().toISOString(), thresholds: settings.certificateHealth, latestError, summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, within30Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 30 && item.daysRemaining > 0).length, within7Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 7 && item.daysRemaining > 0).length, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length, mismatch: certificates.filter(item => item.status === "mismatch").length }, certificates };
 }
 
+async function pruneOrphanedCertificates(candidateDomains) {
+  const domains = [...new Set((candidateDomains || []).filter(Boolean).map(domain => String(domain).toLowerCase()))];
+  if (!domains.length) return;
+  const stillInUse = new Set([...sites, ...proxies, ...redirects].filter(item => item.enabled).flatMap(item => normalizeDomains(item.domain, item.domains)).map(domain => domain.toLowerCase()));
+  const orphaned = domains.filter(domain => !stillInUse.has(domain));
+  if (!orphaned.length) return;
+  const files = await walkFiles(certificateDir).catch(() => []);
+  const removed = new Set();
+  for (const file of files) {
+    const directory = path.dirname(file);
+    if (orphaned.includes(path.basename(directory).toLowerCase()) && !removed.has(directory)) {
+      await fsp.rm(directory, { recursive: true, force: true }).catch(() => {});
+      removed.add(directory);
+    }
+  }
+  if (removed.size) recordActivity(`Removed stored certificate data for ${orphaned.join(", ")} (no longer in use).`);
+}
+
 async function domainReadiness() {
   const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.enabled && item.domain).flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
   const certs = await certificateInventory();
@@ -510,6 +528,22 @@ async function checkAllProxies() {
   return proxies.map(publicProxy);
 }
 
+const SENSITIVE_QUERY_PARAM_PATTERNS = [/token/i, /secret/i, /password/i, /passwd/i, /auth/i, /session/i, /api[-_]?key/i, /credential/i];
+
+function redactUri(uri) {
+  const str = String(uri || "");
+  const queryIndex = str.indexOf("?");
+  if (queryIndex === -1) return str;
+  const pathPart = str.slice(0, queryIndex);
+  let params;
+  try { params = new URLSearchParams(str.slice(queryIndex + 1)); } catch { return `${pathPart}?REDACTED`; }
+  let redactedAny = false;
+  for (const name of [...params.keys()]) {
+    if (SENSITIVE_QUERY_PARAM_PATTERNS.some(pattern => pattern.test(name))) { params.set(name, "REDACTED"); redactedAny = true; }
+  }
+  return redactedAny ? `${pathPart}?${params.toString()}` : str;
+}
+
 async function readAccessLogs(limit = 100, host = "") {
   const files = (await fsp.readdir(logsDir).catch(() => [])).filter(name => name === "access.json" || name.startsWith("access.json.")).sort().reverse();
   const entries = [];
@@ -519,7 +553,7 @@ async function readAccessLogs(limit = 100, host = "") {
       try {
         const raw = JSON.parse(line); const request = raw.request || {}; const requestHost = String(request.host || "").split(":")[0];
         if (host && requestHost !== host) continue;
-        entries.push({ at: raw.ts ? new Date(raw.ts * 1000).toISOString() : null, host: requestHost, method: request.method, uri: request.uri, status: raw.status, size: raw.size, durationMs: Number.isFinite(raw.duration) ? Math.round(raw.duration * 1000) : null, remoteIp: request.remote_ip || null });
+        entries.push({ at: raw.ts ? new Date(raw.ts * 1000).toISOString() : null, host: requestHost, method: request.method, uri: redactUri(request.uri), status: raw.status, size: raw.size, durationMs: Number.isFinite(raw.duration) ? Math.round(raw.duration * 1000) : null, remoteIp: request.remote_ip || null });
         if (entries.length >= limit) return entries;
       } catch { /* Skip incomplete lines while Caddy writes. */ }
     }
@@ -848,6 +882,11 @@ const iconUpload = multer({ dest: uploadDir, limits: { fileSize: 2 * 1024 * 1024
 app.disable("x-powered-by");
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.get(["/", "/index.html"], (req, res) => {
+  const html = fs.readFileSync(path.join(publicDir, "index.html"), "utf8")
+    .replace(/\/(app|features)\.js\?v=[^"']+/g, `/$1.js?v=${appVersion}`);
+  res.type("html").send(html);
+});
 app.use(express.static(publicDir));
 app.use("/site-icons", express.static(iconsDir, { immutable: true, maxAge: "30d", setHeaders: res => res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'") }));
 
@@ -1055,6 +1094,9 @@ app.get("/api/icons/search", async (req, res, next) => {
     res.json(results);
   } catch (error) { next(error); }
 });
+function entryLabel(item) {
+  return item?.name || item?.displayName || item?.username || "item";
+}
 app.put("/api/:kind/:id/icon", async (req, res, next) => {
   try {
     const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
@@ -1066,7 +1108,7 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
       if (!/^https:\/\//i.test(url) || url.length > 2048) return res.status(400).json({ error: "Icon URL must be a valid HTTPS URL under 2048 characters." });
       item.iconSlug = null; item.icon = url;
       if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else if (collection === users) await saveUsers(); else await saveAccessLists();
-      recordActivity(`Icon URL updated for “${item.name}”.`);
+      recordActivity(`Icon URL updated for “${entryLabel(item)}”.`);
       return res.json(item);
     }
     const slug = String(req.body.slug || "").trim();
@@ -1074,7 +1116,7 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
     item.iconSlug = slug || null;
     item.icon = icon;
     if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else await saveAccessLists();
-    recordActivity(`${slug ? "Icon updated" : "Icon reset"} for “${item.name}”.`);
+    recordActivity(`${slug ? "Icon updated" : "Icon reset"} for “${entryLabel(item)}”.`);
     res.json(item);
   } catch (error) { next(error); }
 });
@@ -1091,7 +1133,7 @@ app.post("/api/:kind/:id/icon", iconUpload.single("icon"), async (req, res, next
     await fsp.rename(req.file.path, path.join(iconsDir, filename));
     item.iconSlug = null; item.icon = `/site-icons/${filename}`;
     if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else if (collection === users) await saveUsers(); else await saveAccessLists();
-    recordActivity(`Custom icon uploaded for “${item.name}”.`);
+    recordActivity(`Custom icon uploaded for “${entryLabel(item)}”.`);
     res.json(item);
   } catch (error) { next(error); }
   finally { if (req.file?.path) await fsp.rm(req.file.path, { force: true }).catch(() => {}); }
@@ -1157,6 +1199,7 @@ app.delete("/api/sites/:id", async (req, res, next) => {
     await stopSite(site.id);
     await syncCaddy();
     await fsp.rm(path.join(sitesDir, site.id), { recursive: true, force: true });
+    await pruneOrphanedCertificates(normalizeDomains(site.domain, site.domains));
     await saveSites();
     recordActivity(`Hosted site “${site.name}” deleted.`);
     res.status(204).end();
@@ -1166,6 +1209,7 @@ app.patch("/api/sites/:id", async (req, res, next) => {
   try {
     const site = sites.find(item => item.id === req.params.id);
     if (!site) return res.status(404).json({ error: "Site not found." });
+    const previousDomains = normalizeDomains(site.domain, site.domains);
     const domain = normalizeDomain(req.body.domain);
     const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : site.domains);
     const domainError = validateDomains(domains, site.id);
@@ -1177,6 +1221,7 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     if (site.healthEnabled === false) upstreamHealth.set(site.id, { status: "unmonitored", checkedAt: null, history: [] });
     else { upstreamHealth.set(site.id, { status: "pending", checkedAt: null, history: [] }); checkProxy({ ...site, target: `http://127.0.0.1:${site.port}` }).catch(error => console.warn("Hosted site health check failed:", error.message)); }
     await syncCaddy();
+    await pruneOrphanedCertificates(previousDomains);
     await saveSites();
     recordActivity(`Gateway settings updated for “${site.name}”.`);
     res.json(publicSite(site));
@@ -1214,6 +1259,7 @@ app.patch("/api/proxies/:id", async (req, res, next) => {
   try {
     const proxy = proxies.find(item => item.id === req.params.id);
     if (!proxy) return res.status(404).json({ error: "Proxy host not found." });
+    const previousDomains = normalizeDomains(proxy.domain, proxy.domains);
     if (req.body.domain !== undefined) {
       const domain = normalizeDomain(req.body.domain);
       const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : proxy.domains);
@@ -1232,6 +1278,7 @@ app.patch("/api/proxies/:id", async (req, res, next) => {
     if (req.body.hsts !== undefined) proxy.hsts = req.body.hsts === true;
     applyAdvancedSettings(proxy, req.body);
     await syncCaddy();
+    await pruneOrphanedCertificates(previousDomains);
     await saveProxies();
     recordActivity(`Proxy host “${proxy.name}” updated.`);
     res.json(publicProxy(proxy));
@@ -1272,6 +1319,8 @@ app.delete("/api/proxies/:id", async (req, res, next) => {
     if (index < 0) return res.status(404).json({ error: "Proxy host not found." });
     const [proxy] = proxies.splice(index, 1);
     await syncCaddy();
+    await fsp.rm(path.join(customCertificatesDir, proxy.id), { recursive: true, force: true }).catch(() => {});
+    await pruneOrphanedCertificates(normalizeDomains(proxy.domain, proxy.domains));
     await saveProxies();
     recordActivity(`Proxy host “${proxy.name}” deleted.`);
     res.status(204).end();
@@ -1355,6 +1404,7 @@ app.post("/api/redirects", async (req, res, next) => {
 app.patch("/api/redirects/:id", async (req, res, next) => {
   try {
     const item = redirects.find(value => value.id === req.params.id); if (!item) return res.status(404).json({ error: "Redirect Host not found." });
+    const previousDomains = normalizeDomains(item.domain, item.domains);
     if (req.body.domain !== undefined || req.body.domains !== undefined) { const domain = normalizeDomain(req.body.domain ?? item.domain); const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : item.domains); const error = validateDomains(domains, item.id); if (error || !domain) return res.status(400).json({ error: error || "Primary source domain is required." }); item.domain = domain; item.domains = domains; }
     if (req.body.enabled !== undefined) item.enabled = Boolean(req.body.enabled);
     for (const key of ["name","target","accessListId"]) if (req.body[key] !== undefined) item[key] = String(req.body[key]).trim();
@@ -1363,11 +1413,11 @@ app.patch("/api/redirects/:id", async (req, res, next) => {
     if (req.body.preservePath !== undefined) item.preservePath = Boolean(req.body.preservePath);
     if (req.body.tls !== undefined) item.tls = ["http","automatic","internal"].includes(req.body.tls) ? req.body.tls : item.tls;
     if (req.body.hsts !== undefined) item.hsts = Boolean(req.body.hsts);
-    await syncCaddy(); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” updated.`); res.json(item);
+    await syncCaddy(); await pruneOrphanedCertificates(previousDomains); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” updated.`); res.json(item);
   } catch (error) { next(error); }
 });
 app.delete("/api/redirects/:id", async (req, res, next) => {
-  try { const index = redirects.findIndex(item => item.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Redirect Host not found." }); const [item] = redirects.splice(index, 1); await syncCaddy(); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” deleted.`); res.status(204).end(); } catch (error) { next(error); }
+  try { const index = redirects.findIndex(item => item.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Redirect Host not found." }); const [item] = redirects.splice(index, 1); await syncCaddy(); await pruneOrphanedCertificates(normalizeDomains(item.domain, item.domains)); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” deleted.`); res.status(204).end(); } catch (error) { next(error); }
 });
 
 app.patch("/api/settings", async (req, res, next) => {
@@ -1419,10 +1469,18 @@ app.delete("/api/backups/:filename", async (req, res, next) => {
   try { const filename = path.basename(req.params.filename); if (!filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Invalid backup." }); await fsp.rm(path.join(backupsDir, filename)); recordActivity(`Backup ${filename} deleted.`); res.status(204).end(); } catch (error) { next(error); }
 });
 function humanizeGatewayActivityError(message) { const text = String(message || "Unexpected gateway error"); if (/upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(text)) return "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; if (/upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(text)) return "Gateway configuration rejected: HTTPS upstream requires HTTPS transport settings. Change the upstream URL or transport setting."; if (/duplicate.*address|already.*site address/i.test(text)) return "Gateway configuration rejected: This hostname or address is already used by another host. Choose a unique hostname and port."; if (/dial tcp|no such host|lookup .* no such host|upstream.*(invalid|malformed)/i.test(text)) return "Gateway configuration rejected: The upstream address could not be reached or is invalid. Check the hostname, IP address, and port."; if (/invalid hostname|host name.*invalid|malformed.*host/i.test(text)) return "Gateway configuration rejected: The hostname is not valid. Use a valid domain name without a protocol or path."; if (/unrecognized directive|unknown directive|parsing caddyfile tokens/i.test(text)) return "Gateway configuration rejected: The gateway configuration contains an unsupported or malformed directive. Check the selected host settings."; if (/certificate|tls.*(config|handshake)|no certificate/i.test(text)) return "Gateway configuration rejected: The TLS certificate configuration is invalid or unavailable. Check the certificate, key, and HTTPS settings."; return text.replace(/^Gateway configuration was rejected:\s*/i, "Gateway configuration rejected: ").replace(/\s+Details:\s+[\s\S]*$/i, ""); }
+const GATEWAY_CONFIG_ROUTE = /^\/api\/(sites|proxies|redirects|access-lists)(\/|$)/i;
 app.use((error, req, res, next) => {
   console.error(error);
-  recordActivity(`${req.method} ${req.path}: ${humanizeGatewayActivityError(error.message)}`, "error");
-  res.status(error.status || 500).json({ error: error.message || "Something went wrong." });
+  const rawMessage = error.message || "Something went wrong.";
+  const isConfigRoute = GATEWAY_CONFIG_ROUTE.test(req.path) && ["PATCH", "POST", "DELETE", "PUT"].includes(req.method);
+  let logMessage = rawMessage;
+  if (isConfigRoute) {
+    const humanized = humanizeGatewayActivityError(rawMessage);
+    logMessage = /^Gateway configuration rejected:/i.test(humanized) ? humanized : `Gateway configuration rejected: ${humanized}`;
+  }
+  recordActivity(`${req.method} ${req.path}: ${logMessage}`, "error");
+  res.status(error.status || 500).json({ error: rawMessage });
 });
 
 app.listen(adminPort, "0.0.0.0", () => {

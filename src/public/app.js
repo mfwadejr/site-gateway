@@ -442,6 +442,15 @@ $("#password-form").addEventListener("submit", async event => {
   } catch (error) { $("#password-error").textContent = error.message; }
   finally { button.disabled = false; }
 });
+window.addEventListener("hashchange", () => {
+  if (!state.user) return; // Not logged in yet; boot() handles initial routing.
+  const requestedHash = location.hash.slice(1);
+  state.adminTab = requestedHash.startsWith("administration/") ? requestedHash.split("/")[1] || "users" : "users";
+  if (requestedHash.startsWith("administration/")) history.replaceState(null, "", `${location.pathname}${location.search}#administration`);
+  state.view = location.hash.slice(1) || "overview";
+  render();
+  loadFeatureView().catch(error => toast(error.message));
+});
 boot().catch(error => toast(error.message));
 
 function syncUpstreamTlsControls(form) {
