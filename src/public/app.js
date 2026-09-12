@@ -235,7 +235,7 @@ function render() {
   document.querySelectorAll("nav [data-view], .aside-utilities [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);
-  const management = state.view === "hosted" || state.view === "proxies";
+  const management = state.view === "hosted" || state.view === "proxies" || state.view === "streaming";
   $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "redirects" || state.view === "access"));
   $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#users-view").classList.toggle("hidden", state.view !== "administration");
   if (state.view === "administration") { const adminTab = state.adminTab || "users"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
@@ -257,10 +257,10 @@ function render() {
     if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs();
     return;
   }
-  const items = state.view === "hosted" ? state.sites : state.proxies;
+  const items = state.view === "hosted" ? state.sites : state.view === "proxies" ? state.proxies : [];
   $("#site-grid").innerHTML = items.map(state.view === "hosted" ? hostedCard : proxyCard).join("");
   $("#empty").classList.toggle("hidden", !state.loaded || items.length > 0);
-  $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : "Create your first proxy host";
+  $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : state.view === "proxies" ? "Create your first proxy host" : "Create your first streaming host";
   $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : "Connect a domain to another container, application, or LAN service.";
   $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : "Proxy hosts";
   $("#page-subtitle").textContent = state.view === "hosted" ? "Upload and publish websites on a port or domain." : "Route domains securely to applications and containers.";
