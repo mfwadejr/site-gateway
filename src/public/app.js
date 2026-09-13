@@ -248,7 +248,7 @@ async function loadFeatureView() {
 }
 function render() {
   const viewHash = state.view === "administration" ? `administration/${state.adminTab || "users"}` : state.view;
-  if (location.hash !== `#${viewHash}`) history.replaceState(null, "", `${location.pathname}${location.search}#${viewHash}`);
+  if (location.hash !== `#${viewHash}`) history.pushState(null, "", `${location.pathname}${location.search}#${viewHash}`);
   $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#streaming-count").textContent = state.streams.length; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
   document.querySelectorAll("nav [data-view], .aside-utilities [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
