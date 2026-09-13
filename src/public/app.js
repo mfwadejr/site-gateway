@@ -56,13 +56,24 @@ function monitoringChecked(form, kind) { const scope = kind === "proxy" ? "#sett
 // and silently dropped the whole save. Fall back to the form's actual submit button.
 function resolveSubmitter(event) { return event.submitter || event.target.querySelector('button:not([type="button"])'); }
 function scopedValue(form, scope, name, fallback = "") { return form.querySelector(`${scope} [name="${name}"]`)?.value || fallback; }
-function advancedFormBody(form, body) {
+// #settings-form reuses field names (healthEnabled, healthPath, accessListId, compression, etc.) between the
+// hidden site-scoped (#settings-hosted-advanced) and proxy-scoped (#settings-advanced) sections. form.elements.NAME
+// resolves to a RadioNodeList when a name is duplicated, and assigning .value/.checked to a RadioNodeList of
+// non-radio inputs silently does nothing — so every one of these fields must be read/written through its scope.
+function setScoped(form, scope, name, value) { const el = form.querySelector(`${scope} [name="${name}"]`); if (!el) return; if (el.type === "checkbox") el.checked = Boolean(value); else el.value = value; }
+function advancedFormBody(form, body, scoped) {
+  // scoped = { scope, formEl } — pass this when `form` came from a shared form (like #settings-form) where
+  // field names collide with another section, so every ambiguous field is read from its own scope instead of
+  // trusting the unscoped FormData value (which can silently pick up the other section's field).
+  const read = (name, fallback = "") => scoped ? scopedValue(scoped.formEl, scoped.scope, name, fallback) : (form.get(name) || fallback);
+  const checked = (name) => scoped ? Boolean(scoped.formEl.querySelector(`${scoped.scope} [name="${name}"]`)?.checked) : form.has(name);
   body.domains = String(form.get("domainsText") || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
-  body.hsts = form.has("hsts"); body.hstsSubdomains = form.has("hstsSubdomains"); body.healthEnabled = body.healthEnabled === true || body.healthEnabled === "on"; body.upstreamTlsInsecure = form.has("upstreamTlsInsecure");
-  body.requestHeaders = parseHeaderLines(form.get("requestHeadersText")); body.responseHeaders = parseHeaderLines(form.get("responseHeadersText")); body.compression = form.get("compression") || "automatic"; body.customConfig = form.get("customConfig") || "";
+  body.hsts = form.has("hsts"); body.hstsSubdomains = checked("hstsSubdomains"); body.healthEnabled = checked("healthEnabled"); body.upstreamTlsInsecure = checked("upstreamTlsInsecure");
+  body.accessListId = read("accessListId", body.accessListId || "");
+  body.requestHeaders = parseHeaderLines(read("requestHeadersText")); body.responseHeaders = parseHeaderLines(read("responseHeadersText")); body.compression = read("compression", "automatic"); body.customConfig = read("customConfig");
   body.locations = String(form.get("customLocationsText") || "").split("\n").map(line => { const [path, target, behavior] = line.split("|").map(value => value.trim()); return path && target ? { path, target, stripPrefix:behavior.toLowerCase() === "strip" } : null; }).filter(Boolean);
   body.upstreams = String(form.get("upstreamsText") || "").split("\n").map(value => value.trim()).filter(Boolean);
-  body.healthPath = form.get("healthPath") || "/"; body.healthMethod = form.get("healthMethod") || "GET"; body.healthExpected = form.get("healthExpected") || "200-499"; body.healthTimeoutSeconds = Number(form.get("healthTimeoutSeconds") || 4); body.healthRetries = Number(form.get("healthRetries") || 0);
+  body.healthPath = read("healthPath", "/"); body.healthMethod = read("healthMethod", "GET"); body.healthExpected = read("healthExpected", "200-499"); body.healthTimeoutSeconds = Number(read("healthTimeoutSeconds", "4")); body.healthRetries = Number(read("healthRetries", "0"));
   delete body.requestHeadersText; delete body.responseHeadersText; delete body.customLocationsText;
   return body;
 }
@@ -72,7 +83,7 @@ document.addEventListener("submit", async event => {
   event.preventDefault(); event.stopImmediatePropagation();
   const form = new FormData(event.target), button = resolveSubmitter(event);
   let body = Object.fromEntries(form); delete body.certificateFile; delete body.privateKeyFile;
-  if (state.editing.kind === "proxy") body = advancedFormBody(form, body);
+  if (state.editing.kind === "proxy") body = advancedFormBody(form, body, { scope: "#settings-advanced", formEl: event.target });
   else { const scope = "#settings-hosted-advanced"; body = { domain: body.domain, tls: body.tls, hsts: form.has("hsts"), accessListId: scopedValue(event.target, scope, "accessListId"), healthEnabled: monitoringChecked(event.target, "site"), healthPath: scopedValue(event.target, scope, "healthPath", "/"), healthMethod: scopedValue(event.target, scope, "healthMethod", "GET"), healthExpected: scopedValue(event.target, scope, "healthExpected", "200-499"), healthTimeoutSeconds: Number(scopedValue(event.target, scope, "healthTimeoutSeconds", "4")), healthRetries: Number(scopedValue(event.target, scope, "healthRetries", "0")), compression: scopedValue(event.target, scope, "compression", "automatic"), requestHeaders: parseHeaderLines(scopedValue(event.target, scope, "requestHeadersText")), responseHeaders: parseHeaderLines(scopedValue(event.target, scope, "responseHeadersText")), hstsSubdomains: event.target.querySelector(`${scope} [name="hstsSubdomains"]`)?.checked === true, customConfig: scopedValue(event.target, scope, "customConfig") }; }
   button.disabled = true;
   try { await api(`/api/${state.editing.kind === "proxy" ? "proxies" : "sites"}/${state.editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); $("#settings-dialog").close(); await refresh(); toast("Gateway settings applied."); }
@@ -347,9 +358,17 @@ function openSettings(kind, id) {
   const item = (kind === "proxy" ? state.proxies : state.sites).find(value => value.id === id); if (!item) return; state.editing = { kind, id }; const form = $("#settings-form"); form.reset();
   $("#settings-title").textContent = kind === "proxy" ? "Edit proxy host" : "Domain & TLS"; $("#settings-name-wrap").classList.toggle("hidden", kind !== "proxy"); $("#settings-target-wrap").classList.toggle("hidden", kind !== "proxy"); $("#settings-advanced").classList.toggle("hidden", kind !== "proxy"); $("#settings-hosted-advanced").classList.toggle("hidden", kind !== "site");
   form.elements.name.value = item.name || ""; form.elements.domain.value = item.domain || ""; form.elements.target.value = item.target || ""; form.elements.tls.value = item.tls || "automatic"; form.elements.hsts.checked = Boolean(item.hsts); if (form.elements.settingsAccessListId) form.elements.settingsAccessListId.value = item.accessListId || "";
-  if (kind === "proxy") { form.elements.accessListId.value = item.accessListId || ""; form.elements.healthPath.value = item.healthPath || "/"; form.elements.healthExpected.value = item.healthExpected || "200-499"; form.elements.healthTimeoutSeconds.value = item.healthTimeoutSeconds || 4; form.elements.healthEnabled.checked = item.healthEnabled !== false; form.elements.compression.value = item.compression || "automatic"; form.elements.customLocationsText.value = (item.locations || []).map(location => `${location.path} | ${location.target} | ${location.stripPrefix ? "strip" : "preserve"}`).join("\n"); form.elements.requestHeadersText.value = (item.requestHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n"); form.elements.responseHeadersText.value = (item.responseHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n"); form.elements.upstreamTlsServerName.value = item.upstreamTlsServerName || ""; form.elements.upstreamTlsInsecure.checked = Boolean(item.upstreamTlsInsecure); form.elements.hstsSubdomains.checked = Boolean(item.hstsSubdomains); form.elements.customConfig.value = item.customConfig || ""; }
-  if (kind === "proxy") form.elements.healthMethod.value = item.healthMethod || "GET";
-  if (kind === "site") { form.elements.healthPath.value = item.healthPath || "/"; form.elements.healthMethod.value = item.healthMethod || "GET"; form.elements.healthExpected.value = item.healthExpected || "200-499"; form.elements.healthTimeoutSeconds.value = item.healthTimeoutSeconds || 4; form.elements.healthRetries.value = item.healthRetries || 0; form.elements.healthEnabled.checked = item.healthEnabled !== false; }
+  if (kind === "proxy") {
+    const scope = "#settings-advanced";
+    setScoped(form, scope, "accessListId", item.accessListId || ""); setScoped(form, scope, "healthPath", item.healthPath || "/"); setScoped(form, scope, "healthMethod", item.healthMethod || "GET"); setScoped(form, scope, "healthExpected", item.healthExpected || "200-499"); setScoped(form, scope, "healthTimeoutSeconds", item.healthTimeoutSeconds || 4); setScoped(form, scope, "healthEnabled", item.healthEnabled !== false); setScoped(form, scope, "compression", item.compression || "automatic");
+    form.elements.customLocationsText.value = (item.locations || []).map(location => `${location.path} | ${location.target} | ${location.stripPrefix ? "strip" : "preserve"}`).join("\n");
+    setScoped(form, scope, "requestHeadersText", (item.requestHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n")); setScoped(form, scope, "responseHeadersText", (item.responseHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n"));
+    form.elements.upstreamTlsServerName.value = item.upstreamTlsServerName || ""; setScoped(form, scope, "upstreamTlsInsecure", Boolean(item.upstreamTlsInsecure)); setScoped(form, scope, "hstsSubdomains", Boolean(item.hstsSubdomains)); setScoped(form, scope, "customConfig", item.customConfig || "");
+  }
+  if (kind === "site") {
+    const scope = "#settings-hosted-advanced";
+    setScoped(form, scope, "healthPath", item.healthPath || "/"); setScoped(form, scope, "healthMethod", item.healthMethod || "GET"); setScoped(form, scope, "healthExpected", item.healthExpected || "200-499"); setScoped(form, scope, "healthTimeoutSeconds", item.healthTimeoutSeconds || 4); setScoped(form, scope, "healthRetries", item.healthRetries || 0); setScoped(form, scope, "healthEnabled", item.healthEnabled !== false); setScoped(form, scope, "accessListId", item.accessListId || ""); setScoped(form, scope, "compression", item.compression || "automatic"); setScoped(form, scope, "requestHeadersText", (item.requestHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n")); setScoped(form, scope, "responseHeadersText", (item.responseHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n")); setScoped(form, scope, "hstsSubdomains", Boolean(item.hstsSubdomains)); setScoped(form, scope, "customConfig", item.customConfig || "");
+  }
   $("#settings-error").textContent = ""; if (kind === "proxy" && form.elements.domainsText) form.elements.domainsText.value = (item.domains || []).filter(domain => domain !== item.domain).join("\n"); $("#settings-dialog").showModal();
   document.querySelector("#settings-form .custom-certificate-fields")?.classList.toggle("custom-certificate-visible", kind === "proxy" && form.elements.tls.value === "custom");
 }

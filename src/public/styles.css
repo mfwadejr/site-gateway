@@ -217,6 +217,7 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .diagnostic-section-heading{margin-bottom:0}
 .diagnostic-section-heading + .log-table-wrap{border-top:0;border-radius:0 0 15px 15px}
 #certificate-list.diagnostic-list,#readiness-list.diagnostic-list,#gateway-log-list.diagnostic-list,#audit-list.diagnostic-list{border-radius:0 0 15px 15px}
+.data-list>.quiet-state,.diagnostic-list>.quiet-state{padding:22px}
 .readiness-panel,.log-activity{background:transparent;border:0;padding:0}
 .readiness-panel .panel-heading,.log-activity .panel-heading{margin:20px 0 0;padding:18px 20px;border:1px solid var(--line);border-bottom:0;border-radius:15px 15px 0 0;background:var(--panel)}
 .log-activity .event-filters{margin:0;padding:0 20px 15px;border-left:1px solid var(--line);border-right:1px solid var(--line);background:var(--panel)}
