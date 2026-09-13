@@ -124,6 +124,7 @@ function renderDashboard() {
   const overall = $("#overall-health");
   overall.className = `health-badge ${hasErrors ? "error" : isChecking || hasNothingRunning ? "warning" : "healthy"}`;
   overall.textContent = hasErrors ? "Needs attention" : isChecking ? "Checking" : hasNothingRunning ? "Idle" : "Healthy";
+  $("#health-panel").className = `dashboard-panel health-panel ${hasErrors ? "status-error" : isChecking || hasNothingRunning ? "status-warning" : "status-healthy"}`;
   $("#gateway-health-dot").className = `status-dot ${probeClass(data.gateway)}`;
   $("#gateway-health-copy").textContent = probeCopy(data.gateway, data.gateway.lastReload ? `Ready · reloaded ${formatTime(data.gateway.lastReload)}` : "Ready and responding", "Caddy is not responding");
   $("#http-health-dot").className = `status-dot ${probeClass(data.services.http)}`;
@@ -132,7 +133,7 @@ function renderDashboard() {
   $("#https-health-copy").textContent = probeCopy(data.services.https, `Ready and responding · ${data.services.https.activeDomains} TLS domain${data.services.https.activeDomains === 1 ? "" : "s"}`, "Not responding", "Not configured · no TLS domains enabled");
   $("#storage-health-dot").className = `status-dot ${data.services.storage.healthy ? "running" : "error"}`;
   $("#storage-health-copy").textContent = data.services.storage.healthy ? "Ready · /data is readable and writable" : "Permission error · check /data";
-  $("#health-checked").textContent = `Last checked ${formatTime(data.checkedAt)}`;
+  $("#health-checked").innerHTML = `<span class="live-dot" id="health-live-dot"></span>Last checked ${formatTime(data.checkedAt)}`;
   updateDashboardUptime(data.system.uptimeSeconds);
   $("#system-memory").textContent = formatBytes(data.system.memoryBytes);
   $("#system-data").textContent = formatBytes(data.system.dataBytes);
@@ -305,7 +306,7 @@ async function refreshPendingProxies(ids = []) {
   }
 }
 async function refreshDashboard() {
-  const button = $("#refresh-health"); button.disabled = true; button.classList.add("spinning"); $("#health-checked").textContent = "Checking services…";
+  const button = $("#refresh-health"); button.disabled = true; button.classList.add("spinning"); $("#health-checked").innerHTML = '<span class="live-dot checking"></span>Checking services…';
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
   finally { button.disabled = false; button.classList.remove("spinning"); }
 }

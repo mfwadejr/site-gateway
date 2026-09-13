@@ -84,15 +84,15 @@
           <div class="metric-chip" id="dash-attention-chip"><span class="chip-icon" id="dash-attention-icon">◈</span><span class="chip-copy"><span class="metric-label">Needs attention</span><strong id="dash-attention-total">0</strong><small id="dash-attention-detail">No current issues</small></span></div>
         </div>
         <div class="dashboard-columns">
-          <section class="dashboard-panel">
+          <section class="dashboard-panel health-panel status-healthy" id="health-panel">
             <div class="panel-heading"><div><p class="eyebrow">Live health</p><h2>Services</h2></div><div class="health-actions"><span id="overall-health" class="health-badge healthy">Healthy</span><button id="refresh-health" class="icon-button" aria-label="Refresh health checks" title="Refresh health checks">↻</button></div></div>
-            <div class="health-list">
-              <div><span id="gateway-health-dot" class="status-dot running"></span><span><strong>Gateway</strong><small id="gateway-health-copy">Configuration valid</small></span></div>
-              <div><span id="http-health-dot" class="status-dot running"></span><span><strong>HTTP · Port 80</strong><small id="http-health-copy">Ready and responding</small></span></div>
-              <div><span id="https-health-dot" class="status-dot inactive"></span><span><strong>HTTPS · Port 443</strong><small id="https-health-copy">Not configured</small></span></div>
-              <div><span id="storage-health-dot" class="status-dot running"></span><span><strong>Persistent storage</strong><small id="storage-health-copy">Data directory writable</small></span></div>
+            <div class="health-grid">
+              <div class="health-tile"><span id="gateway-health-dot" class="status-dot running"></span><span class="health-tile-copy"><strong>Gateway</strong><small id="gateway-health-copy">Configuration valid</small></span></div>
+              <div class="health-tile"><span id="http-health-dot" class="status-dot running"></span><span class="health-tile-copy"><strong>HTTP · Port 80</strong><small id="http-health-copy">Ready and responding</small></span></div>
+              <div class="health-tile"><span id="https-health-dot" class="status-dot inactive"></span><span class="health-tile-copy"><strong>HTTPS · Port 443</strong><small id="https-health-copy">Not configured</small></span></div>
+              <div class="health-tile"><span id="storage-health-dot" class="status-dot running"></span><span class="health-tile-copy"><strong>Persistent storage</strong><small id="storage-health-copy">Data directory writable</small></span></div>
             </div>
-            <p id="health-checked" class="checked-time">Last checked —</p>
+            <p id="health-checked" class="checked-time"><span class="live-dot" id="health-live-dot"></span>Last checked —</p>
           </section>
           <section class="dashboard-panel">
             <div class="panel-heading"><div><p class="eyebrow">Runtime</p><h2>System</h2></div></div>
