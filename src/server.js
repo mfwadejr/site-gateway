@@ -1277,6 +1277,10 @@ app.patch("/api/proxies/:id", async (req, res, next) => {
     if (req.body.tls !== undefined) proxy.tls = req.body.tls === "custom" && proxy.certificatePath && proxy.keyPath ? "custom" : ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : proxy.tls;
     if (req.body.hsts !== undefined) proxy.hsts = req.body.hsts === true;
     applyAdvancedSettings(proxy, req.body);
+    // Mirror the Hosted Site PATCH handler: react immediately instead of waiting on the 60s
+    // background checkAllProxies() timer or a page refresh to pick up a Monitor toggle/edit.
+    if (proxy.healthEnabled === false) upstreamHealth.set(proxy.id, { status: "unmonitored", checkedAt: null, history: [] });
+    else { upstreamHealth.set(proxy.id, { status: "pending", checkedAt: null, history: [] }); checkProxy(proxy).catch(error => console.warn("Proxy health check failed:", error.message)); }
     await syncCaddy();
     await pruneOrphanedCertificates(previousDomains);
     await saveProxies();
