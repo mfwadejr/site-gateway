@@ -1014,7 +1014,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.get(["/", "/index.html"], (req, res) => {
   const html = fs.readFileSync(path.join(publicDir, "index.html"), "utf8")
-    .replace(/\/(app|features)\.js\?v=[^"']+/g, `/$1.js?v=${appVersion}`);
+    .replace(/\/(app|features)\.js\?v=[^"']+/g, `/$1.js?v=${appVersion}`)
+    .replace(/\/styles\.css\?v=[^"']+/g, `/styles.css?v=${appVersion}`);
   res.type("html").send(html);
 });
 app.use(express.static(publicDir));
