@@ -113,8 +113,13 @@ function renderDashboard() {
   $("#dash-proxy-detail").textContent = healthCopy(data.proxies, "routes");
   $("#dash-tls-total").textContent = data.tlsDomains;
   $("#dash-tls-detail").textContent = data.certificates.total ? `${data.certificates.healthy} healthy · ${data.certificates.pending} not detected` : "No TLS domains";
+  $("#dash-redirect-total").textContent = state.redirects?.length || 0;
+  $("#dash-stream-total").textContent = state.streams?.length || 0;
   $("#dash-attention-total").textContent = data.attention.length;
   $("#dash-attention-detail").textContent = data.attention.length ? `${data.attention.length} item${data.attention.length === 1 ? "" : "s"} to review` : "No current issues";
+  $("#dash-attention-chip").classList.toggle("accent-warning", data.attention.length > 0);
+  $("#dash-attention-chip").classList.toggle("accent-green", data.attention.length === 0);
+  $("#dash-attention-icon").textContent = data.attention.length > 0 ? "!" : "✓";
   const hasErrors = data.attention.length > 0, isChecking = [data.gateway, data.services.http, data.services.https].some(service => service.status === "checking"), hasNothingRunning = !data.hosted.running && !data.proxies.running;
   const overall = $("#overall-health");
   overall.className = `health-badge ${hasErrors ? "error" : isChecking || hasNothingRunning ? "warning" : "healthy"}`;

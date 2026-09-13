@@ -74,10 +74,14 @@
       </header>
       <section id="dashboard-view" class="dashboard-view" aria-label="Gateway dashboard">
         <div class="metric-grid">
-          <button class="metric-card" data-target="hosted"><span class="metric-label">Hosted sites</span><strong id="dash-hosted-total">0</strong><span id="dash-hosted-detail">None configured</span></button>
-          <button class="metric-card" data-target="proxies"><span class="metric-label">Proxy hosts</span><strong id="dash-proxy-total">0</strong><span id="dash-proxy-detail">None configured</span></button>
-          <button class="metric-card" data-target="certificates"><span class="metric-label">Certificates</span><strong id="dash-tls-total">0</strong><span id="dash-tls-detail">No TLS domains</span></button>
-          <div class="metric-card attention"><span class="metric-label">Needs attention</span><strong id="dash-attention-total">0</strong><span id="dash-attention-detail">No current issues</span></div>
+          <button class="metric-card accent-green" data-target="hosted"><span class="metric-label">Hosted sites</span><strong id="dash-hosted-total">0</strong><span id="dash-hosted-detail">None configured</span></button>
+          <button class="metric-card accent-blue" data-target="proxies"><span class="metric-label">Proxy hosts</span><strong id="dash-proxy-total">0</strong><span id="dash-proxy-detail">None configured</span></button>
+          <button class="metric-card accent-blue" data-target="certificates"><span class="metric-label">Certificates</span><strong id="dash-tls-total">0</strong><span id="dash-tls-detail">No TLS domains</span></button>
+        </div>
+        <div class="metric-strip">
+          <button class="metric-chip accent-amber" data-target="redirects"><span class="chip-icon">↗</span><span class="chip-copy"><span class="metric-label">Redirect hosts</span><strong id="dash-redirect-total">0</strong></span></button>
+          <button class="metric-chip accent-purple" data-target="streaming"><span class="chip-icon">▤</span><span class="chip-copy"><span class="metric-label">Streaming hosts</span><strong id="dash-stream-total">0</strong></span></button>
+          <div class="metric-chip" id="dash-attention-chip"><span class="chip-icon" id="dash-attention-icon">◈</span><span class="chip-copy"><span class="metric-label">Needs attention</span><strong id="dash-attention-total">0</strong><small id="dash-attention-detail">No current issues</small></span></div>
         </div>
         <div class="dashboard-columns">
           <section class="dashboard-panel">
