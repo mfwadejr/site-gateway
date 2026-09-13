@@ -94,6 +94,8 @@
               <div class="health-tile"><span id="http-health-dot" class="status-dot running"></span><span class="health-tile-copy"><strong>HTTP · Port 80</strong><small id="http-health-copy">Ready and responding</small></span></div>
               <div class="health-tile"><span id="https-health-dot" class="status-dot inactive"></span><span class="health-tile-copy"><strong>HTTPS · Port 443</strong><small id="https-health-copy">Not configured</small></span></div>
               <div class="health-tile"><span id="storage-health-dot" class="status-dot running"></span><span class="health-tile-copy"><strong>Persistent storage</strong><small id="storage-health-copy">Data directory writable</small></span></div>
+              <div class="health-tile"><span id="streaming-health-dot" class="status-dot inactive"></span><span class="health-tile-copy"><strong>Streaming ports</strong><small id="streaming-health-copy">No streaming hosts configured</small></span></div>
+              <div class="health-tile"><span id="upstream-health-dot" class="status-dot inactive"></span><span class="health-tile-copy"><strong>Upstreams</strong><small id="upstream-health-copy">No proxy hosts configured</small></span></div>
             </div>
             <p id="health-checked" class="checked-time"><span class="live-dot" id="health-live-dot"></span>Last checked —</p>
           </section>
@@ -113,9 +115,9 @@
         </div>
         <div id="dashboard-jobs-slot" class="dashboard-jobs-slot"></div>
         <div class="dashboard-columns lower">
-          <section class="dashboard-panel">
+          <section class="dashboard-panel attention-panel" id="attention-panel">
             <div class="panel-heading"><div><p class="eyebrow">Action required</p><h2>Needs attention</h2></div></div>
-            <div id="attention-list" class="dashboard-list"><p class="quiet-state">Everything looks good.</p></div>
+            <div id="attention-list" class="dashboard-list"><div class="all-clear"><span class="status-dot running"></span><span>Everything looks good — no issues to review.</span></div></div>
           </section>
           <section class="dashboard-panel">
             <div class="panel-heading"><div><p class="eyebrow">Recent activity</p><h2>Recent activity</h2></div><button class="text-button" data-view="logs">View all logs →</button></div>

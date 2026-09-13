@@ -45,6 +45,20 @@ function formatTime(value) {
   if (!value) return "Just now";
   const date = new Date(value); return Number.isNaN(date.getTime()) ? "Recently" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
+function formatRelativeTime(value) {
+  if (!value) return "Just now";
+  const date = new Date(value); if (Number.isNaN(date.getTime())) return "Recently";
+  const seconds = Math.round((Date.now() - date.getTime()) / 1000);
+  if (seconds < 45) return "Just now";
+  if (seconds < 90) return "1 minute ago";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  return formatTime(value);
+}
 function certificateStatusLabel(status) { return ({ healthy:"Healthy", warning:"Renewal due soon", critical:"Renewal required urgently", expired:"Expired", pending:"Awaiting Caddy / ACME certificate", mismatch:"Certificate does not cover this domain" }[status] || String(status || "Unknown")).replaceAll("-", " "); }
 function parseHeaderLines(value) { return String(value || "").split("\n").map(line => { const index = line.indexOf(":"); return index > 0 ? { name:line.slice(0,index).trim(), value:line.slice(index+1).trim() } : null; }).filter(Boolean); }
 function monitoringChecked(form, kind) { const scope = kind === "proxy" ? "#settings-advanced" : "#settings-hosted-advanced"; return Boolean(form.querySelector(`${scope} [name="healthEnabled"]`)?.checked); }
@@ -134,6 +148,12 @@ function renderDashboard() {
   $("#https-health-copy").textContent = probeCopy(data.services.https, `Ready and responding · ${data.services.https.activeDomains} TLS domain${data.services.https.activeDomains === 1 ? "" : "s"}`, "Not responding", "Not configured · no TLS domains enabled");
   $("#storage-health-dot").className = `status-dot ${data.services.storage.healthy ? "running" : "error"}`;
   $("#storage-health-copy").textContent = data.services.storage.healthy ? "Ready · /data is readable and writable" : "Permission error · check /data";
+  const streaming = data.streamingPorts || { total: 0, listening: 0 };
+  $("#streaming-health-dot").className = `status-dot ${!streaming.total ? "inactive" : streaming.listening === streaming.total ? "running" : "error"}`;
+  $("#streaming-health-copy").textContent = !streaming.total ? "No streaming hosts configured" : `${streaming.listening} of ${streaming.total} port${streaming.total === 1 ? "" : "s"} listening`;
+  const upstreams = data.upstreams || { total: 0, healthy: 0, unhealthy: 0 };
+  $("#upstream-health-dot").className = `status-dot ${!upstreams.total ? "inactive" : upstreams.unhealthy > 0 ? "error" : "running"}`;
+  $("#upstream-health-copy").textContent = !upstreams.total ? "No proxy hosts configured" : `${upstreams.healthy} of ${upstreams.total} healthy`;
   $("#health-checked").innerHTML = `<span class="live-dot" id="health-live-dot"></span>Last checked ${formatTime(data.checkedAt)}`;
   updateDashboardUptime(data.system.uptimeSeconds);
   $("#system-memory").textContent = formatBytes(data.system.memoryBytes);
@@ -146,8 +166,9 @@ function renderDashboard() {
   $("#system-database-detail").textContent = `${formatBytes(data.system.databaseBytes)} configuration database`;
   $("#system-public-ip").textContent = data.system.publicIp || (data.system.publicIpError ? "Unavailable" : "Checking…");
   $("#system-public-ip-detail").textContent = data.system.publicIpError ? `Check failed · ${data.system.publicIpError}` : data.system.publicIpCheckedAt ? `Checked ${formatTime(data.system.publicIpCheckedAt)}` : "Not yet checked";
-  $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<${item.target ? "button" : "div"} class="dashboard-list-item issue ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`).join("") : '<p class="quiet-state">Everything looks good.</p>';
-  $("#activity-list").innerHTML = data.activity.length ? data.activity.slice(0, 5).map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" || item.status === "warning" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No recent activity.</p>';
+  $("#attention-panel").classList.toggle("is-clear", data.attention.length === 0);
+  $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<${item.target ? "button" : "div"} class="attention-tile ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`).join("") : '<div class="all-clear"><span class="status-dot running"></span><span>Everything looks good — no issues to review.</span></div>';
+  $("#activity-list").innerHTML = data.activity.length ? data.activity.slice(0, 5).map(item => `<div class="activity-tile"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" || item.status === "warning" ? "!" : "✓"}</span><span class="activity-copy"><strong>${escapeHtml(item.message)}</strong><small title="${escapeHtml(formatTime(item.at))}">${escapeHtml(formatRelativeTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No recent activity.</p>';
 }
 setInterval(() => { if (!document.querySelector("#dashboard-view.hidden")) updateDashboardUptime(); }, 1000);
 

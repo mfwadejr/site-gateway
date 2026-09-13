@@ -671,6 +671,8 @@ async function cacheIcon(slug) {
 async function dashboardSnapshot() {
   const hosted = sites.map(publicSite);
   const proxyHosts = proxies.map(publicProxy);
+  const enabledStreams = streams.filter(item => item.enabled !== false);
+  const streamingPorts = { total: enabledStreams.length, listening: enabledStreams.filter(item => activeStreams.has(item.id)).length };
   const certificates = await certificateInventory();
   const tlsDomains = [...sites, ...proxies].filter(item => item.enabled && item.domain && item.tls !== "http").length;
   const [storageWritable, gatewayResponding, httpResponding, httpsResponding] = await Promise.all([
@@ -708,6 +710,7 @@ async function dashboardSnapshot() {
     tlsDomains,
     certificates: certificates.summary,
     upstreams: { total: proxyHosts.filter(item => item.enabled).length, healthy: proxyHosts.filter(item => item.upstream?.status === "healthy").length, unhealthy: proxyHosts.filter(item => item.upstream?.status === "unhealthy").length },
+    streamingPorts,
     throughput: { liveRequests: storage.performanceLiveCount(60) },
     attention,
     system: {
