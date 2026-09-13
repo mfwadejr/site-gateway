@@ -107,6 +107,33 @@ export async function openStorage(dataDir, backupsDir) {
   function listActivity(limit = 100, instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT message,status,category,created_at AS at FROM activity_events WHERE instance_id=? ORDER BY id DESC LIMIT ?").all(instanceId, Math.max(1, Math.min(Number(limit) || 100, 500))); }
   function recordAccessEvents(events, instanceId = LOCAL_INSTANCE_ID) { const insert = db.prepare("INSERT OR IGNORE INTO access_events(instance_id,at,host,method,uri,status,size,duration_ms,remote_ip,source) VALUES(?,?,?,?,?,?,?,?,?,?)"); transaction(() => { for (const event of events) insert.run(instanceId, event.at || null, event.host || null, event.method || null, event.uri || null, event.status ?? null, event.size ?? null, event.durationMs ?? null, event.remoteIp || null, event.source); }); }
   function listAccessEvents(limit = 100, host = "", instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT at,host,method,uri,status,size,duration_ms AS durationMs,remote_ip AS remoteIp FROM access_events WHERE instance_id=? AND (?='' OR host=?) ORDER BY id DESC LIMIT ?").all(instanceId, host, host, Math.max(1, Math.min(Number(limit) || 100, 500))); return rows; }
+  function performanceLiveCount(windowSeconds = 60, instanceId = LOCAL_INSTANCE_ID) { const cutoff = new Date(Date.now() - Math.max(5, Number(windowSeconds) || 60) * 1000).toISOString(); return db.prepare("SELECT COUNT(*) AS count FROM access_events WHERE instance_id=? AND at>=?").get(instanceId, cutoff).count; }
+  function performanceRoutes(instanceId = LOCAL_INSTANCE_ID) {
+    const hourCutoff = new Date(Date.now() - 3600000).toISOString(), dayCutoff = new Date(Date.now() - 86400000).toISOString();
+    return db.prepare(`
+      SELECT host,
+        SUM(CASE WHEN at>=? THEN 1 ELSE 0 END) AS hourRequests,
+        SUM(CASE WHEN at>=? AND status>=400 THEN 1 ELSE 0 END) AS hourErrors,
+        AVG(CASE WHEN at>=? THEN duration_ms END) AS hourAvgMs,
+        COUNT(*) AS dayRequests,
+        SUM(CASE WHEN status>=400 THEN 1 ELSE 0 END) AS dayErrors,
+        AVG(duration_ms) AS dayAvgMs
+      FROM access_events WHERE instance_id=? AND at>=? AND host IS NOT NULL AND host!=''
+      GROUP BY host ORDER BY dayRequests DESC
+    `).all(hourCutoff, hourCutoff, hourCutoff, instanceId, dayCutoff);
+  }
+  function performanceTrend(host = "", hours = 6, bucketMinutes = 15, instanceId = LOCAL_INSTANCE_ID) {
+    const bucketMs = Math.max(1, Number(bucketMinutes) || 15) * 60000;
+    const windowMs = Math.max(1, Number(hours) || 6) * 3600000;
+    const cutoff = new Date(Date.now() - windowMs).toISOString();
+    const rows = db.prepare(`SELECT at FROM access_events WHERE instance_id=? AND at>=? AND (?='' OR host=?)`).all(instanceId, cutoff, host, host);
+    const buckets = new Map();
+    for (const row of rows) { const t = new Date(row.at).getTime(); if (Number.isNaN(t)) continue; const bucketStart = Math.floor(t / bucketMs) * bucketMs; buckets.set(bucketStart, (buckets.get(bucketStart) || 0) + 1); }
+    const startBucket = Math.floor((Date.now() - windowMs) / bucketMs) * bucketMs, endBucket = Math.floor(Date.now() / bucketMs) * bucketMs;
+    const points = [];
+    for (let bucket = startBucket; bucket <= endBucket; bucket += bucketMs) points.push({ at: new Date(bucket).toISOString(), count: buckets.get(bucket) || 0 });
+    return points;
+  }
   function pruneEvents(policy = {}, instanceId = LOCAL_INSTANCE_ID) { const cutoff = days => new Date(Date.now() - Math.max(7, Number(days) || 30) * 86400000).toISOString(); return transaction(() => { const counts = {}; const jobs = [["access", "access_events", "at", policy.accessDays, ""], ["activity", "activity_events", "created_at", policy.activityDays, "category='activity'"], ["certificate", "activity_events", "created_at", policy.certificateDays, "category='certificate'"], ["security", "activity_events", "created_at", policy.securityDays, "category='security'"], ["audit", "audit_events", "created_at", policy.auditDays, ""]]; for (const [name, table, column, days, filter] of jobs) { const result = db.prepare(`DELETE FROM ${table} WHERE instance_id=? AND ${column} < ?${filter ? ` AND ${filter}` : ""}`).run(instanceId, cutoff(days)); counts[name] = Number(result.changes || 0); } return counts; }); }
   function previewPruneEvents(policy = {}, instanceId = LOCAL_INSTANCE_ID) { const cutoff = days => new Date(Date.now() - Math.max(7, Number(days) || 30) * 86400000).toISOString(); const counts = {}; const jobs = [["access", "access_events", "at", policy.accessDays, ""], ["activity", "activity_events", "created_at", policy.activityDays, "category='activity'"], ["certificate", "activity_events", "created_at", policy.certificateDays, "category='certificate'"], ["security", "activity_events", "created_at", policy.securityDays, "category='security'"], ["audit", "audit_events", "created_at", policy.auditDays, ""]]; for (const [name, table, column, days, filter] of jobs) counts[name] = Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE instance_id=? AND ${column} < ?${filter ? ` AND ${filter}` : ""}`).get(instanceId, cutoff(days)).count || 0); return counts; }
   function listAudit(filters = {}, instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT id,actor_id,action,status,details,created_at FROM audit_events WHERE instance_id=? ORDER BY id DESC LIMIT 500").all(instanceId); return rows.filter(row => (!filters.user || row.actor_id === filters.user) && (!filters.action || row.action.toLowerCase().includes(filters.action.toLowerCase())) && (!filters.status || row.status === filters.status)).map(row => ({ ...row, details: row.details ? JSON.parse(row.details) : null })); }
@@ -135,5 +162,5 @@ export async function openStorage(dataDir, backupsDir) {
   }
   function humanizeGatewayErrors(instanceId = LOCAL_INSTANCE_ID) { const friendly = "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; const activity = db.prepare("SELECT id FROM activity_events WHERE instance_id=? AND message LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const updateActivity = db.prepare("UPDATE activity_events SET message=? WHERE id=?"); for (const row of activity) updateActivity.run(friendly, row.id); const audit = db.prepare("SELECT id FROM audit_events WHERE instance_id=? AND action LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const updateAudit = db.prepare("UPDATE audit_events SET action=? WHERE id=?"); for (const row of audit) updateAudit.run(friendly, row.id); return activity.length + audit.length; }
   const result = integrity(); if (result.length !== 1 || result[0] !== "ok") { db.close(); throw new Error(`SQLite integrity check failed: ${result.join(", ")}`); }
-  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, close: () => db.close() };
+  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, performanceLiveCount, performanceRoutes, performanceTrend, close: () => db.close() };
 }

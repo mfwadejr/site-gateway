@@ -120,6 +120,7 @@ function renderDashboard() {
   $("#dash-attention-chip").classList.toggle("accent-warning", data.attention.length > 0);
   $("#dash-attention-chip").classList.toggle("accent-green", data.attention.length === 0);
   $("#dash-attention-icon").textContent = data.attention.length > 0 ? "!" : "✓";
+  $("#dash-throughput-total").textContent = data.throughput?.liveRequests ?? 0;
   const hasErrors = data.attention.length > 0, isChecking = [data.gateway, data.services.http, data.services.https].some(service => service.status === "checking"), hasNothingRunning = !data.hosted.running && !data.proxies.running;
   const overall = $("#overall-health");
   overall.className = `health-badge ${hasErrors ? "error" : isChecking || hasNothingRunning ? "warning" : "healthy"}`;
@@ -143,6 +144,8 @@ function renderDashboard() {
   $("#system-caddy-version").textContent = data.system.caddyVersion;
   $("#system-database").textContent = `${data.system.databaseEngine} · ${data.system.databaseStatus}`;
   $("#system-database-detail").textContent = `${formatBytes(data.system.databaseBytes)} configuration database`;
+  $("#system-public-ip").textContent = data.system.publicIp || (data.system.publicIpError ? "Unavailable" : "Checking…");
+  $("#system-public-ip-detail").textContent = data.system.publicIpError ? `Check failed · ${data.system.publicIpError}` : data.system.publicIpCheckedAt ? `Checked ${formatTime(data.system.publicIpCheckedAt)}` : "Not yet checked";
   $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<${item.target ? "button" : "div"} class="dashboard-list-item issue ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`).join("") : '<p class="quiet-state">Everything looks good.</p>';
   $("#activity-list").innerHTML = data.activity.length ? data.activity.slice(0, 5).map(item => `<div class="dashboard-list-item"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" || item.status === "warning" ? "!" : "✓"}</span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(formatTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No recent activity.</p>';
 }
@@ -192,20 +195,10 @@ function renderReadiness() {
     const upstreamOk = !item.upstream || item.upstream.status === "healthy";
     const check = item.upstream;
     const message = !dnsOk ? `DNS failed${item.dns.error ? ` · ${item.dns.error}` : ""}` : !item.ports.http ? "HTTP port 80 is not responding inside the container" : item.ports.https === false ? "HTTPS port 443 is not responding inside the container" : !tlsOk ? `TLS ${item.tls.status.replaceAll("-", " ")}` : !upstreamOk ? `Upstream ${check?.error || "unavailable"}` : `Ready · DNS ${item.dns.addresses.join(", ")}${check ? ` · upstream ${check.httpStatus || "responding"}` : ""}`;
-    return `<div class="dashboard-list-item readiness-row" role="button" tabindex="0" data-readiness-id="${escapeHtml(item.id)}" aria-label="View diagnostics for ${escapeHtml(item.domain)}"><span class="status-dot ${dnsOk && portsOk && tlsOk && upstreamOk ? "running" : "error"}"></span><span><strong>${escapeHtml(item.domain)}</strong><small>${escapeHtml(message)}</small><span class="readiness-hint">Click to view diagnostics</span></span></div>`;
+    const upstreamDetail = check ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${check.httpStatus ?? "no response"}${check.responseMs != null ? ` · ${check.responseMs} ms` : ""} · ${check.attempts || 1} attempt${(check.attempts || 1) === 1 ? "" : "s"}</dd></div><div><dt>Last checked</dt><dd>${escapeHtml(formatTime(check.checkedAt))}</dd></div>${check.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(check.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>";
+    return `<details class="certificate-row readiness-row"><summary><span class="status-dot ${dnsOk && portsOk && tlsOk && upstreamOk ? "running" : "error"}"></span><span><strong>${escapeHtml(item.domain)}</strong><small>${escapeHtml(message)}</small></span></summary><dl class="certificate-details"><div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}</dd></div>${upstreamDetail}</dl></details>`;
   }).join("") : '<p class="quiet-state">No configured domains to check.</p>';
 }
-
-function showReadinessDetails(item) {
-  const check = item.upstream;
-  const upstream = check ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${check.httpStatus ?? "no response"}${check.responseMs != null ? ` · ${check.responseMs} ms` : ""} · ${check.attempts || 1} attempt${(check.attempts || 1) === 1 ? "" : "s"}</dd></div><div><dt>Last checked</dt><dd>${escapeHtml(formatTime(check.checkedAt))}</dd></div>${check.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(check.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>";
-  $("#readiness-title").textContent = item.domain;
-  $("#readiness-detail-content").innerHTML = `<dl class="readiness-detail-grid"><div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}</dd></div>${upstream}</dl>`;
-  $("#readiness-dialog").showModal();
-}
-
-$("#readiness-list").addEventListener("click", event => { const row = event.target.closest("[data-readiness-id]"); const item = state.readiness?.routes?.find(route => route.id === row?.dataset.readinessId); if (item) showReadinessDetails(item); });
-$("#readiness-list").addEventListener("keydown", event => { if (event.key !== "Enter" && event.key !== " ") return; const row = event.target.closest("[data-readiness-id]"); if (row) { event.preventDefault(); row.click(); } });
 
 function renderLogs() {
   const data = state.logs; if (!data) return;
@@ -218,6 +211,24 @@ function renderLogs() {
   const severity = $("#event-severity").value, category = $("#event-category").value;
   const activity = data.activity.filter(item => (!severity || item.status === severity) && (!category || categoryOf(item.message) === category));
   $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const eventCategory = categoryOf(item.message); const indicatorClass = item.status === "error" ? "disabled" : item.status === "warning" ? "error" : "running"; return `<div class="event-row"><span class="status-dot ${indicatorClass}" aria-label="${escapeHtml(item.status || "ok")}"></span><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(eventCategory)} · ${escapeHtml(formatTime(item.at))}</small></span></div>`; }).join("") : '<div class="gateway-empty-state"><span class="status-dot"></span><strong>No matching gateway events</strong><small>Try a different severity or category filter.</small></div>';
+}
+
+function renderPerformance() {
+  const data = state.performance; if (!data) return;
+  const selected = $("#performance-host").value;
+  $("#performance-host").innerHTML = '<option value="">All domains</option>' + data.hosts.map(host => `<option value="${escapeHtml(host)}">${escapeHtml(host)}</option>`).join("");
+  $("#performance-host").value = selected;
+  const label = selected ? escapeHtml(selected) : "all domains";
+  $("#performance-summary").innerHTML = `${data.liveRequests} request${data.liveRequests === 1 ? "" : "s"} in the last minute across ${label} · <span id="performance-last-checked">Checked ${escapeHtml(formatTime(data.checkedAt))}</span>`;
+  $("#performance-trend-title").textContent = `Requests · last 6 hours${selected ? ` · ${selected}` : ""}`;
+  const points = data.trend || [];
+  const max = Math.max(1, ...points.map(point => point.count));
+  const stepX = points.length > 1 ? 600 / (points.length - 1) : 600;
+  const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${(index * stepX).toFixed(1)},${(120 - (point.count / max) * 110 - 4).toFixed(1)}`).join(" ");
+  $("#performance-sparkline").innerHTML = points.length ? `<polyline points="${points.map((point, index) => `${(index * stepX).toFixed(1)},${(120 - (point.count / max) * 110 - 4).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--green)" stroke-width="2" /><path d="${path} L${(600).toFixed(1)},120 L0,120 Z" fill="var(--green)" opacity="0.12" stroke="none" />` : "";
+  const routes = data.routes || [];
+  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td>${escapeHtml(route.host)}</td><td>${route.hourRequests}</td><td>${route.dayRequests}</td><td>${route.dayErrors ? `<span class="http-status bad">${route.dayErrors}</span>` : "0"}</td><td>${route.dayAvgMs == null ? "—" : `${route.dayAvgMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No requests have been logged yet.</td></tr>';
+  if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });
 }
 
 function renderUsers() {
@@ -242,6 +253,7 @@ function renderUsers() {
 async function loadFeatureView() {
   if (state.view === "certificates") { [state.certificates, state.readiness] = await Promise.all([api("/api/certificates"), api("/api/readiness")]); renderCertificates(); }
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
+  if (state.view === "performance") { state.performance = await api(`/api/performance?host=${encodeURIComponent($("#performance-host").value)}`); renderPerformance(); }
   if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); renderUsers(); window.renderExtendedViews?.(); }
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
   restoreAdminTab();
@@ -255,7 +267,7 @@ function render() {
   $("#dashboard-view").classList.toggle("hidden", !overview);
   const management = state.view === "hosted" || state.view === "proxies";
   $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "streaming" || state.view === "redirects" || state.view === "access"));
-  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#users-view").classList.toggle("hidden", state.view !== "administration");
+  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#performance-view").classList.toggle("hidden", state.view !== "performance"); $("#users-view").classList.toggle("hidden", state.view !== "administration");
   if (state.view === "administration") { const adminTab = state.adminTab || "users"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
   $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const adminUsersActive = state.view === "administration" && document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab === "users";
@@ -267,7 +279,7 @@ function render() {
     return;
   }
   if (!management) {
-    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access Logs & Gateway Events","Recent requests, upstream responses, and gateway health events served through Caddy."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], streaming:["Streaming hosts","Forward raw TCP/UDP traffic on a specific port straight to another host and port."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
+    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access Logs & Gateway Events","Recent requests, upstream responses, and gateway health events served through Caddy."], performance:["Performance","Live and historical request throughput across your gateway."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], streaming:["Streaming hosts","Forward raw TCP/UDP traffic on a specific port straight to another host and port."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
     const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
     $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "streaming" ? "＋ New streaming host" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
     if (state.view === "streaming") $("#stream-empty").classList.toggle("hidden", !state.loaded || state.streams.length > 0);
@@ -275,7 +287,7 @@ function render() {
     if (state.view === "redirects") $("#redirect-empty .create-trigger").textContent = "Create a redirect host";
     if (state.view === "redirects") $("#redirect-empty").classList.toggle("hidden", !state.loaded || state.redirects.length > 0);
     if (state.view === "redirects") { const items = state.redirects; const running = items.filter(item => item.enabled !== false).length, disabled = items.length - running; $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = 0; $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = "No issues"; $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = "status-dot inactive"; $(".port-note").classList.add("hidden"); }
-    if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs();
+    if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs(); else if (state.view === "performance") renderPerformance();
     return;
   }
   const items = state.view === "hosted" ? state.sites : state.proxies;
@@ -337,6 +349,7 @@ document.querySelectorAll("nav, .aside-utilities").forEach(nav => nav.addEventLi
 $("#dashboard-view").addEventListener("click", event => { const target = event.target.closest("[data-target], [data-view]"); if (!target) return; state.view = target.dataset.target || target.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); });
 $("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
+$("#performance-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-status").addEventListener("change", renderLogs);
 $("#event-severity").addEventListener("change", renderLogs);
 $("#event-category").addEventListener("change", renderLogs);
@@ -498,5 +511,5 @@ document.querySelectorAll("#proxy-form,#settings-form").forEach(form => syncUpst
 document.addEventListener("click", event => { if (event.target.closest(".create-trigger,[data-action=edit],[data-card-action=edit]")) setTimeout(() => { syncUpstreamTlsControls(document.querySelector("#proxy-form")); syncUpstreamTlsControls(document.querySelector("#settings-form")); }, 0); });
 document.addEventListener("click", event => { const trigger = event.target.closest("[data-action=settings],[data-card-action=settings]"); if (!trigger) return; setTimeout(() => { const item = (state.editing?.kind === "proxy" ? state.proxies : state.sites).find(value => value.id === state.editing?.id); if (!item) return; const scope = state.editing.kind === "proxy" ? "#settings-advanced" : "#settings-hosted-advanced"; const checkbox = document.querySelector(`${scope} [name="healthEnabled"]`); if (checkbox) checkbox.checked = !(item.healthEnabled === false || String(item.healthEnabled).toLowerCase() === "false"); }, 0); });
 setInterval(() => { if (state.view !== 'access') return; const items = state.accessLists || []; const enabled = items.filter(item => item.enabled !== false).length; const disabled = items.length - enabled; $('#running-count').textContent = enabled; $('#disabled-count').textContent = disabled; $('#error-count').textContent = 0; $('#running-label').textContent = enabled ? 'Enabled' : 'None enabled'; $('#disabled-label').textContent = disabled ? 'Disabled' : 'None disabled'; $('#error-label').textContent = 'No issues'; $('#running-dot').className = `status-dot ${enabled ? 'running' : 'inactive'}`; $('#disabled-dot').className = `status-dot ${disabled ? 'disabled' : 'inactive'}`; $('#error-dot').className = 'status-dot inactive'; $('.port-note').classList.add('hidden'); }, 500);
-function renderDashboardJobsSafe(system) { const slot = document.querySelector("#dashboard-jobs-slot"); if (!slot) return; let panel = document.querySelector("#dashboard-jobs"); if (!panel) { panel = document.createElement("section"); panel.id = "dashboard-jobs"; panel.className = "dashboard-panel dashboard-jobs-panel"; slot.appendChild(panel); } panel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div class="dashboard-jobs-list">${(system.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${escapeHtml(job.name)}</strong><small>${job.enabled ? `Active · ${escapeHtml(job.schedule)}` : "Disabled"}</small></span></div>`).join("")}</div>`; }
+function renderDashboardJobsSafe(system) { const slot = document.querySelector("#dashboard-jobs-slot"); if (!slot) return; let panel = document.querySelector("#dashboard-jobs"); if (!panel) { panel = document.createElement("section"); panel.id = "dashboard-jobs"; panel.className = "dashboard-panel dashboard-jobs-panel"; slot.appendChild(panel); } panel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div class="health-grid">${(system.jobs || []).map(job => `<div class="health-tile"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>${escapeHtml(job.name)}</strong><small>${job.enabled ? `Active · ${escapeHtml(job.schedule)}` : "Disabled"}</small></span></div>`).join("")}</div>`; }
 document.addEventListener("submit", async event => { if (event.target?.id !== "settings-form" || state.editing?.kind !== "site") return; event.preventDefault(); event.stopImmediatePropagation(); const button = resolveSubmitter(event); button.disabled = true; const form = new FormData(event.target); try { await api(`/api/sites/${state.editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain: form.get("domain"), domains: String(form.get("domainsText") || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean), tls: form.get("tls"), hsts: form.has("hsts"), accessListId: form.get("accessListId") || "", healthEnabled: form.has("healthEnabled"), healthPath: form.get("healthPath") || "/", healthMethod: form.get("healthMethod") || "GET", healthExpected: form.get("healthExpected") || "200-499", healthTimeoutSeconds: Number(form.get("healthTimeoutSeconds") || 4), healthRetries: Number(form.get("healthRetries") || 0), compression: form.get("compression") || "automatic", requestHeaders: parseHeaderLines(form.get("requestHeadersText")), responseHeaders: parseHeaderLines(form.get("responseHeadersText")), hstsSubdomains: form.has("hstsSubdomains"), customConfig: form.get("customConfig") || "" }) }); document.querySelector("#settings-dialog").close(); await refresh(); toast("Gateway settings applied."); } catch (error) { document.querySelector("#settings-error").textContent = error.message; } finally { button.disabled = false; } }, true);

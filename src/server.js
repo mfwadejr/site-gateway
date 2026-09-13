@@ -54,6 +54,7 @@ let streams = [];
 let accessLists = [];
 let groups = [];
 let settings = {};
+let publicIpState = { address: null, checkedAt: null, error: null };
 let gatewayError = null;
 let lastGatewayReload = null;
 let caddyVersion = "Unknown";
@@ -707,6 +708,7 @@ async function dashboardSnapshot() {
     tlsDomains,
     certificates: certificates.summary,
     upstreams: { total: proxyHosts.filter(item => item.enabled).length, healthy: proxyHosts.filter(item => item.upstream?.status === "healthy").length, unhealthy: proxyHosts.filter(item => item.upstream?.status === "unhealthy").length },
+    throughput: { liveRequests: storage.performanceLiveCount(60) },
     attention,
     system: {
       uptimeSeconds: Math.floor(process.uptime()),
@@ -720,7 +722,10 @@ async function dashboardSnapshot() {
       databaseEngine: "SQLite",
       databaseStatus: databaseIntegrity.length === 1 && databaseIntegrity[0] === "ok" ? "Healthy" : "Needs attention",
       databaseBytes: (await fsp.stat(storage.databasePath).catch(() => null))?.size || 0,
-      jobs: [{ name: "Upstream checks", enabled: true, schedule: "60s" }, { name: "Scheduled backups", enabled: Boolean(settings.backups?.enabled), schedule: settings.backups?.enabled ? settings.backups.frequency : "off" }, { name: "Log pruning", enabled: Boolean(settings.logsRetention?.pruningEnabled), schedule: settings.logsRetention?.pruningEnabled ? "15m" : "off" }, { name: "Access-log import", enabled: true, schedule: "30s" }]
+      publicIp: publicIpState.address,
+      publicIpCheckedAt: publicIpState.checkedAt,
+      publicIpError: publicIpState.error,
+      jobs: [{ name: "Upstream checks", enabled: true, schedule: "60s" }, { name: "Scheduled backups", enabled: Boolean(settings.backups?.enabled), schedule: settings.backups?.enabled ? settings.backups.frequency : "off" }, { name: "Log pruning", enabled: Boolean(settings.logsRetention?.pruningEnabled), schedule: settings.logsRetention?.pruningEnabled ? "15m" : "off" }, { name: "Access-log import", enabled: true, schedule: "30s" }, { name: "Public IP check", enabled: true, schedule: "60m" }]
     },
     activity: recentActivity
   };
@@ -1208,6 +1213,20 @@ app.get("/api/logs", async (req, res, next) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 250);
     const host = normalizeDomain(req.query.host);
     res.json({ entries: storage.listAccessEvents(limit, host), hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort(), activity: recentActivity });
+  } catch (error) { next(error); }
+});
+app.get("/api/performance", (req, res, next) => {
+  try {
+    const host = normalizeDomain(req.query.host);
+    const hours = Math.min(Math.max(Number.parseInt(req.query.hours, 10) || 6, 1), 168);
+    const bucketMinutes = hours > 24 ? 60 : 15;
+    res.json({
+      checkedAt: new Date().toISOString(),
+      liveRequests: storage.performanceLiveCount(60),
+      routes: storage.performanceRoutes().map(row => ({ host: row.host, hourRequests: row.hourRequests || 0, hourErrors: row.hourErrors || 0, hourAvgMs: row.hourAvgMs != null ? Math.round(row.hourAvgMs) : null, dayRequests: row.dayRequests || 0, dayErrors: row.dayErrors || 0, dayAvgMs: row.dayAvgMs != null ? Math.round(row.dayAvgMs) : null })),
+      trend: storage.performanceTrend(host, hours, bucketMinutes),
+      hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort()
+    });
   } catch (error) { next(error); }
 });
 app.get("/api/icons/search", async (req, res, next) => {
@@ -1710,6 +1729,21 @@ async function runScheduledPruning() { if (!settings.logsRetention?.pruningEnabl
 setInterval(() => runScheduledPruning(), 15 * 60000).unref();
 setTimeout(() => importAccessLogsToSqlite(), 8000).unref();
 setInterval(() => importAccessLogsToSqlite(), 30000).unref();
+
+async function checkPublicIp() {
+  try {
+    const response = await fetch("https://api.ipify.org?format=json", { signal: AbortSignal.timeout(6000), headers: { "user-agent": "Site-Gateway-DDNS-Check/1.0" } });
+    if (!response.ok) throw new Error(`IP lookup returned HTTP ${response.status}.`);
+    const body = await response.json();
+    const address = String(body.ip || "").trim();
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(address) && !address.includes(":")) throw new Error("IP lookup returned an unexpected value.");
+    const changed = publicIpState.address && publicIpState.address !== address;
+    publicIpState = { address, checkedAt: new Date().toISOString(), error: null };
+    if (changed) recordActivity(`Public IP address changed to ${address}.`);
+  } catch (error) { publicIpState = { ...publicIpState, checkedAt: new Date().toISOString(), error: error.message }; }
+}
+setTimeout(() => checkPublicIp(), 4000).unref();
+setInterval(() => checkPublicIp(), 60 * 60000).unref();
 
 async function shutdown() {
   await Promise.all([...activeServers.keys()].map(stopSite));
