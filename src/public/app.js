@@ -2,7 +2,7 @@ const $ = selector => document.querySelector(selector);
 const summaryBar = document.querySelector("#management-summary");
 const redirectView = document.querySelector("#redirects-view");
 if (summaryBar && redirectView) redirectView.parentElement.insertBefore(summaryBar, redirectView);
-const state = { sites: [], proxies: [], redirects: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
+const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
 document.querySelector("#create-form [name=domain]")?.closest("label")?.childNodes[0] && (document.querySelector("#create-form [name=domain]").closest("label").childNodes[0].textContent = "Primary domain ");
 if (!document.querySelector("#create-form [name=accessListId]")) { const anchor = document.querySelector("#create-form [name=tls]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select name="accessListId"><option value="">Public — no Access List</option></select><small>Protect this hosted site and all of its domains.</small>'; anchor.before(label); } }
 if (!document.querySelector("#settings-access-list")) { const anchor = document.querySelector("#settings-form [name=domain]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select id="settings-access-list" name="accessListId"><option value="">Public — no Access List</option></select><small>Protect this route and all of its domains.</small>'; anchor.after(label); } }
@@ -246,17 +246,17 @@ async function loadFeatureView() {
 function render() {
   const viewHash = state.view === "administration" ? `administration/${state.adminTab || "users"}` : state.view;
   if (location.hash !== `#${viewHash}`) history.replaceState(null, "", `${location.pathname}${location.search}#${viewHash}`);
-  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#streaming-count").textContent = "0"; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
+  $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#streaming-count").textContent = state.streams.length; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
   document.querySelectorAll("nav [data-view], .aside-utilities [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);
-  const management = state.view === "hosted" || state.view === "proxies" || state.view === "streaming";
-  $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "redirects" || state.view === "access"));
+  const management = state.view === "hosted" || state.view === "proxies";
+  $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "streaming" || state.view === "redirects" || state.view === "access"));
   $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#users-view").classList.toggle("hidden", state.view !== "administration");
   if (state.view === "administration") { const adminTab = state.adminTab || "users"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
-  $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
+  $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const adminUsersActive = state.view === "administration" && document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab === "users";
-  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || ["redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates"); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs");
+  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || ["streaming","redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates"); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs");
   if (overview) {
     $("#page-title").textContent = "Dashboard";
     $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
@@ -264,33 +264,35 @@ function render() {
     return;
   }
   if (!management) {
-    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access Logs & Gateway Events","Recent requests, upstream responses, and gateway health events served through Caddy."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
+    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access Logs & Gateway Events","Recent requests, upstream responses, and gateway health events served through Caddy."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], streaming:["Streaming hosts","Forward raw TCP/UDP traffic on a specific port straight to another host and port."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
     const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
-    $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
+    $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "streaming" ? "＋ New streaming host" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
+    if (state.view === "streaming") $("#stream-empty").classList.toggle("hidden", !state.loaded || state.streams.length > 0);
+    if (state.view === "streaming") { const items = state.streams; const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length; $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors; $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues"; $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`; $(".port-note").classList.add("hidden"); }
     if (state.view === "redirects") $("#redirect-empty .create-trigger").textContent = "Create a redirect host";
     if (state.view === "redirects") $("#redirect-empty").classList.toggle("hidden", !state.loaded || state.redirects.length > 0);
     if (state.view === "redirects") { const items = state.redirects; const running = items.filter(item => item.enabled !== false).length, disabled = items.length - running; $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = 0; $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = "No issues"; $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = "status-dot inactive"; $(".port-note").classList.add("hidden"); }
     if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs();
     return;
   }
-  const items = state.view === "hosted" ? state.sites : state.view === "proxies" ? state.proxies : [];
+  const items = state.view === "hosted" ? state.sites : state.proxies;
   $("#site-grid").innerHTML = items.map(state.view === "hosted" ? hostedCard : proxyCard).join("");
   $("#empty").classList.toggle("hidden", !state.loaded || items.length > 0);
-  $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : state.view === "proxies" ? "Create your first proxy host" : "Create your first streaming host";
-  $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : state.view === "proxies" ? "Connect a domain to another container, application, or LAN service." : "Streaming host management is coming soon.";
-  $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : state.view === "proxies" ? "Proxy hosts" : "Streaming hosts";
-  $("#page-subtitle").textContent = state.view === "hosted" ? "Upload and publish websites on a port or domain." : state.view === "proxies" ? "Route domains securely to applications and containers." : "Prepare and monitor streaming services from one place.";
+  $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : "Create your first proxy host";
+  $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : "Connect a domain to another container, application, or LAN service.";
+  $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : "Proxy hosts";
+  $("#page-subtitle").textContent = state.view === "hosted" ? "Upload and publish websites on a port or domain." : "Route domains securely to applications and containers.";
   $("#open-create").textContent = state.view === "hosted" ? "＋ New hosted site" : "＋ New proxy host";
-  $("#open-create").classList.toggle("hidden", state.view === "streaming" || !canManage());
-  $("#empty .create-trigger").textContent = state.view === "hosted" ? "Create a hosted site" : state.view === "proxies" ? "Create a proxy host" : "Streaming hosts coming soon";
-  $("#empty .create-trigger").disabled = state.view === "streaming";
+  $("#open-create").classList.toggle("hidden", !canManage());
+  $("#empty .create-trigger").textContent = state.view === "hosted" ? "Create a hosted site" : "Create a proxy host";
+  $("#empty .create-trigger").disabled = false;
   $(".port-note").classList.toggle("hidden", state.view === "proxies");
   const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length;
   $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors;
   $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues";
   $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
 }
-async function refresh() { const requests = [api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]; const results = await Promise.allSettled(requests); results.forEach((result, index) => { if (result.status !== "fulfilled") return; const keys = ["sites", "proxies", "redirects", "accessLists", "groups", "dashboard", "certificates"]; state[keys[index]] = result.value; }); state.loaded = true; render(); window.renderExtendedViews?.(); const pending = state.proxies.filter(proxy => proxy.enabled !== false && !proxy.upstream).map(proxy => proxy.id); if (pending.length && !state.pendingProxyRefresh) { state.pendingProxyRefresh = true; refreshPendingProxies(pending).finally(() => { state.pendingProxyRefresh = false; }); } }
+async function refresh() { const requests = [api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/streams"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]; const results = await Promise.allSettled(requests); results.forEach((result, index) => { if (result.status !== "fulfilled") return; const keys = ["sites", "proxies", "redirects", "streams", "accessLists", "groups", "dashboard", "certificates"]; state[keys[index]] = result.value; }); state.loaded = true; render(); window.renderExtendedViews?.(); const pending = state.proxies.filter(proxy => proxy.enabled !== false && !proxy.upstream).map(proxy => proxy.id); if (pending.length && !state.pendingProxyRefresh) { state.pendingProxyRefresh = true; refreshPendingProxies(pending).finally(() => { state.pendingProxyRefresh = false; }); } }
 async function refreshPendingProxies(ids = []) {
   const pending = new Set(ids.map(String));
   for (const delay of [1000, 2000, 3000]) {
@@ -336,8 +338,8 @@ $("#log-status").addEventListener("change", renderLogs);
 $("#event-severity").addEventListener("change", renderLogs);
 $("#event-category").addEventListener("change", renderLogs);
 function openCreate() {
-  if (state.view === "streaming") return toast("Streaming host management is coming soon.");
   if (state.view === "administration") { $("#user-form").reset(); $("#user-error").textContent = ""; return $("#user-dialog").showModal(); }
+  if (state.view === "streaming") { $("#stream-form").reset(); delete $("#stream-form").dataset.editing; $("#stream-title").textContent = "Create a streaming host"; $("#stream-form .button.primary").textContent = "Create streaming host"; $("#stream-error").textContent = ""; return $("#stream-dialog").showModal(); }
   if (state.view === "redirects") { $("#redirect-form").reset(); delete $("#redirect-form").dataset.editing; $("#redirect-error").textContent = ""; return $("#redirect-dialog").showModal(); }
   if (state.view === "access") { $("#access-form").reset(); delete $("#access-form").dataset.editing; $("#access-error").textContent = ""; $("#access-form .access-create-guidance")?.remove(); const assignmentSummary = $("#access-assignment-summary"); assignmentSummary?.classList.add("hidden"); if (assignmentSummary) assignmentSummary.innerHTML = ""; window.renderCredentialEditor?.([]); return $("#access-dialog").showModal(); }
   if (state.view === "proxies") { $("#proxy-form").reset(); $("#custom-certificate-fields").classList.remove("custom-certificate-visible"); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
@@ -408,7 +410,7 @@ $("#icon-search").addEventListener("input", event => {
   }, 280);
 });
 async function saveIcon(slug) {
-  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites";
+  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "streams" ? "streams" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites";
   $("#icon-error").textContent = "";
   try {
     await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug }) });
@@ -420,12 +422,12 @@ $("#reset-icon").addEventListener("click", event => { event.preventDefault(); sa
 $("#icon-upload").addEventListener("change", async event => {
   const file = event.target.files[0]; if (!file || !state.iconTarget) return;
   const data = new FormData(); data.append("icon", file); $("#icon-error").textContent = "";
-  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
+  try { const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "streams" ? "streams" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refresh(); toast("Custom icon saved locally."); }
   catch (error) { $("#icon-error").textContent = error.message; }
 });
 $("#save-icon-url").addEventListener("click", async () => {
   const value = $("#icon-url").value.trim(); if (!/^https:\/\//i.test(value)) { $("#icon-error").textContent = "Enter a trusted HTTPS image URL."; return; }
-  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites";
+  if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "streams" ? "streams" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : "sites";
   try { await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: value }) }); $("#icon-dialog").close(); await refresh(); toast("Icon URL saved."); }
   catch (error) { $("#icon-error").textContent = error.message; }
 });

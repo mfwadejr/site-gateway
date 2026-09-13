@@ -5,6 +5,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
+import dgram from "node:dgram";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -44,10 +45,12 @@ const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
 const sessionSecret = process.env.SESSION_SECRET || crypto.createHash("sha256").update(`${adminUser}:${adminPassword}`).digest("hex");
 const scheduledBackupPassword = process.env.BACKUP_PASSWORD || "";
 const activeServers = new Map();
+const activeStreams = new Map();
 let sites = [];
 let proxies = [];
 let users = [];
 let redirects = [];
+let streams = [];
 let accessLists = [];
 let groups = [];
 let settings = {};
@@ -141,6 +144,7 @@ const saveProxies = async () => storage.saveCollection("proxies", proxies);
 const saveUsers = async () => storage.saveCollection("users", users);
 const saveGroups = async () => storage.saveCollection("groups", groups);
 const saveRedirects = async () => storage.saveCollection("redirects", redirects);
+const saveStreams = async () => storage.saveCollection("streams", streams);
 const saveAccessLists = async () => storage.saveCollection("access_lists", accessLists);
 const saveSettings = async () => storage.saveSettings(settings);
 
@@ -191,6 +195,7 @@ async function loadSites() {
   }
   if (usersChanged) await saveUsers();
   redirects = storage.loadCollection("redirects");
+  streams = storage.loadCollection("streams").map(item => ({ ...item, healthEnabled: !(item.healthEnabled === false || String(item.healthEnabled).toLowerCase() === "false") }));
   accessLists = storage.loadCollection("access_lists");
   groups = storage.loadCollection("groups");
   const defaultSettings = {
@@ -230,6 +235,27 @@ function validateTarget(value) {
   } catch {
     throw Object.assign(new Error("Target must be an HTTP or HTTPS address such as http://192.168.1.20:3000."), { status: 400 });
   }
+}
+
+function validateStreamPort(value) {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw Object.assign(new Error("Incoming port must be between 1 and 65535."), { status: 400 });
+  return port;
+}
+
+function validateStreamHostPort(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^\[?([^\s\]]+)\]?:(\d{1,5})$/);
+  if (!match) throw Object.assign(new Error("Forward to must be host:port, such as 192.168.1.20:22."), { status: 400 });
+  const port = Number(match[2]);
+  if (!match[1] || port < 1 || port > 65535) throw Object.assign(new Error("Forward to must be host:port, such as 192.168.1.20:22."), { status: 400 });
+  return `${match[1]}:${port}`;
+}
+
+function streamPortConflict(port, exceptId) {
+  if (port === adminPort || port === 80 || port === 443 || (port >= minPort && port <= maxPort)) return "That port is already reserved by the gateway.";
+  if (streams.some(item => item.port === port && item.id !== exceptId)) return "That port is already used by another streaming host.";
+  return null;
 }
 
 function cleanHeaders(value) {
@@ -423,6 +449,10 @@ function publicProxy(proxy, includeAdvanced = false) {
   return { ...safe, domains: normalizeDomains(proxy.domain, proxy.domains), certificatePath: certificatePath ? "installed" : null, hasCustomCertificate: Boolean(certificatePath && keyPath), status: proxy.enabled ? (gatewayError ? "error" : "running") : "disabled", upstream: upstreamHealth.get(proxy.id) || null };
 }
 
+function publicStream(stream) {
+  return { ...stream, status: stream.enabled === false ? "disabled" : activeStreams.has(stream.id) ? "running" : "error", upstream: upstreamHealth.get(stream.id) || null };
+}
+
 async function walkFiles(directory) {
   const output = [];
   for (const entry of await fsp.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error))) {
@@ -524,7 +554,7 @@ async function checkProxy(proxy) {
 }
 
 async function checkAllProxies() {
-  await Promise.all([...proxies.map(checkProxy), ...sites.map(site => checkProxy({ ...site, target: `http://127.0.0.1:${site.port}`, healthPath: site.healthPath || "/", healthMethod: site.healthMethod || "GET", healthExpected: site.healthExpected || "200-499", healthTimeoutSeconds: site.healthTimeoutSeconds || 4, healthRetries: site.healthRetries || 0, healthEnabled: site.healthEnabled }))]);
+  await Promise.all([...proxies.map(checkProxy), ...sites.map(site => checkProxy({ ...site, target: `http://127.0.0.1:${site.port}`, healthPath: site.healthPath || "/", healthMethod: site.healthMethod || "GET", healthExpected: site.healthExpected || "200-499", healthTimeoutSeconds: site.healthTimeoutSeconds || 4, healthRetries: site.healthRetries || 0, healthEnabled: site.healthEnabled })), ...streams.map(checkStream)]);
   return proxies.map(publicProxy);
 }
 
@@ -573,6 +603,18 @@ async function importAccessLogsToSqlite() {
 function tcpProbe(port, timeoutMs = 1000) {
   return new Promise(resolve => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
+    const finish = result => { socket.destroy(); resolve(result); };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+function tcpProbeHost(host, port, timeoutMs = 4000) {
+  return new Promise(resolve => {
+    if (!host || !Number.isInteger(port) || port < 1 || port > 65535) return resolve(false);
+    const socket = net.createConnection({ host, port });
     const finish = result => { socket.destroy(); resolve(result); };
     socket.setTimeout(timeoutMs);
     socket.once("connect", () => finish(true));
@@ -712,6 +754,90 @@ async function restartSite(site) {
   if (site.enabled) await startSite(site);
 }
 
+// Streaming hosts relay raw TCP/UDP on a specific port straight to a host:port target — no domain, no HTTP,
+// no Caddy involvement. This is the same pattern as startSite()/stopSite() above: a dedicated listener Site
+// Gateway owns directly, just for a plain socket instead of an HTTP server.
+async function startStream(stream) {
+  if (stream.enabled === false || activeStreams.has(stream.id)) return;
+  const [targetHost, targetPortRaw] = String(stream.target || "").split(":");
+  const targetPort = Number(targetPortRaw);
+  const handle = { tcpServer: null, udpSocket: null, udpSessions: new Map() };
+  try {
+    if (stream.tcp !== false) {
+      const tcpServer = net.createServer(socket => {
+        const upstream = net.createConnection({ host: targetHost, port: targetPort });
+        const destroyBoth = () => { socket.destroy(); upstream.destroy(); };
+        socket.on("error", destroyBoth); upstream.on("error", destroyBoth);
+        socket.on("close", () => upstream.destroy()); upstream.on("close", () => socket.destroy());
+        socket.pipe(upstream); upstream.pipe(socket);
+      });
+      await new Promise((resolve, reject) => { tcpServer.once("error", reject); tcpServer.listen(stream.port, "0.0.0.0", resolve); });
+      tcpServer.on("error", error => console.warn(`Streaming host “${stream.name}” TCP error:`, error.message));
+      handle.tcpServer = tcpServer;
+    }
+    if (stream.udp) {
+      const udpSocket = dgram.createSocket("udp4");
+      udpSocket.on("message", (message, rinfo) => {
+        const key = `${rinfo.address}:${rinfo.port}`;
+        let session = handle.udpSessions.get(key);
+        if (!session) {
+          const outbound = dgram.createSocket("udp4");
+          session = { outbound, timer: null, connected: false, pending: [] };
+          outbound.on("message", reply => { try { udpSocket.send(reply, rinfo.port, rinfo.address); } catch { /* client socket may already be gone */ } });
+          outbound.on("error", () => {});
+          // connect() is asynchronous — sending before it completes silently drops the datagram, which would
+          // lose the first packet of every new UDP session. Queue until the callback confirms it's connected.
+          outbound.connect(targetPort, targetHost, () => { session.connected = true; for (const buffered of session.pending.splice(0)) { try { outbound.send(buffered); } catch { /* upstream may be unreachable */ } } });
+          handle.udpSessions.set(key, session);
+        }
+        clearTimeout(session.timer);
+        session.timer = setTimeout(() => { session.outbound.close(); handle.udpSessions.delete(key); }, 60000).unref();
+        if (session.connected) { try { session.outbound.send(message); } catch { /* upstream may be unreachable; drop this datagram */ } }
+        else session.pending.push(message);
+      });
+      await new Promise((resolve, reject) => { udpSocket.once("error", reject); udpSocket.bind(stream.port, "0.0.0.0", resolve); });
+      udpSocket.on("error", error => console.warn(`Streaming host “${stream.name}” UDP error:`, error.message));
+      handle.udpSocket = udpSocket;
+    }
+  } catch (error) {
+    if (handle.tcpServer) await new Promise(resolve => handle.tcpServer.close(resolve));
+    if (handle.udpSocket) handle.udpSocket.close();
+    throw error;
+  }
+  activeStreams.set(stream.id, handle);
+  console.log(`Streaming “${stream.name}” on port ${stream.port}`);
+}
+
+async function stopStream(id) {
+  const handle = activeStreams.get(id);
+  if (!handle) return;
+  if (handle.tcpServer) await new Promise(resolve => handle.tcpServer.close(resolve));
+  if (handle.udpSocket) {
+    for (const session of handle.udpSessions.values()) { clearTimeout(session.timer); session.outbound.close(); }
+    handle.udpSocket.close();
+  }
+  activeStreams.delete(id);
+}
+
+async function restartStream(stream) {
+  await stopStream(stream.id);
+  if (stream.enabled !== false) await startStream(stream);
+}
+
+async function checkStream(stream) {
+  if (stream.enabled === false) { const result = { status: "disabled", checkedAt: new Date().toISOString(), history: [] }; upstreamHealth.set(stream.id, result); return result; }
+  if (stream.healthEnabled === false) { const result = { status: "unmonitored", checkedAt: null, history: [] }; upstreamHealth.set(stream.id, result); return result; }
+  const started = performance.now();
+  const [targetHost, targetPortRaw] = String(stream.target || "").split(":");
+  const healthy = await tcpProbeHost(targetHost, Number(targetPortRaw), 4000);
+  const responseMs = Math.round(performance.now() - started);
+  const result = { status: healthy ? "healthy" : "unhealthy", responseMs, checkedAt: new Date().toISOString(), error: healthy ? null : `Could not open a TCP connection to ${stream.target}` };
+  const previous = upstreamHealth.get(stream.id);
+  result.history = [{ status: result.status, responseMs, checkedAt: result.checkedAt }, ...(previous?.history || [])].slice(0, 7);
+  upstreamHealth.set(stream.id, result);
+  return result;
+}
+
 function validatePort(port, exceptId) {
   if (!Number.isInteger(port) || port < minPort || port > maxPort) return `Port must be between ${minPort} and ${maxPort}.`;
   if (sites.some(site => site.port === port && site.id !== exceptId)) return "That port is already assigned.";
@@ -754,7 +880,7 @@ async function installUpload(site, file) {
   }
 }
 
-const portableCollections = { "sites.json": () => sites, "proxies.json": () => proxies, "redirects.json": () => redirects, "access-lists.json": () => accessLists, "users.json": () => users, "groups.json": () => groups, "settings.json": () => settings };
+const portableCollections = { "sites.json": () => sites, "proxies.json": () => proxies, "redirects.json": () => redirects, "streams.json": () => streams, "access-lists.json": () => accessLists, "users.json": () => users, "groups.json": () => groups, "settings.json": () => settings };
 
 async function protectBackup(buffer, password) {
   if (!password) return buffer;
@@ -843,9 +969,10 @@ async function restoreBackup(filename, password = "", createSafetyBackup = true)
     if (manifest.type === "complete" && fs.existsSync(path.join(staging, "custom-certificates"))) {
       await fsp.mkdir(customCertificatesDir, { recursive: true }); await fsp.cp(path.join(staging, "custom-certificates"), customCertificatesDir, { recursive: true });
     }
-    await Promise.all([...activeServers.keys()].map(stopSite)); sites = []; proxies = []; users = []; redirects = []; accessLists = []; groups = []; settings = {}; recentActivity.splice(0); await loadSites();
+    await Promise.all([...activeServers.keys()].map(stopSite)); await Promise.all([...activeStreams.keys()].map(stopStream)); sites = []; proxies = []; users = []; redirects = []; streams = []; accessLists = []; groups = []; settings = {}; recentActivity.splice(0); await loadSites();
     if (manifest.type === "complete") for (const site of sites) { const contentRoot = path.join(sitesDir, site.id); if (!fs.existsSync(path.join(contentRoot, "index.html"))) throw new Error(`Restored hosted site “${site.name || site.id}” is missing index.html.`); }
     for (const site of sites.filter(item => item.enabled)) await startSite(site);
+    for (const stream of streams.filter(item => item.enabled !== false)) { try { await startStream(stream); } catch (error) { console.error(`Could not start streaming host “${stream.name}”:`, error.message); } }
     await syncCaddy(); recordActivity(`Backup ${filename} restored.`);
   } catch (error) {
     if (safetyBackup) {
@@ -866,6 +993,9 @@ try {
 }
 for (const site of sites.filter(item => item.enabled)) {
   try { await startSite(site); } catch (error) { console.error(`Could not start ${site.name}:`, error.message); }
+}
+for (const stream of streams.filter(item => item.enabled !== false)) {
+  try { await startStream(stream); } catch (error) { console.error(`Could not start streaming host “${stream.name}”:`, error.message); }
 }
 for (let attempt = 0; attempt < 10; attempt++) {
   try { await syncCaddy(); break; }
@@ -973,7 +1103,7 @@ app.post("/api/setup/admin", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.use("/api", (req, res, next) => { currentAuditActor = req.user?.id || null; return req.user.setupRequired ? res.status(428).json({ error: "Complete the initial administrator setup before continuing." }) : next(); });
-app.use("/api", (req, res, next) => { if (req.method === "GET" || req.user.role === "administrator") return next(); const operational = /^\/(sites|proxies|redirects|access-lists)(\/|$)/.test(req.path); if (req.user.role === "standard" && operational) return next(); return res.status(403).json({ error: "Administrator access is required for this action." }); });
+app.use("/api", (req, res, next) => { if (req.method === "GET" || req.user.role === "administrator") return next(); const operational = /^\/(sites|proxies|redirects|streams|access-lists)(\/|$)/.test(req.path); if (req.user.role === "standard" && operational) return next(); return res.status(403).json({ error: "Administrator access is required for this action." }); });
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError } }));
 app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/audit", (req, res) => req.user.role === "administrator" ? res.json(storage.listAudit({ user: req.query.user, action: req.query.action, status: req.query.status }).map(item => ({ ...item, actor: users.find(user => user.id === item.actor_id)?.username || "System" }))) : res.status(403).json({ error: "Administrator access is required." }));
@@ -1099,7 +1229,7 @@ function entryLabel(item) {
 }
 app.put("/api/:kind/:id/icon", async (req, res, next) => {
   try {
-    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
+    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "streams" ? streams : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
     if (!collection) return res.status(404).json({ error: "Entry type not found." });
     const item = collection.find(entry => entry.id === req.params.id);
     if (!item) return res.status(404).json({ error: "Entry not found." });
@@ -1107,7 +1237,7 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
       const url = String(req.body.url || "").trim();
       if (!/^https:\/\//i.test(url) || url.length > 2048) return res.status(400).json({ error: "Icon URL must be a valid HTTPS URL under 2048 characters." });
       item.iconSlug = null; item.icon = url;
-      if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else if (collection === users) await saveUsers(); else await saveAccessLists();
+      if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === streams) await saveStreams(); else if (collection === groups) await saveGroups(); else if (collection === users) await saveUsers(); else await saveAccessLists();
       recordActivity(`Icon URL updated for “${entryLabel(item)}”.`);
       return res.json(item);
     }
@@ -1115,14 +1245,14 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
     const icon = slug ? await cacheIcon(slug) : null;
     item.iconSlug = slug || null;
     item.icon = icon;
-    if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else await saveAccessLists();
+    if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === streams) await saveStreams(); else if (collection === groups) await saveGroups(); else await saveAccessLists();
     recordActivity(`${slug ? "Icon updated" : "Icon reset"} for “${entryLabel(item)}”.`);
     res.json(item);
   } catch (error) { next(error); }
 });
 app.post("/api/:kind/:id/icon", iconUpload.single("icon"), async (req, res, next) => {
   try {
-    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
+    const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "streams" ? streams : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
     if (!collection) return res.status(404).json({ error: "Entry type not found." });
     const item = collection.find(entry => entry.id === req.params.id);
     if (!item) return res.status(404).json({ error: "Entry not found." });
@@ -1132,7 +1262,7 @@ app.post("/api/:kind/:id/icon", iconUpload.single("icon"), async (req, res, next
     const filename = `${req.params.kind}-${item.id}.${extension}`;
     await fsp.rename(req.file.path, path.join(iconsDir, filename));
     item.iconSlug = null; item.icon = `/site-icons/${filename}`;
-    if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === groups) await saveGroups(); else if (collection === users) await saveUsers(); else await saveAccessLists();
+    if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === streams) await saveStreams(); else if (collection === groups) await saveGroups(); else if (collection === users) await saveUsers(); else await saveAccessLists();
     recordActivity(`Custom icon uploaded for “${entryLabel(item)}”.`);
     res.json(item);
   } catch (error) { next(error); }
@@ -1424,6 +1554,70 @@ app.delete("/api/redirects/:id", async (req, res, next) => {
   try { const index = redirects.findIndex(item => item.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Redirect Host not found." }); const [item] = redirects.splice(index, 1); await syncCaddy(); await pruneOrphanedCertificates(normalizeDomains(item.domain, item.domains)); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” deleted.`); res.status(204).end(); } catch (error) { next(error); }
 });
 
+app.get("/api/streams", (req, res) => res.json(streams.map(publicStream)));
+app.post("/api/streams", async (req, res, next) => {
+  try {
+    const name = String(req.body.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Name is required." });
+    const port = validateStreamPort(req.body.port);
+    const portError = streamPortConflict(port); if (portError) return res.status(400).json({ error: portError });
+    const target = validateStreamHostPort(req.body.target);
+    const tcp = req.body.tcp !== false, udp = req.body.udp === true;
+    if (!tcp && !udp) return res.status(400).json({ error: "Enable TCP, UDP, or both." });
+    const stream = { id: `stream-${crypto.randomBytes(4).toString("hex")}`, name, port, target, tcp, udp, healthEnabled: req.body.healthEnabled !== false, enabled: true, createdAt: new Date().toISOString() };
+    try { await startStream(stream); } catch (error) { return res.status(409).json({ error: `Could not bind port ${port}: ${error.message}` }); }
+    streams.push(stream);
+    if (stream.healthEnabled === false) upstreamHealth.set(stream.id, { status: "unmonitored", checkedAt: null, history: [] });
+    else { upstreamHealth.set(stream.id, { status: "pending", checkedAt: null, history: [] }); checkStream(stream).catch(error => console.warn("Streaming host health check failed:", error.message)); }
+    await saveStreams();
+    recordActivity(`Streaming host “${stream.name}” created.`);
+    res.status(201).json(publicStream(stream));
+  } catch (error) { next(error); }
+});
+app.patch("/api/streams/:id", async (req, res, next) => {
+  try {
+    const stream = streams.find(item => item.id === req.params.id); if (!stream) return res.status(404).json({ error: "Streaming host not found." });
+    const next_ = { ...stream };
+    if (req.body.name !== undefined) { const name = String(req.body.name).trim(); if (!name) return res.status(400).json({ error: "Name is required." }); next_.name = name; }
+    if (req.body.port !== undefined) { const port = validateStreamPort(req.body.port); const portError = streamPortConflict(port, stream.id); if (portError) return res.status(400).json({ error: portError }); next_.port = port; }
+    if (req.body.target !== undefined) next_.target = validateStreamHostPort(req.body.target);
+    if (req.body.tcp !== undefined) next_.tcp = Boolean(req.body.tcp);
+    if (req.body.udp !== undefined) next_.udp = Boolean(req.body.udp);
+    if (!next_.tcp && !next_.udp) return res.status(400).json({ error: "Enable TCP, UDP, or both." });
+    if (req.body.healthEnabled !== undefined) next_.healthEnabled = req.body.healthEnabled === true || (typeof req.body.healthEnabled === "string" && req.body.healthEnabled.toLowerCase() === "true");
+    if (req.body.enabled !== undefined) next_.enabled = Boolean(req.body.enabled);
+    const portOrProtocolChanged = next_.port !== stream.port || next_.target !== stream.target || next_.tcp !== stream.tcp || next_.udp !== stream.udp || next_.enabled !== stream.enabled;
+    Object.assign(stream, next_);
+    if (portOrProtocolChanged) { try { await restartStream(stream); } catch (error) { return res.status(409).json({ error: `Could not bind port ${stream.port}: ${error.message}` }); } }
+    if (stream.healthEnabled === false) upstreamHealth.set(stream.id, { status: "unmonitored", checkedAt: null, history: [] });
+    else { upstreamHealth.set(stream.id, { status: "pending", checkedAt: null, history: [] }); checkStream(stream).catch(error => console.warn("Streaming host health check failed:", error.message)); }
+    await saveStreams();
+    recordActivity(`Streaming host “${stream.name}” updated.`);
+    res.json(publicStream(stream));
+  } catch (error) { next(error); }
+});
+app.post("/api/streams/:id/toggle", async (req, res, next) => {
+  try {
+    const stream = streams.find(item => item.id === req.params.id); if (!stream) return res.status(404).json({ error: "Streaming host not found." });
+    stream.enabled = !stream.enabled;
+    try { await restartStream(stream); } catch (error) { stream.enabled = !stream.enabled; return res.status(409).json({ error: `Could not bind port ${stream.port}: ${error.message}` }); }
+    if (stream.enabled === false) upstreamHealth.set(stream.id, { status: "unmonitored", checkedAt: null, history: [] });
+    await saveStreams();
+    recordActivity(`Streaming host “${stream.name}” ${stream.enabled ? "enabled" : "disabled"}.`);
+    res.json(publicStream(stream));
+  } catch (error) { next(error); }
+});
+app.delete("/api/streams/:id", async (req, res, next) => {
+  try {
+    const index = streams.findIndex(item => item.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Streaming host not found." });
+    const [item] = streams.splice(index, 1);
+    await stopStream(item.id); upstreamHealth.delete(item.id);
+    await saveStreams();
+    recordActivity(`Streaming host “${item.name}” deleted.`);
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+
 app.patch("/api/settings", async (req, res, next) => {
   try {
     if (req.body.defaultSite) {
@@ -1448,7 +1642,7 @@ app.post("/api/logs/prune", async (req, res, next) => { try { if (req.user.role 
 app.get("/api/logs/prune/preview", (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); res.json({ enabled: settings.logsRetention?.pruningEnabled === true, counts: storage.previewPruneEvents(settings.logsRetention || {}) }); } catch (error) { next(error); } });
 app.get("/api/logs/download", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const payload = { product: "Site Gateway", generatedAt: new Date().toISOString(), access: storage.listAccessEvents(500), activity: storage.listActivity(500), audit: storage.listAudit({}) }; res.setHeader("Content-Disposition", `attachment; filename="site-gateway-logs-${new Date().toISOString().slice(0, 10)}.json"`); res.json(payload); } catch (error) { next(error); } });
 app.post("/api/settings/reset-defaults", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error:"Administrator access is required." }); if (String(req.body.confirmation || "") !== "RESTORE DEFAULT") return res.status(400).json({ error:"Type RESTORE DEFAULT exactly to continue." }); if (String(req.body.username || "").trim().toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(401).json({ error:"Administrator credentials were not accepted." }); settings.defaultSite = { mode:"themed404", redirectUrl:"", redirectCode:302, preservePath:true, title:"Route not found", message:"The gateway is responding, but this address has not been configured.", customHtml:"" }; settings.backups = { enabled:false, frequency:"daily", hour:2, retention:7, type:"configuration", includeLogs:false, encrypt:false, lastRunAt:null, lastStatus:null }; settings.certificateHealth = { warningDays:30, criticalDays:7, staleMinutes:10 }; await saveSettings(); recordActivity("Gateway preferences restored to defaults."); res.json({ ...settings, backupDirectory:backupsDir }); } catch (error) { next(error); } });
-app.post("/api/factory-reset", async (req, res, next) => { try { if (String(req.body.confirmation || "") !== "FACTORY RESET") return res.status(400).json({ error:"Type FACTORY RESET exactly to continue." }); if (String(req.body.username || "").toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(401).json({ error:"Administrator credentials were not accepted." }); await Promise.all([...activeServers.keys()].map(stopSite)); storage.close(); for (const directory of [sitesDir, uploadDir, caddyDir, iconsDir, logsDir, backupsDir, defaultSiteDir, certificatesRoot, path.join(dataDir,"database")]) await clearDirectoryContents(directory); storage = await openStorage(dataDir, backupsDir); sites = []; proxies = []; users = []; redirects = []; accessLists = []; groups = []; settings = {}; recentActivity.splice(0); await loadSites(); await syncCaddy(); res.setHeader("Set-Cookie", "webserver_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"); res.status(202).json({ ok:true }); } catch (error) { next(error); } });
+app.post("/api/factory-reset", async (req, res, next) => { try { if (String(req.body.confirmation || "") !== "FACTORY RESET") return res.status(400).json({ error:"Type FACTORY RESET exactly to continue." }); if (String(req.body.username || "").toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(401).json({ error:"Administrator credentials were not accepted." }); await Promise.all([...activeServers.keys()].map(stopSite)); await Promise.all([...activeStreams.keys()].map(stopStream)); storage.close(); for (const directory of [sitesDir, uploadDir, caddyDir, iconsDir, logsDir, backupsDir, defaultSiteDir, certificatesRoot, path.join(dataDir,"database")]) await clearDirectoryContents(directory); storage = await openStorage(dataDir, backupsDir); sites = []; proxies = []; users = []; redirects = []; streams = []; accessLists = []; groups = []; settings = {}; recentActivity.splice(0); await loadSites(); await syncCaddy(); res.setHeader("Set-Cookie", "webserver_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"); res.status(202).json({ ok:true }); } catch (error) { next(error); } });
 app.use("/api/backups", (req, res, next) => req.user.role === "administrator" ? next() : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/backups", async (req, res, next) => { try { res.json(await listBackups()); } catch (error) { next(error); } });
 app.post("/api/backups", async (req, res, next) => {
@@ -1473,7 +1667,7 @@ app.delete("/api/backups/:filename", async (req, res, next) => {
   try { const filename = path.basename(req.params.filename); if (!filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Invalid backup." }); await fsp.rm(path.join(backupsDir, filename)); recordActivity(`Backup ${filename} deleted.`); res.status(204).end(); } catch (error) { next(error); }
 });
 function humanizeGatewayActivityError(message) { const text = String(message || "Unexpected gateway error"); if (/upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(text)) return "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; if (/upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(text)) return "Gateway configuration rejected: HTTPS upstream requires HTTPS transport settings. Change the upstream URL or transport setting."; if (/duplicate.*address|already.*site address/i.test(text)) return "Gateway configuration rejected: This hostname or address is already used by another host. Choose a unique hostname and port."; if (/dial tcp|no such host|lookup .* no such host|upstream.*(invalid|malformed)/i.test(text)) return "Gateway configuration rejected: The upstream address could not be reached or is invalid. Check the hostname, IP address, and port."; if (/invalid hostname|host name.*invalid|malformed.*host/i.test(text)) return "Gateway configuration rejected: The hostname is not valid. Use a valid domain name without a protocol or path."; if (/unrecognized directive|unknown directive|parsing caddyfile tokens/i.test(text)) return "Gateway configuration rejected: The gateway configuration contains an unsupported or malformed directive. Check the selected host settings."; if (/certificate|tls.*(config|handshake)|no certificate/i.test(text)) return "Gateway configuration rejected: The TLS certificate configuration is invalid or unavailable. Check the certificate, key, and HTTPS settings."; return text.replace(/^Gateway configuration was rejected:\s*/i, "Gateway configuration rejected: ").replace(/\s+Details:\s+[\s\S]*$/i, ""); }
-const GATEWAY_CONFIG_ROUTE = /^\/api\/(sites|proxies|redirects|access-lists)(\/|$)/i;
+const GATEWAY_CONFIG_ROUTE = /^\/api\/(sites|proxies|redirects|streams|access-lists)(\/|$)/i;
 app.use((error, req, res, next) => {
   console.error(error);
   const rawMessage = error.message || "Something went wrong.";
@@ -1518,6 +1712,7 @@ setInterval(() => importAccessLogsToSqlite(), 30000).unref();
 
 async function shutdown() {
   await Promise.all([...activeServers.keys()].map(stopSite));
+  await Promise.all([...activeStreams.keys()].map(stopStream));
   try { storage?.close(); } catch { /* Database may already be closed during restore. */ }
   process.exit(0);
 }
