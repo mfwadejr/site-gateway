@@ -289,6 +289,7 @@ function applyAdvancedSettings(item, body) {
   if (body.accessListId !== undefined) item.accessListId = String(body.accessListId || "");
   if (body.compression !== undefined) item.compression = ["off", "gzip", "automatic"].includes(body.compression) ? body.compression : "automatic";
   if (body.hstsSubdomains !== undefined) item.hstsSubdomains = Boolean(body.hstsSubdomains);
+  if (body.blockCommonExploits !== undefined) item.blockCommonExploits = Boolean(body.blockCommonExploits);
   if (body.requestHeaders !== undefined) item.requestHeaders = cleanHeaders(body.requestHeaders);
   if (body.responseHeaders !== undefined) item.responseHeaders = cleanHeaders(body.responseHeaders);
   if (body.upstreamTlsServerName !== undefined) item.upstreamTlsServerName = String(body.upstreamTlsServerName || "").trim().slice(0, 253);
@@ -339,8 +340,19 @@ function accessDirectives(accessListId) {
   return output;
 }
 
+// Static, general-purpose ruleset for the "Block common exploits" toggle — not a full WAF. Rejects
+// requests whose path matches common exploit-probe patterns before they reach the upstream: directory
+// traversal, WordPress/PHP admin and scanner paths, dotfile exposure attempts, and SQL-injection-style
+// query strings. One named matcher + one respond directive per host, so it's cheap to add or remove.
+const COMMON_EXPLOIT_PATTERN = String.raw`(?i)(\.\./|\.\.\\|/etc/passwd|/wp-login\.php|/wp-admin(?:/|$)|/xmlrpc\.php|/\.env(?:$|\?)|/\.git/|/\.aws/|/vendor/phpunit|/phpunit(?:/|$)|eval\(|base64_decode\(|union(?:\s|%20|\+)+select|<script)`;
+
+function exploitBlockDirectives(id) {
+  return [`  @blocked-exploit-${id} {`, `    path_regexp ${caddyQuote(COMMON_EXPLOIT_PATTERN)}`, "  }", `  respond @blocked-exploit-${id} 403`];
+}
+
 function commonHostDirectives(item) {
   const output = [...accessDirectives(item.accessListId)];
+  if (item.blockCommonExploits) output.push(...exploitBlockDirectives(item.id));
   if (item.compression !== "off") output.push(item.compression === "gzip" ? "  encode gzip" : "  encode zstd gzip");
   for (const header of item.responseHeaders || []) output.push(`  header ${header.name} ${caddyQuote(header.value)}`);
   if (item.hsts && item.tls !== "http") output.push(`  header Strict-Transport-Security ${caddyQuote(`max-age=31536000${item.hstsSubdomains ? "; includeSubDomains" : ""}`)}`);
