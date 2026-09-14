@@ -281,7 +281,8 @@ function renderPerformance() {
   $("#performance-sparkline").innerHTML = points.length ? `${gridLines}<path d="${areaPath}" fill="var(--green)" opacity="0.12" stroke="none" /><path d="${smoothLine}" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />` : "";
   if (!points.length) $("#performance-sparkline-labels").innerHTML = '<span class="axis-label" style="left:0;width:100%;top:45%;text-align:center">No request data for this window yet.</span>';
   const routes = data.routes || [];
-  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${route.hourRequests}</td><td>${route.dayRequests}</td><td>${route.dayErrors ? `<span class="http-status bad">${route.dayErrors}</span>` : "0"}</td><td>${route.dayAvgMs == null ? "—" : `${route.dayAvgMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No requests have been logged yet.</td></tr>';
+  const countCell = (count, errors) => `${count}${errors ? ` <span class="count-divider">·</span> <span class="http-status bad">${errors}</span>` : ""}`;
+  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${countCell(route.hourRequests, route.hourErrors)}</td><td>${countCell(route.dayRequests, route.dayErrors)}</td><td>${route.dayAvgMs == null ? "—" : `${route.dayAvgMs} ms`}</td></tr>`).join("") : '<tr><td colspan="4" class="quiet-state">No requests have been logged yet.</td></tr>';
   if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });
 }
 
