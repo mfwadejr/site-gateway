@@ -7,7 +7,7 @@
   <title>Site Gateway</title>
   <meta name="description" content="Host sites, proxy services, and manage HTTPS from one simple dashboard.">
   <link rel="icon" type="image/png" href="/site-gateway-icon-approved.png">
-  <link rel="stylesheet" href="/styles.css?v=0.11.77">
+  <link rel="stylesheet" href="/styles.css?v=0.11.78">
 </head>
 <body>
   <div id="login" class="login-shell hidden">
@@ -206,7 +206,7 @@
           <form id="account-password-form" class="settings-form">
             <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required></label>
             <label>New password<input name="newPassword" type="password" minlength="8" autocomplete="new-password" required></label>
-            <label>Confirm new password<input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></label>
+            <label style="grid-column:1/-1;max-width:calc(50% - 9px)">Confirm new password<input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></label>
             <p id="account-password-error" class="error" role="alert"></p>
             <div class="dialog-actions"><button class="button primary" type="submit">Change password</button></div>
           </form>

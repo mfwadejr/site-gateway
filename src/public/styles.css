@@ -284,3 +284,4 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .mfa-qr svg{width:200px;height:200px}
 .mfa-recovery-codes{background:#0a1423;border:1px solid var(--line);border-radius:10px;padding:16px;font-size:14px;line-height:1.8;letter-spacing:.02em;white-space:pre-wrap;user-select:all}
 @media(prefers-color-scheme:light){.mfa-recovery-codes{background:#f3f6fa}}
+#account-view>.dashboard-panel+.dashboard-panel{margin-top:18px}
