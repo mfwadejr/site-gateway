@@ -249,17 +249,36 @@ function renderPerformance() {
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   const xAt = index => left + (points.length > 1 ? (index / (points.length - 1)) * plotWidth : plotWidth);
   const yAt = count => top + plotHeight - (count / max) * plotHeight;
-  const gridLines = [0, 0.5, 1].map(fraction => {
+  const gridFractions = [0, 0.5, 1];
+  const gridLines = gridFractions.map(fraction => {
     const y = (top + plotHeight * (1 - fraction)).toFixed(1);
+    return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="var(--line)" stroke-width="1" />`;
+  }).join("");
+  const leftPct = (left / width) * 100, topPct = 0, plotHeightPct = (plotHeight / height) * 100, topInsetPct = (top / height) * 100;
+  const axisLabels = gridFractions.map(fraction => {
     const value = Math.round(max * fraction);
-    return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="var(--line)" stroke-width="1" /><text x="${left - 8}" y="${y}" text-anchor="end" dominant-baseline="middle" fill="var(--muted)" font-size="10">${value}</text>`;
+    const yPct = topInsetPct + plotHeightPct * (1 - fraction);
+    return `<span class="axis-label" style="left:0;width:${(leftPct - 2).toFixed(2)}%;top:${yPct.toFixed(2)}%;text-align:right">${value}</span>`;
   }).join("");
   const firstPoint = points[0], lastPoint = points[points.length - 1];
-  const timeLabels = points.length ? `<text x="${left}" y="${height - 4}" fill="var(--muted)" font-size="10">${escapeHtml(formatTime(firstPoint.at))}</text><text x="${width - right}" y="${height - 4}" text-anchor="end" fill="var(--muted)" font-size="10">${escapeHtml(formatTime(lastPoint.at))}</text>` : "";
-  const linePoints = points.map((point, index) => `${xAt(index).toFixed(1)},${yAt(point.count).toFixed(1)}`).join(" ");
-  const areaPath = points.length ? `M${xAt(0).toFixed(1)},${(top + plotHeight).toFixed(1)} L${linePoints.replaceAll(" ", " L")} L${xAt(points.length - 1).toFixed(1)},${(top + plotHeight).toFixed(1)} Z` : "";
+  const timeLabels = points.length ? `<span class="time-label" style="left:${leftPct.toFixed(2)}%">${escapeHtml(formatTime(firstPoint.at))}</span><span class="time-label time-label-end" style="left:${(100 - (right / width) * 100).toFixed(2)}%">${escapeHtml(formatTime(lastPoint.at))}</span>` : "";
+  $("#performance-sparkline-labels").innerHTML = points.length ? `${axisLabels}${timeLabels}` : "";
+  const coords = points.map((point, index) => [xAt(index), yAt(point.count)]);
+  const smoothLine = coords.length < 2 ? "" : coords.reduce((d, point, index) => {
+    if (index === 0) return `M${point[0].toFixed(1)},${point[1].toFixed(1)}`;
+    const p0 = coords[index - 2 >= 0 ? index - 2 : index - 1];
+    const p1 = coords[index - 1];
+    const p2 = point;
+    const p3 = coords[index + 1] || point;
+    const cp1x = p1[0] + (p2[0] - p0[0]) / 6, cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const cp2x = p2[0] - (p3[0] - p1[0]) / 6, cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+    return `${d} C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }, "");
+  const baseline = (top + plotHeight).toFixed(1);
+  const areaPath = coords.length ? `${smoothLine} L${coords[coords.length - 1][0].toFixed(1)},${baseline} L${coords[0][0].toFixed(1)},${baseline} Z` : "";
   $("#performance-sparkline").setAttribute("viewBox", `0 0 ${width} ${height}`);
-  $("#performance-sparkline").innerHTML = points.length ? `${gridLines}<path d="${areaPath}" fill="var(--green)" opacity="0.12" stroke="none" /><polyline points="${linePoints}" fill="none" stroke="var(--green)" stroke-width="2" />${timeLabels}` : '<text x="10" y="70" fill="var(--muted)" font-size="12">No request data for this window yet.</text>';
+  $("#performance-sparkline").innerHTML = points.length ? `${gridLines}<path d="${areaPath}" fill="var(--green)" opacity="0.12" stroke="none" /><path d="${smoothLine}" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />` : "";
+  if (!points.length) $("#performance-sparkline-labels").innerHTML = '<span class="axis-label" style="left:0;width:100%;top:45%;text-align:center">No request data for this window yet.</span>';
   const routes = data.routes || [];
   $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${route.hourRequests}</td><td>${route.dayRequests}</td><td>${route.dayErrors ? `<span class="http-status bad">${route.dayErrors}</span>` : "0"}</td><td>${route.dayAvgMs == null ? "—" : `${route.dayAvgMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No requests have been logged yet.</td></tr>';
   if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });

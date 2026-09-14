@@ -145,7 +145,10 @@
         <p id="performance-summary" class="muted feature-note">No requests recorded yet. <span id="performance-last-checked">Not checked yet.</span></p>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Trend</p><h2 id="performance-trend-title">Requests · last 6 hours</h2></div></div>
-          <svg id="performance-sparkline" class="performance-sparkline" viewBox="0 0 600 140" preserveAspectRatio="none" aria-label="Request volume trend"></svg>
+          <div class="performance-sparkline-wrap">
+            <svg id="performance-sparkline" class="performance-sparkline" viewBox="0 0 600 140" preserveAspectRatio="none" aria-label="Request volume trend"></svg>
+            <div id="performance-sparkline-labels" class="performance-sparkline-labels"></div>
+          </div>
         </section>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Per-route</p><h2>Throughput by domain</h2></div></div>
