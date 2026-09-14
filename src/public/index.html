@@ -145,10 +145,13 @@
         <p id="performance-summary" class="muted feature-note">No requests recorded yet. <span id="performance-last-checked">Not checked yet.</span></p>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Trend</p><h2 id="performance-trend-title">Requests · last 6 hours</h2></div></div>
-          <svg id="performance-sparkline" class="performance-sparkline" viewBox="0 0 600 120" preserveAspectRatio="none" aria-label="Request volume trend"></svg>
+          <svg id="performance-sparkline" class="performance-sparkline" viewBox="0 0 600 140" aria-label="Request volume trend"></svg>
         </section>
-        <div class="diagnostic-section-heading"><p class="eyebrow">Per-route</p><h2>Throughput by domain</h2><p class="muted">Requests, error rate, and average response time for each configured domain.</p></div>
-        <div class="table-wrap diagnostic-list"><table class="log-table performance-table"><thead><tr><th>Domain</th><th>Last hour</th><th>Last 24h</th><th>Errors (24h)</th><th>Avg. response</th></tr></thead><tbody id="performance-rows"></tbody></table></div>
+        <section class="dashboard-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Per-route</p><h2>Throughput by domain</h2></div></div>
+          <p class="muted feature-note">Requests, error rate, and average response time for each configured domain.</p>
+          <div class="table-wrap performance-table-wrap"><table class="performance-table"><thead><tr><th>Domain</th><th>Last hour</th><th>Last 24h</th><th>Errors (24h)</th><th>Avg. response</th></tr></thead><tbody id="performance-rows"></tbody></table></div>
+        </section>
       </section>
       <section id="users-view" class="feature-view hidden">
         <div class="admin-tabs"><button class="tab-active" data-admin-tab="users">Users</button><button data-admin-tab="defaults">Gateway defaults</button><button data-admin-tab="backups">Backup & restore</button><button data-admin-tab="security">Security & updates</button><button data-admin-tab="danger" class="danger-tab">Danger Zone</button></div>

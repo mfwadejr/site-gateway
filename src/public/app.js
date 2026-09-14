@@ -245,11 +245,23 @@ function renderPerformance() {
   $("#performance-trend-title").textContent = `Requests · last 6 hours${selected ? ` · ${selected}` : ""}`;
   const points = data.trend || [];
   const max = Math.max(1, ...points.map(point => point.count));
-  const stepX = points.length > 1 ? 600 / (points.length - 1) : 600;
-  const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${(index * stepX).toFixed(1)},${(120 - (point.count / max) * 110 - 4).toFixed(1)}`).join(" ");
-  $("#performance-sparkline").innerHTML = points.length ? `<polyline points="${points.map((point, index) => `${(index * stepX).toFixed(1)},${(120 - (point.count / max) * 110 - 4).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--green)" stroke-width="2" /><path d="${path} L${(600).toFixed(1)},120 L0,120 Z" fill="var(--green)" opacity="0.12" stroke="none" />` : "";
+  const left = 34, right = 8, top = 10, bottom = 20, width = 600, height = 140;
+  const plotWidth = width - left - right, plotHeight = height - top - bottom;
+  const xAt = index => left + (points.length > 1 ? (index / (points.length - 1)) * plotWidth : plotWidth);
+  const yAt = count => top + plotHeight - (count / max) * plotHeight;
+  const gridLines = [0, 0.5, 1].map(fraction => {
+    const y = (top + plotHeight * (1 - fraction)).toFixed(1);
+    const value = Math.round(max * fraction);
+    return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="var(--line)" stroke-width="1" /><text x="${left - 8}" y="${y}" text-anchor="end" dominant-baseline="middle" fill="var(--muted)" font-size="10">${value}</text>`;
+  }).join("");
+  const firstPoint = points[0], lastPoint = points[points.length - 1];
+  const timeLabels = points.length ? `<text x="${left}" y="${height - 4}" fill="var(--muted)" font-size="10">${escapeHtml(formatTime(firstPoint.at))}</text><text x="${width - right}" y="${height - 4}" text-anchor="end" fill="var(--muted)" font-size="10">${escapeHtml(formatTime(lastPoint.at))}</text>` : "";
+  const linePoints = points.map((point, index) => `${xAt(index).toFixed(1)},${yAt(point.count).toFixed(1)}`).join(" ");
+  const areaPath = points.length ? `M${xAt(0).toFixed(1)},${(top + plotHeight).toFixed(1)} L${linePoints.replaceAll(" ", " L")} L${xAt(points.length - 1).toFixed(1)},${(top + plotHeight).toFixed(1)} Z` : "";
+  $("#performance-sparkline").setAttribute("viewBox", `0 0 ${width} ${height}`);
+  $("#performance-sparkline").innerHTML = points.length ? `${gridLines}<path d="${areaPath}" fill="var(--green)" opacity="0.12" stroke="none" /><polyline points="${linePoints}" fill="none" stroke="var(--green)" stroke-width="2" />${timeLabels}` : '<text x="10" y="70" fill="var(--muted)" font-size="12">No request data for this window yet.</text>';
   const routes = data.routes || [];
-  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td>${escapeHtml(route.host)}</td><td>${route.hourRequests}</td><td>${route.dayRequests}</td><td>${route.dayErrors ? `<span class="http-status bad">${route.dayErrors}</span>` : "0"}</td><td>${route.dayAvgMs == null ? "—" : `${route.dayAvgMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No requests have been logged yet.</td></tr>';
+  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${route.hourRequests}</td><td>${route.dayRequests}</td><td>${route.dayErrors ? `<span class="http-status bad">${route.dayErrors}</span>` : "0"}</td><td>${route.dayAvgMs == null ? "—" : `${route.dayAvgMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No requests have been logged yet.</td></tr>';
   if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });
 }
 
