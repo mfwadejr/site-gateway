@@ -393,7 +393,7 @@ function renderCaddyfile() {
   else if (defaultSite.mode === "redirect" && defaultSite.redirectUrl) lines.push(`  redir ${caddyQuote(`${defaultSite.redirectUrl}${defaultSite.preservePath ? "{uri}" : ""}`)} ${[301, 302, 307, 308].includes(Number(defaultSite.redirectCode)) ? Number(defaultSite.redirectCode) : 302}`);
   else lines.push(`  root * ${defaultSiteDir}`, "  rewrite * /index.html", `  file_server {`, `    status ${defaultSite.mode === "welcome" ? 200 : 404}`, "  }");
   lines.push("}");
-  for (const site of sites.filter(item => item.enabled && item.domain)) {
+  for (const site of sites.filter(item => item.enabled && normalizeDomains(item.domain, item.domains).length)) {
     lines.push("", `${caddySiteAddress(site)} {`, ...logging, ...commonHostDirectives(site), `  root * ${path.join(sitesDir, site.id)}`, "  file_server");
     lines.push("}");
   }
