@@ -122,6 +122,14 @@ export async function openStorage(dataDir, backupsDir) {
       GROUP BY host ORDER BY dayRequests DESC
     `).all(hourCutoff, hourCutoff, hourCutoff, instanceId, dayCutoff);
   }
+  function performanceErrorBreakdown(instanceId = LOCAL_INSTANCE_ID) {
+    const dayCutoff = new Date(Date.now() - 86400000).toISOString();
+    return db.prepare(`
+      SELECT host, status, COUNT(*) AS count
+      FROM access_events WHERE instance_id=? AND at>=? AND status>=400 AND host IS NOT NULL AND host!=''
+      GROUP BY host, status ORDER BY count DESC
+    `).all(instanceId, dayCutoff);
+  }
   function performanceTrend(host = "", hours = 6, bucketMinutes = 15, instanceId = LOCAL_INSTANCE_ID) {
     const bucketMs = Math.max(1, Number(bucketMinutes) || 15) * 60000;
     const windowMs = Math.max(1, Number(hours) || 6) * 3600000;
@@ -162,5 +170,5 @@ export async function openStorage(dataDir, backupsDir) {
   }
   function humanizeGatewayErrors(instanceId = LOCAL_INSTANCE_ID) { const friendly = "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; const activity = db.prepare("SELECT id FROM activity_events WHERE instance_id=? AND message LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const updateActivity = db.prepare("UPDATE activity_events SET message=? WHERE id=?"); for (const row of activity) updateActivity.run(friendly, row.id); const audit = db.prepare("SELECT id FROM audit_events WHERE instance_id=? AND action LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const updateAudit = db.prepare("UPDATE audit_events SET action=? WHERE id=?"); for (const row of audit) updateAudit.run(friendly, row.id); return activity.length + audit.length; }
   const result = integrity(); if (result.length !== 1 || result[0] !== "ok") { db.close(); throw new Error(`SQLite integrity check failed: ${result.join(", ")}`); }
-  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, performanceLiveCount, performanceRoutes, performanceTrend, close: () => db.close() };
+  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, performanceLiveCount, performanceRoutes, performanceErrorBreakdown, performanceTrend, close: () => db.close() };
 }

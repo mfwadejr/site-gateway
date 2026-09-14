@@ -1223,10 +1223,12 @@ app.get("/api/performance", (req, res, next) => {
     const host = normalizeDomain(req.query.host);
     const hours = Math.min(Math.max(Number.parseInt(req.query.hours, 10) || 6, 1), 168);
     const bucketMinutes = hours > 24 ? 60 : 15;
+    const breakdownByHost = new Map();
+    for (const row of storage.performanceErrorBreakdown()) { if (!breakdownByHost.has(row.host)) breakdownByHost.set(row.host, []); breakdownByHost.get(row.host).push({ status: row.status, count: row.count }); }
     res.json({
       checkedAt: new Date().toISOString(),
       liveRequests: storage.performanceLiveCount(60),
-      routes: storage.performanceRoutes().map(row => ({ host: row.host, hourRequests: row.hourRequests || 0, hourErrors: row.hourErrors || 0, hourAvgMs: row.hourAvgMs != null ? Math.round(row.hourAvgMs) : null, dayRequests: row.dayRequests || 0, dayErrors: row.dayErrors || 0, dayAvgMs: row.dayAvgMs != null ? Math.round(row.dayAvgMs) : null })),
+      routes: storage.performanceRoutes().map(row => ({ host: row.host, hourRequests: row.hourRequests || 0, hourErrors: row.hourErrors || 0, hourAvgMs: row.hourAvgMs != null ? Math.round(row.hourAvgMs) : null, dayRequests: row.dayRequests || 0, dayErrors: row.dayErrors || 0, dayAvgMs: row.dayAvgMs != null ? Math.round(row.dayAvgMs) : null, errorBreakdown: (breakdownByHost.get(row.host) || []).slice(0, 3) })),
       trend: storage.performanceTrend(host, hours, bucketMinutes),
       hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort()
     });
