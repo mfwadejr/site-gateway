@@ -12,7 +12,9 @@ import { promisify } from "node:util";
 import AdmZip from "adm-zip";
 import express from "express";
 import multer from "multer";
+import QRCode from "qrcode";
 import { LOCAL_INSTANCE_ID, openStorage } from "./storage.js";
+import { generateTotpSecret, verifyTotp, otpauthUri, generateRecoveryCodes } from "./totp.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
@@ -111,8 +113,8 @@ async function passwordMatches(password, record) {
 }
 
 function publicUser(user) {
-  const { password, sessionVersion, ...safe } = user;
-  return safe;
+  const { password, sessionVersion, mfaSecret, mfaPendingSecret, mfaRecoveryCodes, ...safe } = user;
+  return { ...safe, mfaEnabled: Boolean(user.mfaEnabled) };
 }
 
 function activeAdministrators() {
@@ -193,6 +195,8 @@ async function loadSites() {
   for (const user of users) {
     if (user.setupRequired === undefined) { user.setupRequired = false; usersChanged = true; }
     if (!user.sessionVersion) { user.sessionVersion = crypto.randomBytes(16).toString("hex"); usersChanged = true; }
+    if (user.mfaEnabled === undefined) { user.mfaEnabled = false; usersChanged = true; }
+    if (!Array.isArray(user.mfaRecoveryCodes)) { user.mfaRecoveryCodes = []; usersChanged = true; }
   }
   if (usersChanged) await saveUsers();
   redirects = storage.loadCollection("redirects");
@@ -1045,11 +1049,34 @@ app.get("/api/session", (req, res) => {
   const user = sessionUser(req);
   res.json({ authenticated: Boolean(user), setupRequired: Boolean(user?.setupRequired), installationSetupPending: users.some(item => item.setupRequired), user: user ? publicUser(user) : null, username: user?.username || null });
 });
+function checkLoginRateLimit(key) {
+  const attempt = loginAttempts.get(key) || { count: 0, resetAt: Date.now() + 15 * 60 * 1000 };
+  if (attempt.resetAt <= Date.now()) { attempt.count = 0; attempt.resetAt = Date.now() + 15 * 60 * 1000; }
+  return attempt;
+}
+function issueSessionCookie(res, user) {
+  if (!user.sessionVersion) user.sessionVersion = crypto.randomBytes(16).toString("hex");
+  const expires = String(Date.now() + 12 * 60 * 60 * 1000);
+  const value = `${user.id}.${expires}.${user.sessionVersion}`;
+  res.setHeader("Set-Cookie", [`webserver_session=${value}.${sign(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200`, "pending_mfa=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"]);
+}
+function issuePendingMfaCookie(res, user) {
+  const expires = String(Date.now() + 5 * 60 * 1000);
+  const value = `${user.id}.${expires}.mfa`;
+  res.setHeader("Set-Cookie", `pending_mfa=${value}.${sign(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=300`);
+}
+function pendingMfaUser(req) {
+  const token = cookieMap(req.headers.cookie).pending_mfa;
+  if (!token) return null;
+  const [userId, expires, marker, signature] = token.split(".");
+  const user = users.find(item => item.id === userId && item.status === "active");
+  if (!user || marker !== "mfa" || !expires || Number(expires) <= Date.now() || !safeEqual(signature || "", sign(`${userId}.${expires}.${marker}`))) return null;
+  return user;
+}
 app.post("/api/login", async (req, res, next) => {
   try {
     const key = req.ip || req.socket.remoteAddress || "unknown";
-    const attempt = loginAttempts.get(key) || { count: 0, resetAt: Date.now() + 15 * 60 * 1000 };
-    if (attempt.resetAt <= Date.now()) { attempt.count = 0; attempt.resetAt = Date.now() + 15 * 60 * 1000; }
+    const attempt = checkLoginRateLimit(key);
     if (attempt.count >= 8) { recordActivity(`Security: sign-in rate limit reached for ${key}.`, "error"); return res.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." }); }
     const username = String(req.body.username || "").trim().toLowerCase();
     const user = users.find(item => item.username === username);
@@ -1058,11 +1085,36 @@ app.post("/api/login", async (req, res, next) => {
       return res.status(401).json({ error: "Incorrect username or password." });
     }
     loginAttempts.delete(key);
+    if (user.mfaEnabled) { issuePendingMfaCookie(res, user); return res.json({ mfaRequired: true }); }
     user.lastLoginAt = new Date().toISOString(); user.updatedAt = user.lastLoginAt; await saveUsers();
-    if (!user.sessionVersion) user.sessionVersion = crypto.randomBytes(16).toString("hex");
-    const expires = String(Date.now() + 12 * 60 * 60 * 1000);
-    const value = `${user.id}.${expires}.${user.sessionVersion}`;
-    res.setHeader("Set-Cookie", `webserver_session=${value}.${sign(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200`);
+    issueSessionCookie(res, user);
+    res.json({ ok: true, user: publicUser(user) });
+  } catch (error) { next(error); }
+});
+app.post("/api/login/mfa", async (req, res, next) => {
+  try {
+    const key = req.ip || req.socket.remoteAddress || "unknown";
+    const attempt = checkLoginRateLimit(key);
+    if (attempt.count >= 8) { recordActivity(`Security: sign-in rate limit reached for ${key}.`, "error"); return res.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." }); }
+    const user = pendingMfaUser(req);
+    if (!user || !user.mfaEnabled) { attempt.count += 1; loginAttempts.set(key, attempt); return res.status(401).json({ error: "Your sign-in session expired. Please sign in again." }); }
+    const code = String(req.body.code || "").trim();
+    let matchedRecoveryCode = null;
+    const isValidTotp = verifyTotp(user.mfaSecret, code);
+    if (!isValidTotp) {
+      for (const entry of user.mfaRecoveryCodes || []) {
+        if (entry.usedAt) continue;
+        if (await passwordMatches(code, entry.hash)) { matchedRecoveryCode = entry; break; }
+      }
+    }
+    if (!isValidTotp && !matchedRecoveryCode) {
+      attempt.count += 1; loginAttempts.set(key, attempt); recordActivity(`Security: failed two-factor code for “${user.username}”.`, "error");
+      return res.status(401).json({ error: "That code didn't match. Try again." });
+    }
+    loginAttempts.delete(key);
+    if (matchedRecoveryCode) { matchedRecoveryCode.usedAt = new Date().toISOString(); recordActivity(`User “${user.username}” signed in using a two-factor recovery code.`); }
+    user.lastLoginAt = new Date().toISOString(); user.updatedAt = user.lastLoginAt; await saveUsers();
+    issueSessionCookie(res, user);
     res.json({ ok: true, user: publicUser(user) });
   } catch (error) { next(error); }
 });
@@ -1124,7 +1176,65 @@ app.post("/api/setup/admin", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.use("/api", (req, res, next) => { currentAuditActor = req.user?.id || null; return req.user.setupRequired ? res.status(428).json({ error: "Complete the initial administrator setup before continuing." }) : next(); });
-app.use("/api", (req, res, next) => { if (req.method === "GET" || req.user.role === "administrator") return next(); const operational = /^\/(sites|proxies|redirects|streams|access-lists)(\/|$)/.test(req.path); if (req.user.role === "standard" && operational) return next(); return res.status(403).json({ error: "Administrator access is required for this action." }); });
+app.use("/api", (req, res, next) => { if (req.path.startsWith("/account/")) return next(); if (req.method === "GET" || req.user.role === "administrator") return next(); const operational = /^\/(sites|proxies|redirects|streams|access-lists)(\/|$)/.test(req.path); if (req.user.role === "standard" && operational) return next(); return res.status(403).json({ error: "Administrator access is required for this action." }); });
+app.post("/api/account/password", async (req, res, next) => {
+  try {
+    const currentPassword = String(req.body.currentPassword || "");
+    const newPassword = String(req.body.newPassword || "");
+    if (!await passwordMatches(currentPassword, req.user.password)) return res.status(400).json({ error: "Your current password is incorrect." });
+    if (newPassword.length < 8) return res.status(400).json({ error: "New password must contain at least 8 characters." });
+    req.user.password = await passwordRecord(newPassword);
+    req.user.updatedAt = new Date().toISOString();
+    await saveUsers(); recordActivity(`User “${req.user.username}” changed their password.`);
+    issueSessionCookie(res, req.user);
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+app.post("/api/account/mfa/setup", async (req, res, next) => {
+  try {
+    if (req.user.mfaEnabled) return res.status(409).json({ error: "Two-factor authentication is already enabled. Disable it first to start over." });
+    const secret = generateTotpSecret();
+    req.user.mfaPendingSecret = secret;
+    await saveUsers();
+    const uri = otpauthUri({ secret, username: req.user.username });
+    const qrSvg = await QRCode.toString(uri, { type: "svg", margin: 1, width: 220 });
+    res.json({ secret, otpauthUri: uri, qrSvg });
+  } catch (error) { next(error); }
+});
+app.post("/api/account/mfa/confirm", async (req, res, next) => {
+  try {
+    if (!req.user.mfaPendingSecret) return res.status(400).json({ error: "Start two-factor setup before confirming a code." });
+    if (!verifyTotp(req.user.mfaPendingSecret, req.body.code)) return res.status(400).json({ error: "That code didn't match. Try again." });
+    req.user.mfaSecret = req.user.mfaPendingSecret;
+    req.user.mfaPendingSecret = null;
+    req.user.mfaEnabled = true;
+    const codes = generateRecoveryCodes(10);
+    req.user.mfaRecoveryCodes = await Promise.all(codes.map(async code => ({ hash: await passwordRecord(code), usedAt: null })));
+    req.user.updatedAt = new Date().toISOString();
+    await saveUsers(); recordActivity(`User “${req.user.username}” enabled two-factor authentication.`);
+    res.json({ ok: true, recoveryCodes: codes });
+  } catch (error) { next(error); }
+});
+app.post("/api/account/mfa/disable", async (req, res, next) => {
+  try {
+    if (!await passwordMatches(req.body.password || "", req.user.password)) return res.status(400).json({ error: "Your current password is incorrect." });
+    req.user.mfaEnabled = false; req.user.mfaSecret = null; req.user.mfaPendingSecret = null; req.user.mfaRecoveryCodes = [];
+    req.user.updatedAt = new Date().toISOString();
+    await saveUsers(); recordActivity(`User “${req.user.username}” disabled two-factor authentication.`, "warning");
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
+  try {
+    if (!req.user.mfaEnabled) return res.status(400).json({ error: "Two-factor authentication isn't enabled." });
+    if (!await passwordMatches(req.body.password || "", req.user.password)) return res.status(400).json({ error: "Your current password is incorrect." });
+    const codes = generateRecoveryCodes(10);
+    req.user.mfaRecoveryCodes = await Promise.all(codes.map(async code => ({ hash: await passwordRecord(code), usedAt: null })));
+    req.user.updatedAt = new Date().toISOString();
+    await saveUsers(); recordActivity(`User “${req.user.username}” regenerated two-factor recovery codes.`);
+    res.json({ ok: true, recoveryCodes: codes });
+  } catch (error) { next(error); }
+});
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError } }));
 app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/audit", (req, res) => req.user.role === "administrator" ? res.json(storage.listAudit({ user: req.query.user, action: req.query.action, status: req.query.status }).map(item => ({ ...item, actor: users.find(user => user.id === item.actor_id)?.username || "System" }))) : res.status(403).json({ error: "Administrator access is required." }));

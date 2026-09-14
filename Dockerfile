@@ -5,7 +5,7 @@ FROM node:22-alpine
 WORKDIR /app
 RUN apk add --no-cache libcap-setcap su-exec tini && corepack enable
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod --no-frozen-lockfile
 COPY src ./src
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

@@ -7,7 +7,7 @@
   <title>Site Gateway</title>
   <meta name="description" content="Host sites, proxy services, and manage HTTPS from one simple dashboard.">
   <link rel="icon" type="image/png" href="/site-gateway-icon-approved.png">
-  <link rel="stylesheet" href="/styles.css?v=0.11.75">
+  <link rel="stylesheet" href="/styles.css?v=0.11.77">
 </head>
 <body>
   <div id="login" class="login-shell hidden">
@@ -23,6 +23,19 @@
       <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
       <p id="login-error" class="error" role="alert"></p>
       <button class="button primary wide">Sign in</button>
+    </form>
+    <form id="mfa-login-form" class="login-card hidden">
+      <div class="brand-stack">
+        <img class="brand-icon-lg" src="/site-gateway-icon-approved.png" alt="">
+        <img class="brand-wordmark-lg" src="/site-gateway-wordmark-approved.png" alt="Site Gateway">
+      </div>
+      <p class="eyebrow">Two-factor authentication</p>
+      <h1>Enter your code</h1>
+      <p class="muted">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
+      <label>Code<input name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="11" required autofocus></label>
+      <p id="mfa-login-error" class="error" role="alert"></p>
+      <button class="button primary wide">Verify</button>
+      <button type="button" id="mfa-login-cancel" class="button secondary wide">Back to sign in</button>
     </form>
   </div>
 
@@ -58,7 +71,7 @@
         <button data-view="performance">Performance</button>
         <button data-view="logs">Logs</button>
       </nav>
-      <div class="aside-utilities"><button class="admin-only" data-view="administration">Administration</button><button data-view="documentation">Documentation</button></div>
+      <div class="aside-utilities"><button class="admin-only" data-view="administration">Administration</button><button data-view="account">My Account</button><button data-view="documentation">Documentation</button></div>
       <div class="aside-footer"><span>Installed version</span><strong id="version-label">v—</strong></div>
     </aside>
     <main>
@@ -74,7 +87,7 @@
         <button data-view="certificates">TLS</button>
         <button data-view="performance">Perf</button>
         <button data-view="logs">Logs</button>
-        <button class="admin-only" data-view="administration">Admin</button><button data-view="documentation">Docs</button>
+        <button class="admin-only" data-view="administration">Admin</button><button data-view="account">Account</button><button data-view="documentation">Docs</button>
       </nav>
       <header>
         <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Dashboard</h1><p id="page-subtitle" class="muted">Health, activity, and system status at a glance.</p></div>
@@ -179,6 +192,67 @@
         <section data-admin-panel="security" class="hidden settings-panel"><h2>Security, health & updates</h2><section class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Reliability</p><h2>Configuration safety & updates</h2></div></div><dl class="system-grid"><div class="system-tile"><dt>Configuration safety</dt><dd>Validates generated Caddy configuration before every reload and retains the active configuration when validation fails.</dd></div><div class="system-tile"><dt>Container updates</dt><dd>Installed by pulling a new pinned image. Create a backup before changing versions.</dd></div></dl></section><section class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Troubleshooting & support</p><h2>Gateway diagnostics</h2><p class="muted">Run checks and download a redacted report when you need to investigate a gateway issue.</p></div><button id="download-support" class="button secondary admin-only">Download support report</button></div><p class="muted feature-note">The report includes version, configuration health, certificate readiness, upstream checks, and recent events. Passwords, private keys, session secrets, cookies, and certificate contents are excluded.</p></section><form id="health-settings-form" class="settings-form"><label>Renewing-soon warning<input name="warningDays" type="number" min="8" max="120" value="30"><small>Days remaining before a certificate is highlighted.</small></label><label>Critical warning<input name="criticalDays" type="number" min="1" max="119" value="7"><small>Must be lower than the renewing-soon threshold.</small></label><label>Stale health data<input name="staleMinutes" type="number" min="2" max="1440" value="10"><small>Minutes before a displayed check is considered old.</small></label><div class="dialog-actions"><button class="button primary">Save health settings</button></div></form></section>
         <section data-admin-panel="danger" class="hidden settings-panel danger-zone"><h2>Danger Zone</h2><p class="muted">These actions can permanently remove Site Gateway data. Review each warning carefully before continuing.</p><div class="danger-card"><p class="eyebrow">Restore defaults</p><h3>Reset gateway preferences</h3><p>Restore default site behavior, backup scheduling, certificate thresholds, and interface preferences. Your users, routes, certificates, logs, and backups remain intact.</p><button id="restore-defaults" class="button secondary">Restore default settings</button></div><div class="danger-card destructive"><p class="eyebrow">Permanent action</p><h3>Factory reset</h3><p>Deletes all Site Gateway data under <code>/data</code>, including users, routes, certificates, logs, backups, and settings. Docker-mounted files outside <code>/data</code> are not affected. The container restarts at first-install setup.</p><form id="factory-reset-form" class="danger-form"><label>Administrator username<input name="username" autocomplete="username" required></label><label>Administrator password<input name="password" type="password" autocomplete="current-password" required></label><label>Type <strong>FACTORY RESET</strong> to confirm<input name="confirmation" required autocomplete="off"></label><p id="factory-reset-error" class="error"></p><div class="danger-actions"><button class="button secondary" type="button" id="factory-reset-cancel">Cancel</button><button class="button danger" type="submit">Erase all data and reset</button></div></form></div></section>
       </section>
+      <section id="account-view" class="feature-view hidden">
+        <section class="dashboard-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Profile</p><h2>Your account</h2></div></div>
+          <dl class="system-grid">
+            <div class="system-tile"><dt>Display name</dt><dd id="account-display-name">—</dd></div>
+            <div class="system-tile"><dt>Username</dt><dd id="account-username">—</dd></div>
+            <div class="system-tile"><dt>Role</dt><dd id="account-role">—</dd></div>
+          </dl>
+        </section>
+        <section class="dashboard-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Password</p><h2>Change your password</h2></div></div>
+          <form id="account-password-form" class="settings-form">
+            <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required></label>
+            <label>New password<input name="newPassword" type="password" minlength="8" autocomplete="new-password" required></label>
+            <label>Confirm new password<input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></label>
+            <p id="account-password-error" class="error" role="alert"></p>
+            <div class="dialog-actions"><button class="button primary" type="submit">Change password</button></div>
+          </form>
+        </section>
+        <section class="dashboard-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Security</p><h2>Two-factor authentication</h2></div><span id="account-mfa-status" class="status-pill"><span class="status-dot inactive"></span>Off</span></div>
+          <p class="muted feature-note">Require a 6-digit code from an authenticator app, in addition to your password, when signing in.</p>
+          <div id="account-mfa-actions" class="dialog-actions">
+            <button id="account-mfa-enable" class="button primary">Enable two-factor authentication</button>
+            <button id="account-mfa-disable" class="button secondary danger-text hidden">Disable two-factor authentication</button>
+            <button id="account-mfa-recovery" class="button secondary hidden">Regenerate recovery codes</button>
+          </div>
+        </section>
+      </section>
+      <dialog id="mfa-setup-dialog" class="setup-dialog">
+        <div class="dialog-card">
+          <p class="eyebrow">Two-factor authentication</p>
+          <h1>Scan this code</h1>
+          <p class="muted">Scan with an authenticator app (Google Authenticator, 1Password, Authy, etc.), or enter the key manually.</p>
+          <div id="mfa-setup-qr" class="mfa-qr"></div>
+          <p class="muted">Manual entry key: <code id="mfa-setup-secret"></code></p>
+          <form id="mfa-setup-confirm-form">
+            <label>Enter the 6-digit code to confirm<input name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="6" required></label>
+            <p id="mfa-setup-error" class="error" role="alert"></p>
+            <div class="dialog-actions"><button type="button" id="mfa-setup-cancel" class="button secondary">Cancel</button><button class="button primary" type="submit">Confirm and enable</button></div>
+          </form>
+        </div>
+      </dialog>
+      <dialog id="mfa-password-dialog" class="setup-dialog">
+        <form id="mfa-password-form" class="dialog-card">
+          <p class="eyebrow" id="mfa-password-title">Confirm your password</p>
+          <h1 id="mfa-password-heading">Confirm it's you</h1>
+          <label>Current password<input name="password" type="password" autocomplete="current-password" required></label>
+          <p id="mfa-password-error" class="error" role="alert"></p>
+          <div class="dialog-actions"><button type="button" id="mfa-password-cancel" class="button secondary">Cancel</button><button class="button primary" type="submit">Continue</button></div>
+        </form>
+      </dialog>
+      <dialog id="mfa-recovery-dialog" class="setup-dialog">
+        <div class="dialog-card">
+          <p class="eyebrow">Save these now</p>
+          <h1>Your recovery codes</h1>
+          <p class="muted">Each code can be used once to sign in if you lose access to your authenticator app. Store them somewhere safe — they won't be shown again.</p>
+          <pre id="mfa-recovery-codes" class="mfa-recovery-codes"></pre>
+          <div class="dialog-actions"><button type="button" id="mfa-recovery-done" class="button primary">I've saved these codes</button></div>
+        </div>
+      </dialog>
       <section id="management-summary" class="summary hidden" aria-label="Site summary"><div><span id="running-dot" class="status-dot inactive"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div><div><span id="disabled-dot" class="status-dot inactive"></span><strong id="disabled-count">0</strong><span id="disabled-label">No disabled sites</span></div><div><span id="error-dot" class="status-dot inactive"></span><strong id="error-count">0</strong><span id="error-label">No issues</span></div><div class="port-note">Ports <strong id="port-range">9000–9099</strong></div></section>
       <section id="streaming-view" class="feature-view hidden"><div id="stream-list" class="site-grid"></div><section id="stream-empty" class="empty hidden"><div class="empty-icon">⇄</div><h2>Create your first streaming host</h2><p>Forward raw TCP or UDP traffic on a specific port straight to another host and port — no domain, no HTTPS.</p><button class="button primary create-trigger">Create a streaming host</button></section></section>
       <section id="redirects-view" class="feature-view hidden"><div id="redirect-list" class="site-grid"></div><section id="redirect-empty" class="empty hidden"><div class="empty-icon">↪</div><h2>Create your first redirect</h2><p>Send an old domain to a new destination while preserving its path if you choose.</p><button class="button primary create-trigger">Create a redirect host</button></section></section>
@@ -283,6 +357,6 @@
   </dialog>
   <input id="replace-files" type="file" accept=".zip,.html,text/html,application/zip" hidden>
   <div id="toast" class="toast" role="status"></div>
-  <script src="/app.js?v=0.11.75" defer></script><script src="/features.js?v=0.11.75" defer></script>
+  <script src="/app.js?v=0.11.77" defer></script><script src="/features.js?v=0.11.77" defer></script>
 </body>
 </html>

@@ -24,7 +24,7 @@ async function api(url, options = {}) {
   if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Request failed."); }
   return response.status === 204 ? null : response.json();
 }
-function showLogin(message = "") { state.user = null; state.users = []; state.view = "overview"; const form = $("#login-form"); form.reset(); form.elements.username.value = ""; form.elements.password.value = ""; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; }
+function showLogin(message = "") { state.user = null; state.users = []; state.view = "overview"; const form = $("#login-form"); form.reset(); form.elements.username.value = ""; form.elements.password.value = ""; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; $("#mfa-login-form").reset(); $("#mfa-login-form").classList.add("hidden"); $("#login-form").classList.remove("hidden"); $("#mfa-login-error").textContent = ""; }
 function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); }
 function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
@@ -315,6 +315,19 @@ function renderUsers() {
   document.querySelectorAll("#user-list .user-card").forEach(card => { const user = state.users.find(item => item.id === card.dataset.userId); const old = card.querySelector('[data-user-action="role"]'); if (!user || !old) return; const select = document.createElement("select"); select.className = "user-role-select"; select.setAttribute("aria-label", `Role for ${user.username}`); select.innerHTML = '<option value="administrator">Administrator</option><option value="standard">Standard User</option><option value="viewer">Viewer</option>'; select.value = user.role; select.addEventListener("change", async () => { try { await api(`/api/users/${user.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ role:select.value }) }); await loadFeatureView(); toast("User role updated."); } catch (error) { select.value = user.role; toast(error.message); } }); old.replaceWith(select); });
 }
 
+function renderAccount() {
+  if (!state.user) return;
+  $("#account-display-name").textContent = state.user.displayName || "—";
+  $("#account-username").textContent = state.user.username || "—";
+  $("#account-role").textContent = state.user.role === "administrator" ? "Administrator" : state.user.role === "viewer" ? "Viewer" : "Standard User";
+  const enabled = Boolean(state.user.mfaEnabled);
+  const pill = $("#account-mfa-status");
+  pill.innerHTML = `<span class="status-dot ${enabled ? "running" : "inactive"}"></span>${enabled ? "On" : "Off"}`;
+  $("#account-mfa-enable").classList.toggle("hidden", enabled);
+  $("#account-mfa-disable").classList.toggle("hidden", !enabled);
+  $("#account-mfa-recovery").classList.toggle("hidden", !enabled);
+}
+
 async function loadFeatureView() {
   if (state.view === "certificates") { [state.certificates, state.readiness] = await Promise.all([api("/api/certificates"), api("/api/readiness")]); renderCertificates(); }
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
@@ -332,7 +345,7 @@ function render() {
   $("#dashboard-view").classList.toggle("hidden", !overview);
   const management = state.view === "hosted" || state.view === "proxies";
   $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "streaming" || state.view === "redirects" || state.view === "access"));
-  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#performance-view").classList.toggle("hidden", state.view !== "performance"); $("#users-view").classList.toggle("hidden", state.view !== "administration");
+  $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#performance-view").classList.toggle("hidden", state.view !== "performance"); $("#users-view").classList.toggle("hidden", state.view !== "administration"); $("#account-view").classList.toggle("hidden", state.view !== "account");
   if (state.view === "administration") { const adminTab = state.adminTab || "users"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
   $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const adminUsersActive = state.view === "administration" && document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab === "users";
@@ -344,7 +357,7 @@ function render() {
     return;
   }
   if (!management) {
-    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access Logs & Gateway Events","Recent requests, upstream responses, and gateway health events served through Caddy."], performance:["Performance","Live and historical request throughput across your gateway."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], streaming:["Streaming hosts","Forward raw TCP/UDP traffic on a specific port straight to another host and port."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."] };
+    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access Logs & Gateway Events","Recent requests, upstream responses, and gateway health events served through Caddy."], performance:["Performance","Live and historical request throughput across your gateway."], administration:["Administration","Users, gateway defaults, backups, security, and updates."], streaming:["Streaming hosts","Forward raw TCP/UDP traffic on a specific port straight to another host and port."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."], account:["My Account","Manage your profile, password, and two-factor authentication."] };
     const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
     $("#open-create").textContent = state.view === "administration" ? "＋ Create user" : state.view === "streaming" ? "＋ New streaming host" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
     if (state.view === "streaming") $("#stream-empty").classList.toggle("hidden", !state.loaded || state.streams.length > 0);
@@ -352,7 +365,7 @@ function render() {
     if (state.view === "redirects") $("#redirect-empty .create-trigger").textContent = "Create a redirect host";
     if (state.view === "redirects") $("#redirect-empty").classList.toggle("hidden", !state.loaded || state.redirects.length > 0);
     if (state.view === "redirects") { const items = state.redirects; const running = items.filter(item => item.enabled !== false).length, disabled = items.length - running; $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = 0; $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = "No issues"; $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = "status-dot inactive"; $(".port-note").classList.add("hidden"); }
-    if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs(); else if (state.view === "performance") renderPerformance();
+    if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs(); else if (state.view === "performance") renderPerformance(); else if (state.view === "account") renderAccount();
     return;
   }
   const items = state.view === "hosted" ? state.sites : state.proxies;
@@ -402,7 +415,9 @@ async function boot() {
   if (!state.healthTimer) state.healthTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboard().catch(error => toast(error.message)); }, 30000);
 }
 
-$("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); event.target.reset(); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
+$("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { const result = await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); if (result?.mfaRequired) { $("#login-form").classList.add("hidden"); $("#mfa-login-form").classList.remove("hidden"); $("#mfa-login-form [name=code]").focus(); return; } event.target.reset(); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
+$("#mfa-login-form").addEventListener("submit", async event => { event.preventDefault(); $("#mfa-login-error").textContent = ""; try { const response = await fetch("/api/login/mfa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || "That code didn't match. Try again."); event.target.reset(); await boot(); } catch (error) { $("#mfa-login-error").textContent = error.message; } });
+$("#mfa-login-cancel").addEventListener("click", () => { $("#mfa-login-form").reset(); $("#mfa-login-error").textContent = ""; $("#mfa-login-form").classList.add("hidden"); $("#login-form").classList.remove("hidden"); });
 $("#setup-form").addEventListener("submit", async event => { event.preventDefault(); $("#setup-error").textContent = ""; try { await api("/api/setup/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); $("#setup-dialog").close(); event.target.reset(); await boot(); showLogin("Administrator account saved. Sign in with your finalized credentials."); } catch (error) { $("#setup-error").textContent = error.message; } });
 $("#setup-dialog").addEventListener("cancel", event => event.preventDefault());
 $("#logout").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); showLogin(); });
@@ -582,3 +597,81 @@ document.addEventListener("click", event => { if (event.target.closest(".create-
 document.addEventListener("click", event => { const trigger = event.target.closest("[data-action=settings],[data-card-action=settings]"); if (!trigger) return; setTimeout(() => { const item = (state.editing?.kind === "proxy" ? state.proxies : state.sites).find(value => value.id === state.editing?.id); if (!item) return; const scope = state.editing.kind === "proxy" ? "#settings-advanced" : "#settings-hosted-advanced"; const checkbox = document.querySelector(`${scope} [name="healthEnabled"]`); if (checkbox) checkbox.checked = !(item.healthEnabled === false || String(item.healthEnabled).toLowerCase() === "false"); }, 0); });
 setInterval(() => { if (state.view !== 'access') return; const items = state.accessLists || []; const enabled = items.filter(item => item.enabled !== false).length; const disabled = items.length - enabled; $('#running-count').textContent = enabled; $('#disabled-count').textContent = disabled; $('#error-count').textContent = 0; $('#running-label').textContent = enabled ? 'Enabled' : 'None enabled'; $('#disabled-label').textContent = disabled ? 'Disabled' : 'None disabled'; $('#error-label').textContent = 'No issues'; $('#running-dot').className = `status-dot ${enabled ? 'running' : 'inactive'}`; $('#disabled-dot').className = `status-dot ${disabled ? 'disabled' : 'inactive'}`; $('#error-dot').className = 'status-dot inactive'; $('.port-note').classList.add('hidden'); }, 500);
 function renderDashboardJobsSafe(system) { const slot = document.querySelector("#dashboard-jobs-slot"); if (!slot) return; let panel = document.querySelector("#dashboard-jobs"); if (!panel) { panel = document.createElement("section"); panel.id = "dashboard-jobs"; panel.className = "dashboard-panel dashboard-jobs-panel"; slot.appendChild(panel); } panel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div class="health-grid">${(system.jobs || []).map(job => `<div class="health-tile"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>${escapeHtml(job.name)}</strong><small>${job.enabled ? `Active · ${escapeHtml(job.schedule)}` : "Disabled"}</small></span></div>`).join("")}</div>`; }
+
+$("#account-password-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  $("#account-password-error").textContent = "";
+  const form = event.target;
+  const body = Object.fromEntries(new FormData(form));
+  if (String(body.newPassword) !== String(body.confirmPassword)) { $("#account-password-error").textContent = "The new passwords do not match."; return; }
+  try {
+    await api("/api/account/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword: body.currentPassword, newPassword: body.newPassword }) });
+    form.reset(); toast("Password changed.");
+  } catch (error) { $("#account-password-error").textContent = error.message; }
+});
+
+let mfaPasswordResolve = null;
+function requestMfaPassword(title, heading) {
+  $("#mfa-password-title").textContent = title;
+  $("#mfa-password-heading").textContent = heading;
+  $("#mfa-password-error").textContent = "";
+  $("#mfa-password-form").reset();
+  $("#mfa-password-dialog").showModal();
+  return new Promise(resolve => { mfaPasswordResolve = resolve; });
+}
+$("#mfa-password-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const password = new FormData(event.target).get("password");
+  $("#mfa-password-dialog").close();
+  mfaPasswordResolve?.(password);
+  mfaPasswordResolve = null;
+});
+$("#mfa-password-cancel").addEventListener("click", () => { $("#mfa-password-dialog").close(); mfaPasswordResolve?.(null); mfaPasswordResolve = null; });
+
+$("#account-mfa-enable").addEventListener("click", async () => {
+  try {
+    const result = await api("/api/account/mfa/setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    $("#mfa-setup-qr").innerHTML = result.qrSvg;
+    $("#mfa-setup-secret").textContent = result.secret;
+    $("#mfa-setup-error").textContent = "";
+    $("#mfa-setup-confirm-form").reset();
+    $("#mfa-setup-dialog").showModal();
+  } catch (error) { toast(error.message); }
+});
+$("#mfa-setup-cancel").addEventListener("click", () => { $("#mfa-setup-dialog").close(); });
+$("#mfa-setup-confirm-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  $("#mfa-setup-error").textContent = "";
+  try {
+    const code = new FormData(event.target).get("code");
+    const result = await api("/api/account/mfa/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+    $("#mfa-setup-dialog").close();
+    state.user.mfaEnabled = true;
+    renderAccount();
+    $("#mfa-recovery-codes").textContent = result.recoveryCodes.join("\n");
+    $("#mfa-recovery-dialog").showModal();
+    toast("Two-factor authentication enabled.");
+  } catch (error) { $("#mfa-setup-error").textContent = error.message; }
+});
+$("#mfa-recovery-done").addEventListener("click", () => { $("#mfa-recovery-dialog").close(); });
+
+$("#account-mfa-disable").addEventListener("click", async () => {
+  const password = await requestMfaPassword("Disable two-factor authentication", "Confirm your password to continue");
+  if (!password) return;
+  try {
+    await api("/api/account/mfa/disable", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+    state.user.mfaEnabled = false;
+    renderAccount();
+    toast("Two-factor authentication disabled.");
+  } catch (error) { toast(error.message); }
+});
+$("#account-mfa-recovery").addEventListener("click", async () => {
+  const password = await requestMfaPassword("Regenerate recovery codes", "Confirm your password to continue");
+  if (!password) return;
+  try {
+    const result = await api("/api/account/mfa/recovery-codes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+    $("#mfa-recovery-codes").textContent = result.recoveryCodes.join("\n");
+    $("#mfa-recovery-dialog").showModal();
+    toast("Recovery codes regenerated. Your old codes no longer work.");
+  } catch (error) { toast(error.message); }
+});
