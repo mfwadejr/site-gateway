@@ -242,7 +242,8 @@ function renderPerformance() {
   $("#performance-host").value = selected;
   const label = selected ? escapeHtml(selected) : "all domains";
   $("#performance-summary").innerHTML = `${data.liveRequests} request${data.liveRequests === 1 ? "" : "s"} in the last minute across ${label} · <span id="performance-last-checked">Checked ${escapeHtml(formatTime(data.checkedAt))}</span>`;
-  $("#performance-trend-title").textContent = `Requests · last 6 hours${selected ? ` · ${selected}` : ""}`;
+  const rangeLabel = $("#performance-range").selectedOptions[0]?.textContent || "Last 6 hours";
+  $("#performance-trend-title").textContent = `Requests · ${rangeLabel.toLowerCase()}${selected ? ` · ${selected}` : ""}`;
   const points = data.trend || [];
   const max = Math.max(1, ...points.map(point => point.count));
   const left = 34, right = 8, top = 10, bottom = 20, width = 600, height = 140;
@@ -306,7 +307,7 @@ function renderUsers() {
 async function loadFeatureView() {
   if (state.view === "certificates") { [state.certificates, state.readiness] = await Promise.all([api("/api/certificates"), api("/api/readiness")]); renderCertificates(); }
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
-  if (state.view === "performance") { state.performance = await api(`/api/performance?host=${encodeURIComponent($("#performance-host").value)}`); renderPerformance(); }
+  if (state.view === "performance") { state.performance = await api(`/api/performance?host=${encodeURIComponent($("#performance-host").value)}&hours=${encodeURIComponent($("#performance-range").value || "6")}`); renderPerformance(); }
   if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); renderUsers(); window.renderExtendedViews?.(); }
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
   restoreAdminTab();
@@ -403,6 +404,7 @@ $("#dashboard-view").addEventListener("click", event => { const target = event.t
 $("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
 $("#performance-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
+$("#performance-range").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
 $("#log-status").addEventListener("change", renderLogs);
 $("#event-severity").addEventListener("change", renderLogs);
 $("#event-category").addEventListener("change", renderLogs);
