@@ -47,7 +47,33 @@ function renderDefaultSettings() {
   if (!document.querySelector("#default-site-help")) { const help = document.createElement("p"); help.id = "default-site-help"; help.className = "muted"; help.textContent = "The Default Site handles unknown HTTP hostnames. HTTPS requests still require a matching host and certificate."; form.prepend(help); }
   for (const key of ["mode","title","message","redirectUrl","redirectCode","customHtml"]) if (form.elements[key] && value[key] !== undefined) form.elements[key].value = value[key];
   form.elements.preservePath.checked = value.preservePath !== false;
+  renderDefaultSitePreview();
 }
+
+// Keep this HTML template in sync with the themed-page literal inside renderDefaultSiteHtml()
+// in src/server.js -- duplicated here so the live preview below renders instantly, without a
+// round trip to the server, on every keystroke. If the server template ever changes, this must
+// be updated to match or the preview will silently drift from what visitors actually see.
+function defaultSiteThemedHtml(title, message) {
+  const safeTitle = extendedEscape(title);
+  const safeMessage = extendedEscape(message);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><title>${safeTitle}</title><style>:root{color-scheme:dark light;--bg:#08101d;--card:#101a2b;--line:#25344c;--text:#eef4ff;--muted:#95a4ba;--green:#62e6a7}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#163829 0,transparent 42%),var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif}.card{width:min(620px,100%);padding:44px;border:1px solid var(--line);border-radius:22px;background:color-mix(in srgb,var(--card) 94%,transparent);box-shadow:0 28px 80px #0006}.mark{width:54px;height:54px;border-radius:15px;display:grid;place-items:center;background:#17352a;color:var(--green);font-weight:900}.eyebrow{margin:28px 0 10px;color:var(--green);font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}h1{margin:0;font-size:clamp(34px,7vw,56px);letter-spacing:-.05em;line-height:1.02}p{color:var(--muted);font-size:17px;line-height:1.65;margin:20px 0 0}.foot{padding-top:28px;margin-top:30px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}@media(prefers-color-scheme:light){:root{--bg:#f3f6fa;--card:#fff;--line:#d6dfeb;--text:#132033;--muted:#637188;--green:#138a5b}}</style></head><body><main class="card"><div class="mark">SG</div><div class="eyebrow">Site Gateway</div><h1>${safeTitle}</h1><p>${safeMessage}</p><div class="foot">Host. Proxy. Secure.</div></main></body></html>`;
+}
+
+function renderDefaultSitePreview() {
+  const form = document.querySelector("#default-site-form"), frame = document.querySelector("#default-site-preview-frame"), note = document.querySelector("#default-site-preview-note");
+  if (!form || !frame || !note) return;
+  const mode = form.elements.mode.value;
+  if (mode === "abort") { frame.closest(".default-site-preview-frame-wrap").classList.add("hidden"); note.classList.remove("hidden"); note.textContent = "No page is shown for this mode \u2014 the connection is closed immediately."; return; }
+  if (mode === "redirect") { frame.closest(".default-site-preview-frame-wrap").classList.add("hidden"); note.classList.remove("hidden"); const destination = form.elements.redirectUrl.value.trim(); note.textContent = destination ? `No page is shown for this mode \u2014 visitors are redirected to ${destination}.` : "No page is shown for this mode \u2014 enter a redirect destination above."; return; }
+  frame.closest(".default-site-preview-frame-wrap").classList.remove("hidden"); note.classList.add("hidden");
+  if (mode === "custom") { frame.srcdoc = form.elements.customHtml.value || "<p style=\"font:14px sans-serif;color:#95a4ba;padding:20px\">Enter Custom HTML above to preview it here.</p>"; return; }
+  const title = form.elements.title.value || (mode === "welcome" ? "Gateway ready" : "Route not found");
+  const message = form.elements.message.value || "The gateway is responding, but this address has not been configured.";
+  frame.srcdoc = defaultSiteThemedHtml(title, message);
+}
+document.querySelector("#default-site-form")?.addEventListener("input", renderDefaultSitePreview);
+document.querySelector("#default-site-form")?.addEventListener("change", renderDefaultSitePreview);
 
 function renderHealthSettings() {
   if (!state.settings) return; const form = document.querySelector("#health-settings-form"), value = state.settings.certificateHealth || {};
