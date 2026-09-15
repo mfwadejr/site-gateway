@@ -290,6 +290,7 @@ function applyAdvancedSettings(item, body) {
     if (!Array.isArray(body.upstreams) || body.upstreams.length > 10) throw Object.assign(new Error("Add up to 10 upstream targets."), { status: 400 });
     item.upstreams = body.upstreams.map(validateTarget);
   }
+  if (body.lbPolicy !== undefined) item.lbPolicy = ["random", "round_robin", "least_conn", "ip_hash"].includes(body.lbPolicy) ? body.lbPolicy : "random";
   if (body.accessListId !== undefined) item.accessListId = String(body.accessListId || "");
   if (body.compression !== undefined) item.compression = ["off", "gzip", "automatic"].includes(body.compression) ? body.compression : "automatic";
   if (body.hstsSubdomains !== undefined) item.hstsSubdomains = Boolean(body.hstsSubdomains);
@@ -368,6 +369,7 @@ function commonHostDirectives(item) {
 function proxyBlock(target, item, indent = "  ") {
   const targets = Array.isArray(item.upstreams) && item.upstreams.length ? item.upstreams : [target];
   const output = [`${indent}reverse_proxy ${targets.join(" ")} {`];
+  if (targets.length > 1) { const policy = ["round_robin", "least_conn", "ip_hash"].includes(item.lbPolicy) ? item.lbPolicy : "random"; output.push(`${indent}  lb_policy ${policy}`); }
   const timeout = Math.min(Math.max(Number(item.healthTimeoutSeconds) || 4, 1), 60);
   const httpsUpstream = targets.length > 0 && targets.every(value => /^https:\/\//i.test(String(value).trim()));
   if (httpsUpstream && (item.upstreamTlsServerName || item.upstreamTlsInsecure)) output.push(`${indent}  transport http {`, ...(item.upstreamTlsServerName ? [`${indent}    tls_server_name ${item.upstreamTlsServerName}`] : []), ...(item.upstreamTlsInsecure ? [`${indent}    tls_insecure_skip_verify`] : []), `${indent}    response_header_timeout ${timeout}s`, `${indent}  }`);

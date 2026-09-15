@@ -83,7 +83,7 @@ function advancedFormBody(form, body, scoped) {
   body.accessListId = read("accessListId", body.accessListId || "");
   body.requestHeaders = parseHeaderLines(read("requestHeadersText")); body.responseHeaders = parseHeaderLines(read("responseHeadersText")); body.compression = read("compression", "automatic"); body.customConfig = read("customConfig");
   body.locations = String(form.get("customLocationsText") || "").split("\n").map(line => { const [path, target, behavior] = line.split("|").map(value => value.trim()); return path && target ? { path, target, stripPrefix:behavior.toLowerCase() === "strip" } : null; }).filter(Boolean);
-  body.upstreams = String(form.get("upstreamsText") || "").split("\n").map(value => value.trim()).filter(Boolean);
+  body.upstreams = String(form.get("upstreamsText") || "").split("\n").map(value => value.trim()).filter(Boolean); body.lbPolicy = read("lbPolicy", "random");
   body.healthPath = read("healthPath", "/"); body.healthMethod = read("healthMethod", "GET"); body.healthExpected = read("healthExpected", "200-499"); body.healthTimeoutSeconds = Number(read("healthTimeoutSeconds", "4")); body.healthRetries = Number(read("healthRetries", "0"));
   delete body.requestHeadersText; delete body.responseHeadersText; delete body.customLocationsText;
   return body;
@@ -471,7 +471,7 @@ function openSettings(kind, id) {
     setScoped(form, scope, "accessListId", item.accessListId || ""); setScoped(form, scope, "healthPath", item.healthPath || "/"); setScoped(form, scope, "healthMethod", item.healthMethod || "GET"); setScoped(form, scope, "healthExpected", item.healthExpected || "200-499"); setScoped(form, scope, "healthTimeoutSeconds", item.healthTimeoutSeconds || 4); setScoped(form, scope, "healthEnabled", item.healthEnabled !== false); setScoped(form, scope, "compression", item.compression || "automatic"); setScoped(form, scope, "blockCommonExploits", Boolean(item.blockCommonExploits));
     form.elements.customLocationsText.value = (item.locations || []).map(location => `${location.path} | ${location.target} | ${location.stripPrefix ? "strip" : "preserve"}`).join("\n");
     setScoped(form, scope, "requestHeadersText", (item.requestHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n")); setScoped(form, scope, "responseHeadersText", (item.responseHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n"));
-    form.elements.upstreamTlsServerName.value = item.upstreamTlsServerName || ""; setScoped(form, scope, "upstreamTlsInsecure", Boolean(item.upstreamTlsInsecure)); setScoped(form, scope, "hstsSubdomains", Boolean(item.hstsSubdomains)); setScoped(form, scope, "customConfig", item.customConfig || "");
+    form.elements.upstreamTlsServerName.value = item.upstreamTlsServerName || ""; setScoped(form, scope, "upstreamTlsInsecure", Boolean(item.upstreamTlsInsecure)); setScoped(form, scope, "hstsSubdomains", Boolean(item.hstsSubdomains)); setScoped(form, scope, "customConfig", item.customConfig || ""); form.elements.upstreamsText.value = (item.upstreams || []).join("\n"); setScoped(form, scope, "lbPolicy", item.lbPolicy || "random");
   }
   if (kind === "site") {
     const scope = "#settings-hosted-advanced";
@@ -598,6 +598,9 @@ function syncUpstreamTlsControls(form) {
   if (tlsSkip && !https) tlsSkip.checked = false;
   const help = tlsSkip?.closest("label")?.querySelector("small");
   if (help) help.textContent = https ? "Use only for a trusted internal HTTPS service with a self-signed or hostname-mismatched certificate." : "Available only when the upstream uses HTTPS.";
+
+  const lbPolicy = form.elements.lbPolicy;
+  if (lbPolicy) { const multi = targets.length > 1; lbPolicy.disabled = !multi; lbPolicy.closest("label")?.classList.toggle("control-disabled", !multi); if (!multi) lbPolicy.value = "random"; }
 }
 document.addEventListener("input", event => { if (event.target.matches('#proxy-form [name="target"],#proxy-form [name="upstreamsText"],#settings-form [name="target"],#settings-form [name="upstreamsText"]')) syncUpstreamTlsControls(event.target.form); });
 document.addEventListener("change", event => { if (event.target.matches('#proxy-form [name="target"],#proxy-form [name="upstreamsText"],#settings-form [name="target"],#settings-form [name="upstreamsText"]')) syncUpstreamTlsControls(event.target.form); });
