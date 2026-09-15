@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null };
+const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false };
 document.querySelector("#create-form [name=domain]")?.closest("label")?.childNodes[0] && (document.querySelector("#create-form [name=domain]").closest("label").childNodes[0].textContent = "Primary domain ");
 if (!document.querySelector("#create-form [name=accessListId]")) { const anchor = document.querySelector("#create-form [name=tls]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select name="accessListId"><option value="">Public — no Access List</option></select><small>Protect this hosted site and all of its domains.</small>'; anchor.before(label); } }
 if (!document.querySelector("#settings-access-list")) { const anchor = document.querySelector("#settings-form [name=domain]")?.closest("label"); if (anchor) { const label = document.createElement("label"); label.innerHTML = '<span>Access List <span class="optional">Optional</span></span><select id="settings-access-list" name="accessListId"><option value="">Public — no Access List</option></select><small>Protect this route and all of its domains.</small>'; anchor.after(label); } }
@@ -410,10 +410,19 @@ async function boot() {
   if (session.setupRequired) { $("#login").classList.add("hidden"); $("#dashboard").classList.add("hidden"); $("#setup-form [name=username]").value = session.user.username; if (!$("#setup-dialog").open) $("#setup-dialog").showModal(); return; }
   state.view = location.hash.slice(1) || "overview"; state.users = []; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canAdmin())); render(); state.config = await api("/api/config");
   $("#version-label").textContent = `v${state.config.version || "unknown"}`;
+  if (!state.loadedVersion) state.loadedVersion = state.config.version;
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
   $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh(); if (state.view !== "overview") await loadFeatureView();
   if (!state.healthTimer) state.healthTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboard().catch(error => toast(error.message)); }, 30000);
+  if (!state.updateCheckTimer) state.updateCheckTimer = setInterval(() => { if (!$("#dashboard").classList.contains("hidden")) checkForUpdate().catch(() => {}); }, 60000);
 }
+async function checkForUpdate() {
+  if (state.updateAvailable || !state.loadedVersion) return;
+  const config = await api("/api/config");
+  if (config.version && config.version !== state.loadedVersion) { state.updateAvailable = true; $("#update-banner").classList.remove("hidden"); }
+}
+$("#update-banner-refresh").addEventListener("click", () => location.reload());
+$("#update-banner-dismiss").addEventListener("click", () => { $("#update-banner").classList.add("hidden"); state.updateAvailable = false; });
 
 $("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { const result = await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); if (result?.mfaRequired) { $("#login-form").classList.add("hidden"); $("#mfa-login-form").classList.remove("hidden"); $("#mfa-login-form [name=code]").focus(); return; } event.target.reset(); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
 $("#mfa-login-form").addEventListener("submit", async event => { event.preventDefault(); $("#mfa-login-error").textContent = ""; try { const response = await fetch("/api/login/mfa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || "That code didn't match. Try again."); event.target.reset(); await boot(); } catch (error) { $("#mfa-login-error").textContent = error.message; } });
