@@ -223,7 +223,7 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 #audit-list .activity-mark{width:8px;height:8px;min-width:8px;border-radius:50%;padding:0;font-size:0;background:var(--green);box-shadow:0 0 0 4px rgba(98,230,167,.1)}
 #audit-list .activity-mark.bad{background:var(--danger);box-shadow:0 0 0 4px rgba(255,113,133,.09)}
 .diagnostic-section-heading{margin:20px 0 10px;padding:18px 20px;border:1px solid var(--line);border-bottom:0;border-radius:15px 15px 0 0;background:var(--panel)}
-.diagnostic-section-heading .eyebrow{margin-bottom:5px}.diagnostic-section-heading h2{margin:0;font-size:1.15rem}.diagnostic-section-heading p:last-child{margin:4px 0 0;font-size:.76rem}
+.diagnostic-section-heading .eyebrow{margin-bottom:5px}.diagnostic-section-heading h2{margin:0;font-size:1.15rem}.diagnostic-section-heading p:last-child{margin:4px 0 0}
 .diagnostic-section-heading{margin-bottom:0}
 .diagnostic-section-heading + .log-table-wrap{border-top:0;border-radius:0 0 15px 15px}
 #certificate-list.diagnostic-list,#readiness-list.diagnostic-list,#gateway-log-list.diagnostic-list,#audit-list.diagnostic-list{border-radius:0 0 15px 15px}
