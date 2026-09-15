@@ -328,7 +328,12 @@ function caddySiteAddress(item) {
 }
 
 function caddyQuote(value) {
-  return `"${String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", " ")}"`;
+  // Caddy's Caddyfile lexer only special-cases \" inside a quoted string — it does NOT
+  // collapse \\ into a single backslash (confirmed in caddyconfig/caddyfile/lexer.go: "all is
+  // literal in quoted area, so only escape quotes"). Doubling backslashes here, as this used to,
+  // corrupts any value that legitimately contains one (e.g. a regex like eval\( becomes eval\\(,
+  // which Caddy then reads as an escaped backslash followed by an unclosed real group).
+  return `"${String(value).replaceAll('"', '\\"').replaceAll("\n", " ")}"`;
 }
 
 function accessDirectives(accessListId) {
