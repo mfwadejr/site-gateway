@@ -600,7 +600,7 @@ function syncUpstreamTlsControls(form) {
   if (help) help.textContent = https ? "Use only for a trusted internal HTTPS service with a self-signed or hostname-mismatched certificate." : "Available only when the upstream uses HTTPS.";
 
   const lbPolicy = form.elements.lbPolicy;
-  if (lbPolicy) { const multi = targets.length > 1; lbPolicy.disabled = !multi; lbPolicy.closest("label")?.classList.toggle("control-disabled", !multi); if (!multi) lbPolicy.value = "random"; }
+  if (lbPolicy) { const poolTargets = String(form.elements.upstreamsText?.value || "").split("\n").map(value => value.trim()).filter(Boolean); const multi = poolTargets.length > 1; lbPolicy.disabled = !multi; lbPolicy.closest("label")?.classList.toggle("control-disabled", !multi); if (!multi) lbPolicy.value = "random"; }
 }
 document.addEventListener("input", event => { if (event.target.matches('#proxy-form [name="target"],#proxy-form [name="upstreamsText"],#settings-form [name="target"],#settings-form [name="upstreamsText"]')) syncUpstreamTlsControls(event.target.form); });
 document.addEventListener("change", event => { if (event.target.matches('#proxy-form [name="target"],#proxy-form [name="upstreamsText"],#settings-form [name="target"],#settings-form [name="upstreamsText"]')) syncUpstreamTlsControls(event.target.form); });
