@@ -448,8 +448,8 @@ function openCreate() {
   if (state.view === "streaming") { $("#stream-form").reset(); delete $("#stream-form").dataset.editing; $("#stream-title").textContent = "Create a streaming host"; $("#stream-form .button.primary").textContent = "Create streaming host"; $("#stream-error").textContent = ""; return $("#stream-dialog").showModal(); }
   if (state.view === "redirects") { $("#redirect-form").reset(); delete $("#redirect-form").dataset.editing; $("#redirect-error").textContent = ""; return $("#redirect-dialog").showModal(); }
   if (state.view === "access") { $("#access-form").reset(); delete $("#access-form").dataset.editing; $("#access-error").textContent = ""; $("#access-form .access-create-guidance")?.remove(); const assignmentSummary = $("#access-assignment-summary"); assignmentSummary?.classList.add("hidden"); if (assignmentSummary) assignmentSummary.innerHTML = ""; window.renderCredentialEditor?.([]); return $("#access-dialog").showModal(); }
-  if (state.view === "proxies") { $("#proxy-form").reset(); $("#custom-certificate-fields").classList.remove("custom-certificate-visible"); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
-  $("#create-form").reset(); $("#create-error").textContent = ""; const used = new Set(state.sites.map(site => site.port)); let port = state.config.minPort; while (used.has(port)) port++; $("#create-form [name=port]").value = port; $("#create-dialog").showModal();
+  if (state.view === "proxies") { $("#proxy-form").reset(); $("#proxy-form").querySelectorAll("details").forEach(details => details.open = false); $("#custom-certificate-fields").classList.remove("custom-certificate-visible"); $("#proxy-error").textContent = ""; return $("#proxy-dialog").showModal(); }
+  $("#create-form").reset(); $("#create-form").querySelectorAll("details").forEach(details => details.open = false); $("#create-error").textContent = ""; const used = new Set(state.sites.map(site => site.port)); let port = state.config.minPort; while (used.has(port)) port++; $("#create-form [name=port]").value = port; $("#create-dialog").showModal();
 }
 $("#open-create").addEventListener("click", openCreate);
 document.addEventListener("click", event => { if (event.target.closest(".create-trigger")) openCreate(); if (event.target.closest(".close-dialog")) event.target.closest("dialog").close(); if (!event.target.closest(".menu-wrap")) closeMenus(); });
@@ -463,7 +463,7 @@ function ensureHostedHealthFields() { [document.querySelector("#create-form deta
 setInterval(ensureHostedHealthFields, 300);
 function openSettings(kind, id) {
   if (kind === "hosted") kind = "site";
-  const item = (kind === "proxy" ? state.proxies : state.sites).find(value => value.id === id); if (!item) return; state.editing = { kind, id }; const form = $("#settings-form"); form.reset();
+  const item = (kind === "proxy" ? state.proxies : state.sites).find(value => value.id === id); if (!item) return; state.editing = { kind, id }; const form = $("#settings-form"); form.reset(); form.querySelectorAll("details").forEach(details => details.open = false);
   $("#settings-title").textContent = kind === "proxy" ? "Edit proxy host" : "Domain & TLS"; $("#settings-name-wrap").classList.toggle("hidden", kind !== "proxy"); $("#settings-target-wrap").classList.toggle("hidden", kind !== "proxy"); $("#settings-advanced").classList.toggle("hidden", kind !== "proxy"); $("#settings-hosted-advanced").classList.toggle("hidden", kind !== "site");
   form.elements.name.value = item.name || ""; form.elements.domain.value = item.domain || ""; form.elements.target.value = item.target || ""; form.elements.tls.value = item.tls || "automatic"; form.elements.hsts.checked = Boolean(item.hsts); if (form.elements.settingsAccessListId) form.elements.settingsAccessListId.value = item.accessListId || "";
   if (kind === "proxy") {
