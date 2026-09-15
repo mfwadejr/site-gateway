@@ -1499,6 +1499,11 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     const domainError = validateDomains(domains, site.id);
     if (domainError) return res.status(400).json({ error: domainError });
     site.domain = domain; site.domains = domains;
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name).trim();
+      if (!name) return res.status(400).json({ error: "Site name is required." });
+      site.name = name;
+    }
     site.tls = ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : "automatic";
     site.hsts = req.body.hsts === true;
     applyAdvancedSettings(site, { accessListId: req.body.accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains, requestHeaders: req.body.requestHeaders, responseHeaders: req.body.responseHeaders, customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled, healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
