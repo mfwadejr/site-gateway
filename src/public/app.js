@@ -500,7 +500,7 @@ $("#logout").addEventListener("click", async () => { await fetch("/api/logout", 
 // --- Dashboard actions: run certificate check, download support report, jump to
 //     an attention item's view -------------------------------------------------------------
 $("#check-health").addEventListener("click", async event => { const button = event.currentTarget; button.disabled = true; button.textContent = "Checking…"; try { const result = await api("/api/health/check", { method:"POST" }); state.dashboard = result.dashboard; state.certificates = result.certificates; state.readiness = { routes:result.readiness }; renderCertificates(); toast("Certificate and domain checks completed."); } catch (error) { toast(error.message); } finally { button.disabled = false; button.textContent = "Run certificate check"; } });
-$("#download-support").addEventListener("click", () => { location.href = "/api/support-report"; });
+$("#download-support")?.addEventListener("click", () => { location.href = "/api/support-report"; });
 $("#attention-list").addEventListener("click", event => { const target = event.target.closest("[data-issue-target]")?.dataset.issueTarget; if (target) { state.view = target; render(); loadFeatureView().catch(error => toast(error.message)); } });
 
 // --- Primary navigation (sidebar view switching) -------------------------------------------
