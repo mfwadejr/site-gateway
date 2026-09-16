@@ -788,7 +788,7 @@ $("#mfa-setup-confirm-form").addEventListener("submit", async event => {
     state.user.mfaEnabled = true;
     renderAccount();
     $("#mfa-recovery-codes").textContent = result.recoveryCodes.join("\n");
-    $("#mfa-recovery-dialog").showModal();
+    requestAnimationFrame(() => $("#mfa-recovery-dialog").showModal());
     toast("Two-factor authentication enabled.");
   } catch (error) { $("#mfa-setup-error").textContent = error.message; }
 });
@@ -812,7 +812,7 @@ $("#account-mfa-recovery").addEventListener("click", async () => {
   try {
     const result = await api("/api/account/mfa/recovery-codes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
     $("#mfa-recovery-codes").textContent = result.recoveryCodes.join("\n");
-    $("#mfa-recovery-dialog").showModal();
+    requestAnimationFrame(() => $("#mfa-recovery-dialog").showModal());
     toast("Recovery codes regenerated. Your old codes no longer work.");
   } catch (error) { toast(error.message, "error"); }
 });
