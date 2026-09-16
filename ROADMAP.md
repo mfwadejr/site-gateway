@@ -2,7 +2,7 @@
 
 ## Current release status
 
-`v0.11.118` is a stable, day-to-day release. The product has moved well past the original alpha creation flow described in earlier versions of this document — Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts are all implemented, along with authentication, access control, certificates, backups, and full dashboard reporting. This document reflects what's actually shipped and what's genuinely still ahead.
+`v0.12.0` marks a shift from the earlier per-fix `0.11.x` patch numbering to ordinary semantic versioning going forward — a minor bump for a real batch of changes, a patch bump for a targeted fix, rather than incrementing the same trailing number for every single change regardless of size. The product itself has moved well past the original alpha creation flow described in earlier versions of this document — Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts are all implemented, along with authentication, access control, certificates, backups, and full dashboard reporting. This document reflects what's actually shipped and what's genuinely still ahead.
 
 ## Product direction
 
