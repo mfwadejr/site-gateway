@@ -2,157 +2,73 @@
 
 ## Current release status
 
-`v0.10.0-alpha.95.3` completes the initial configuration audit-log work. Alpha 96 is the integration and release-hardening phase; backup and restore validation is intentionally scheduled last.
+`v0.11.101` is a stable, day-to-day release. The product has moved well past the original alpha creation flow described in earlier versions of this document — Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts are all implemented, along with authentication, access control, certificates, backups, and full dashboard reporting. This document reflects what's actually shipped and what's genuinely still ahead.
 
 ## Product direction
 
-Site Gateway should remain simpler than a general-purpose proxy manager: one dashboard, clear health reporting, and guided setup instead of exposing server configuration. It can still cover most home-server publishing needs with an HTTP/HTTPS gateway alongside the existing static-file service.
+Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, clear health reporting, and guided setup instead of exposing raw server configuration. **Caddy** remains the managed gateway — Site Gateway stores a small route model and generates/validates Caddy configuration rather than reimplementing certificate and proxy behavior itself.
 
-## Recommended gateway
+## Shipped
 
-Use **Caddy** as the managed gateway rather than rebuilding certificate and proxy behavior in Node or exposing raw Nginx configuration. The dashboard would store a small site model and generate/apply gateway configuration. Caddy provides automatic certificate issuance and renewal, redirects HTTP to HTTPS, supports reverse proxying and WebSockets, and has a configuration API suitable for safe validation before activation.
+### Routing
 
-The existing Node application remains responsible for authentication, the wizard, uploads, persistence, status, and audit events. Static sites can continue to use internal listeners while Caddy becomes the only public entry point on ports 80 and 443.
+- **Hosted Sites** — upload a ZIP or `index.html`, publish on a domain and/or a direct LAN port, replace files without recreating the site.
+- **Proxy Hosts** — forward a domain to any HTTP(S) target, with custom locations, headers, compression, upstream TLS, health checks, load-balancing across multiple upstreams, and expert Caddy snippets.
+- **Redirect Hosts** — 301/302/307/308 responses with optional path preservation.
+- **Streaming Hosts** — native TCP/UDP port forwarding with monitoring, for services that aren't HTTP (game servers, SSH, etc).
+- Configurable themed welcome, 404, redirect, no-response, and custom-HTML fallback pages, with a live preview pane in Gateway Defaults.
 
-## Proposed creation wizard
+### Access and identity
 
-### Step 1: What are you publishing?
+- Local users with Administrator and Standard User roles, account lifecycle controls (disable/archive/restore).
+- Groups, used to grant Access List membership without managing users one by one.
+- Access Lists combining accounts, groups, and IP/CIDR network rules behind a themed sign-in page.
+- Optional two-factor authentication (TOTP) with a self-service My Account view for enrolling and managing it.
+- First-time setup flow that finalizes the persistent administrator account from bootstrap credentials.
 
-- Static website — upload a ZIP or `index.html`
-- Existing application — proxy to an IP/hostname and port
-- Redirect — send a domain or path to another URL
-- Offline page — intentionally return a friendly maintenance/404 response
+### Certificates and TLS
 
-### Step 2: Address
+- Automatic public HTTPS via Caddy, plus internal, HTTP-only, and uploaded custom-certificate modes.
+- Certificate inventory: issuer, covered domains, validity, serial number, fingerprint, expiration, and last detected update.
+- Dashboard alerts for certificates nearing expiration.
 
-- Domain name(s)
-- Optional path such as `/photos`
-- Internal target and port for proxied applications
-- Validation that ports and domains are not duplicated
+### Observability
 
-### Step 3: Security
+- Live dashboard health for the gateway, HTTP, HTTPS, and storage, plus hosted/proxy/certificate counts and throughput.
+- System panel: uptime, memory, persistent-data size, disk space, installed app/Caddy versions, public IP.
+- Performance view with request throughput, response times, and per-route breakdowns.
+- Rotating access and activity logs.
+- Update-available banner when a newer image is deployed.
 
-- Automatic public TLS certificate
-- HTTP only for trusted LAN use
-- Upload an existing certificate
-- Force HTTPS
-- HSTS, shown as an advanced option with a clear lockout warning
+### Data and operations
 
-### Step 4: Access
+- Built-in SQLite persistence at `/data/database/site-gateway.sqlite` — no external database container.
+- Configuration and Complete backups, downloadable, importable, schedulable, and optionally AES-256-GCM encrypted; pre-restore safety backups and configuration validation before activation.
+- PUID/PGID-aware startup for Unraid and ZimaOS-style permission models.
 
-- Public
-- Basic username/password
-- IP allow/deny list
-- Optional security headers preset
+### Brand and docs
 
-### Step 5: Review and publish
+- Current icon and wordmark (v0.11.99) used consistently across the login screen, sidebar, themed default pages, and this README.
+- Integrated, searchable in-app documentation covering every configurable field, including 2FA and the update-notification banner.
+- Companion marketing site with an installation guide covering Docker Compose, plain `docker run`, and Unraid.
 
-- Plain-language configuration summary
-- DNS and router checks
-- Configuration validation before activation
-- Immediate rollback if gateway reload fails
+## What's next
 
-## Delivery phases
+Roughly in priority order:
 
-### Dashboard foundation (implemented in v0.4.0-alpha.1)
-
-- Default overview with hosted-site, proxy-host, TLS-domain, and attention totals
-- Gateway, hosted-site, and proxy-host health indicators
-- Safe runtime reporting for uptime, memory, persistent-data size, disk space, and installed versions
-- Recent configuration activity for the current container session
-- Responsive navigation for desktop and mobile
-- Infrastructure-focused live health for Caddy, HTTP, HTTPS automation, and persistent storage (refined in v0.4.0-alpha.2)
-- Confirmed port health, clearer storage reporting, local service icons, and resilient dashboard controls (v0.4.0-alpha.3)
-- Certificate inventory and expiration alerts, proxy upstream monitoring, and filtered rotating access logs (v0.5.0-alpha.1)
-- Corrected certificate wording and standardized dashboard, card, and log-control spacing (v0.5.0-alpha.2)
-- Persistent local users, Administrator and Standard User roles, account lifecycle controls, and role-aware sessions (v0.6.0-alpha.1)
-- Redirect Hosts, Access Lists with themed authentication, advanced Proxy Host controls, custom certificates, configurable fallback pages, integrated documentation, Administration, and backup/restore (v0.7.0-alpha.1)
-- Built-in SQLite persistence, Local Gateway instance scoping, JSON migration safeguards, unified certificate storage, and database-aware backups (v0.8.0-alpha.1)
-- First-install sign-in guidance and required one-time administrator account finalization (v0.8.0-alpha.2)
-- Certificate details, configurable expiration thresholds, guided domain diagnostics, on-demand health checks, redacted support reports, and authentication cleanup (v0.9.0-alpha.1)
-
-### Completed in v0.9.0-alpha.1 — visibility and certificate health
-
-This should be the next implementation target. It adds the reporting people rely on in NGINX Proxy Manager without expanding the creation workflow yet.
-
-- Certificate inventory derived from Caddy's managed certificate storage
-- Domain, issuer, valid-from, expiration date, and days remaining
-- Clear **Healthy**, **Renewing soon**, **Expired**, and **Needs attention** states
-- Dashboard counts for certificates expiring within 30 and 7 days
-- Last successful renewal and last certificate error when available
-- Per-host upstream reachability checks with response time and last-check timestamp
-- Recent gateway errors and a concise per-host access-log view
-- Diagnostics that distinguish DNS, inbound port, certificate, and upstream failures
-- Never display private keys, account credentials, or raw sensitive configuration
-
-### v0.10.0-alpha.1 — gateway completeness (in progress)
-
-- Basic Caddy upstream pools for load balancing across multiple targets
-- Universal Dashboard Icons search, custom upload, HTTPS URL, and two-letter fallback
-- Access List assignment visibility on hosts
-- Complete themed Default Site responses
-- Clear certificate renewal-event wording and per-host operational reporting
-
-### Phase 1 — Domains and automatic HTTPS (gateway alpha implemented)
-
-- Publish ports 80 and 443
-- Domain assignment for static sites
-- Automatic certificate issue and renewal
-- Force-HTTPS option
-- Certificate status and expiration reporting (next alpha milestone)
-- Guided DNS/router readiness checks (next alpha milestone)
-
-### Phase 2 — Reverse proxy and redirects (implemented)
-
-- Proxy to other containers, LAN devices, or URLs
-- WebSocket support
-- Redirect hosts and offline/404 hosts
-- Standard security-header presets
-- Optional HSTS after HTTPS is verified
-- Per-host access logs and simple health checks
-
-### Phase 3 — Access and advanced certificates (partially implemented)
-
-- Themed-login access policies reusable across proxy hosts (implemented)
-- IP/CIDR allow lists (implemented)
-- Custom certificate upload (implemented)
-- Wildcard certificates through selected DNS providers
-- Backup/export and restore, including encryption and scheduling (implemented)
-- Configuration validation and automatic restore rollback (implemented); browsable history remains planned
-
-### Phase 4 — Multi-user and specialist features
-
-- Multiple administrators and roles
-- Audit log
-- TCP/UDP stream forwarding
-- Rate limiting
-- Carefully constrained advanced configuration snippets
+- **Richer certificate diagnostics** — on-demand checks that distinguish DNS, inbound port, TLS, and upstream failures per domain, plus a redacted support-report export.
+- **Wildcard/DNS-challenge certificates** — selected DNS-provider integrations for domains that can't use HTTP-01 validation. Needs encrypted secret storage for provider API credentials before it ships.
+- **Browsable backup/restore history** — today a restore validates and rolls back safely, but there's no UI history of past backups beyond what's on disk.
+- **Container picker for Proxy/Streaming targets** — letting a target be selected from a list of running Docker containers instead of typed as an IP/hostname, gated behind an opt-in Docker-socket mount since it needs real access to the Engine API. Also needs a shared Docker network between Site Gateway and the target container to actually be reachable, not just discoverable.
+- **Tailscale integration** — documented patterns exist today (host-level Tailscale for private dashboard access, a sidecar container for proxying to tailnet-only targets, `tailscale serve`/`funnel` for exposing a route without opening router ports), but nothing is built into Site Gateway itself yet.
+- **Dynamic DNS** and **deeper Caddy controls** for advanced users who outgrow the guided options.
+- **Rate limiting** and other specialist gateway controls.
 
 ## Important constraints
 
 - Public automatic certificates require working public DNS and inbound access to ports 80/443 unless a DNS challenge is configured.
 - HSTS should never be enabled by default; a bad configuration can make a domain inaccessible until the browser policy expires.
-- Wildcard/DNS certificates require storing DNS-provider credentials and therefore need encrypted secret storage.
+- Wildcard/DNS certificates require storing DNS-provider credentials and therefore need encrypted secret storage before they can ship.
 - Ports 80 and 443 must not already be owned by another reverse proxy on the same host.
-- Arbitrary Nginx/Caddy snippets substantially increase support and security risk and should remain an expert-only feature.
-
-## Scope recommendation
-
-Prioritize reporting before adding more creation options: certificate health, renewal visibility, upstream checks, and useful logs make the existing gateway trustworthy. Follow that with redirect hosts and reusable access lists. Custom certificates, DNS challenges, streams, multi-user roles, and raw snippets should remain later advanced work because they add credential-storage, validation, and support complexity.
-
-## NGINX Proxy Manager alignment
-
-| Capability | Site Gateway direction | Priority |
-| --- | --- | --- |
-| Proxy hosts, WebSockets, automatic HTTPS | Implemented through guided Caddy configuration | Current |
-| Certificate expiration and renewal reporting | First-class certificate health page and dashboard alerts | Next |
-| Access logs and traffic reporting | Recent requests, status distribution, bytes, and errors per host; avoid promising full analytics | Next |
-| Upstream health | Reachability, response time, and failure reason per proxy target | Next |
-| Redirect hosts and maintenance responses | Implemented as Redirect Hosts and configurable Default Site behaviors | Current |
-| Access lists and authentication | Reusable policies with network rules and a themed sign-in flow | Current |
-| DNS and reachability diagnostics | Guided checks for resolution, public IP, ports 80/443, and certificate eligibility | Near term |
-| Custom certificates | Validated matching certificate/key upload and complete-backup support | Current |
-| Wildcard certificates | Selected DNS-provider integrations with encrypted API credentials | Later |
-| Advanced proxy options | Custom locations, headers, compression, upstream TLS, health expectations, and validated snippets | Current |
-| TCP/UDP streams | Separate advanced area with explicit port-conflict checks | Later |
-| Backup and restore | Configuration/complete archives, browser download/import, schedules, retention, encryption, and rollback | Current |
+- A Docker-socket-based container picker is opt-in only — socket access is root-equivalent on the host and should never be a default requirement.
+- Arbitrary Caddy snippets substantially increase support and security risk and stay an expert-only, size-limited, validated feature.

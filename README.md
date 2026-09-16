@@ -1,7 +1,10 @@
 <div align="center">
-  <img src="src/public/site-gateway-icon-approved.png" alt="Site Gateway icon" width="88">
-  <br>
-  <img src="src/public/site-gateway-wordmark-approved.png" alt="Site Gateway" width="280">
+  <p>
+    <img src="src/public/site-gateway-icon-approved.png" alt="Site Gateway icon" width="88">
+  </p>
+  <p>
+    <img src="src/public/site-gateway-wordmark-approved.png" alt="Site Gateway" width="280">
+  </p>
   <p><strong>Host. Proxy. Secure.</strong></p>
   <p>A friendly, self-hosted gateway for homelabs and small teams — publish static sites, reverse-proxy your apps, forward raw TCP/UDP streams, and manage TLS and access from one calm dashboard.</p>
   <p>
