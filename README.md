@@ -111,10 +111,19 @@ For automatic image-based upgrades, Unraid's **Update Container** action pulls t
 
 ## ZimaOS
 
+The simplest path is [`compose.zimaos.yaml`](compose.zimaos.yaml) — a ready-to-import file with the `x-casaos` metadata ZimaOS's app installer and App Store use for the icon, title, and port mapping.
+
+1. In ZimaOS, go to **Docker → Install a Customized App**, and paste or select `compose.zimaos.yaml`.
+2. Before starting it, edit `ADMIN_PASSWORD` and `SESSION_SECRET` in the environment fields.
+3. Confirm the data path — it defaults to `/DATA/AppData/site-gateway` — and start the app.
+4. Open `http://ZIMAOS-IP:8080`.
+
+Prefer a plain Compose file instead? `compose.yaml` (build from source) and `compose.release.yaml` (pull the published image) both work the same way:
+
 1. Copy this folder into ZimaOS storage, e.g. `/DATA/AppData/site-gateway/app`.
 2. Point the Compose volume at `/DATA/AppData/site-gateway/data:/data`.
 3. Set `ADMIN_PASSWORD` and `SESSION_SECRET` (and `PUID`/`PGID` if needed — ZimaOS typically uses `1000:1000`).
-4. Import `compose.yaml` (or `compose.release.yaml` for image-based upgrades) through ZimaOS's custom app / Compose import option, or run it from the terminal:
+4. Import through ZimaOS's custom app / Compose import option, or run it from the terminal:
 
    ```bash
    cd /DATA/AppData/site-gateway/app

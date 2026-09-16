@@ -1,3 +1,8 @@
+
+# Pulls the published multi-arch image instead of building from source.
+# Copy .env.example to .env, set ADMIN_PASSWORD and SESSION_SECRET, then:
+#   docker compose -f compose.release.yaml pull
+#   docker compose -f compose.release.yaml up -d
 services:
   site-gateway:
     image: ${SITE_GATEWAY_IMAGE:-ghcr.io/mfwadejr/site-gateway2:latest}
@@ -18,9 +23,13 @@ services:
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
-      - "${HTTPS_PORT:-443}:443/udp"
+      - "${HTTPS_PORT:-443}:443/udp"   # HTTP/3 (QUIC) — forward UDP 443 on your router/firewall too
       - "8080:8080"
       - "9000-9099:9000-9099"
+      # Streaming Hosts (optional): add one line per TCP/UDP port you forward
+      # from the dashboard, matching the target port you'll enter there.
+      # - "25565:25565"
+      # - "25565:25565/udp"
     volumes:
       - ${SITE_GATEWAY_DATA:-/DATA/AppData/site-gateway}:/data
     labels:

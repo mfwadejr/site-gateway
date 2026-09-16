@@ -1,27 +1,58 @@
+
 services:
   site-gateway:
     build: .
     container_name: site-gateway
     restart: unless-stopped
     environment:
+      # Bootstrap dashboard credentials. Required — change the password before
+      # starting the container. These become the initial Administrator account;
+      # first-time setup will ask you to confirm or replace them.
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: change-this-password
-      # Optional: set a long random SESSION_SECRET to keep sessions valid across
-      # container rebuilds. If omitted, one is derived from ADMIN_USERNAME/ADMIN_PASSWORD.
+
+      # Optional: set a long random string to keep login sessions valid across
+      # container rebuilds. If omitted, one is derived from the admin
+      # username/password above. Rotating this signs everyone out.
       # SESSION_SECRET: ""
+
+      # Dashboard port inside the container. Change the left side of the
+      # matching entry under `ports:` below if you remap it.
       ADMIN_PORT: 8080
+
+      # Direct-LAN port range Hosted Sites can bind to. Keep this in sync with
+      # the "9000-9099:9000-9099" line under `ports:` below — Docker can't add
+      # a host port to an already-running container, so widen both together
+      # before starting the container if you need a different range.
       SITE_PORT_MIN: 9000
       SITE_PORT_MAX: 9099
+
+      # Where persistent state lives inside the container. Leave this as
+      # /data and change the host side of the volume mount instead.
       DATA_DIR: /data
+
+      # Optional: encryption password for scheduled Complete/Configuration
+      # backups. Leave empty to store backups unencrypted (not recommended,
+      # since Complete backups include certificate private keys).
       BACKUP_PASSWORD: ""
+
+      # User/group the container writes persistent files as. Defaults suit a
+      # typical Linux host; Unraid commonly uses PUID=99, PGID=100.
       PUID: 1000
       PGID: 1000
+
+      # Optional: certificate account email, passed to Caddy's ACME client.
       ACME_EMAIL: ""
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp"
+      - "443:443/udp"       # HTTP/3 (QUIC) — forward UDP 443 on your router/firewall too
       - "8080:8080"
       - "9000-9099:9000-9099"
+      # Streaming Hosts (optional): add one line per TCP/UDP port you forward
+      # from the dashboard, matching the target port you'll enter there.
+      # Example for a Minecraft server:
+      # - "25565:25565"
+      # - "25565:25565/udp"
     volumes:
       - ./data:/data

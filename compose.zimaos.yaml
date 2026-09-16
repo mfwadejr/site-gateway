@@ -1,0 +1,83 @@
+
+# ZimaOS App Store / custom-install compose file for Site Gateway.
+#
+# Import this file directly (ZimaOS → Docker → Install a Customized App →
+# paste/select this file), or use it as the source compose for a ZimaOS
+# App Store submission — the `x-casaos` block below follows ZimaOS's v2
+# app-store schema (see docs.zimaspace.com/docs/developer/app-store-compose-x-casaos).
+#
+# After install, open the ZimaOS app's settings and change ADMIN_PASSWORD
+# and SESSION_SECRET before exposing this to anything beyond your LAN.
+
+name: site-gateway
+
+services:
+  site-gateway:
+    image: ghcr.io/mfwadejr/site-gateway2:latest
+    container_name: site-gateway
+    restart: unless-stopped
+    environment:
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: change-this-password
+      SESSION_SECRET: change-this-too-at-least-32-characters
+      ADMIN_PORT: 8080
+      SITE_PORT_MIN: 9000
+      SITE_PORT_MAX: 9099
+      DATA_DIR: /data
+      BACKUP_PASSWORD: ""
+      # ZimaOS commonly runs its data volumes as 1000:1000; adjust if your
+      # instance differs.
+      PUID: 1000
+      PGID: 1000
+      ACME_EMAIL: ""
+    ports:
+      - target: 8080
+        published: "8080"
+        protocol: tcp
+      - target: 80
+        published: "80"
+        protocol: tcp
+      - target: 443
+        published: "443"
+        protocol: tcp
+      - target: 443
+        published: "443"
+        protocol: udp
+      - target: 9000
+        published: "9000-9099"
+        protocol: tcp
+      # Streaming Hosts (optional): add one entry per TCP/UDP port you forward
+      # from the dashboard, matching the target port you'll enter there.
+      # - target: 25565
+      #   published: "25565"
+      #   protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/AppData/site-gateway
+        target: /data
+
+x-casaos:
+  id: dev.mfwadejr.sitegateway
+  main: site-gateway
+  index: /
+  port_map: "8080"
+  scheme: http
+  icon: https://raw.githubusercontent.com/mfwadejr/site-gateway2/main/src/public/site-gateway-icon-approved.png
+  title:
+    en_US: Site Gateway
+  tagline:
+    en_US: Host. Proxy. Secure. A calm dashboard for sites, proxies, and TLS.
+  description:
+    en_US: >-
+      A friendly, self-hosted gateway for homelabs and small teams. Publish
+      static sites, reverse-proxy your apps, forward raw TCP/UDP streams, and
+      manage TLS and access from one dashboard — powered by Caddy.
+  category: Networking
+  author: mfwadejr
+  developer: mfwadejr
+  architectures: ["amd64", "arm64"]
+  version: "0.11.101"
+  update_at: "2026-09-16"
+  website: https://github.com/mfwadejr/site-gateway2
+  repo: https://github.com/mfwadejr/site-gateway2
+  support: https://github.com/mfwadejr/site-gateway2/issues
