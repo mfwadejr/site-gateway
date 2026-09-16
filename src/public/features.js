@@ -113,12 +113,12 @@ function defaultSiteThemedHtml(title, message) {
 // match the currently selected response mode (themed 404 / welcome / abort /
 // redirect / custom HTML).
 function renderDefaultSitePreview() {
-  const form = document.querySelector("#default-site-form"), frame = document.querySelector("#default-site-preview-frame"), note = document.querySelector("#default-site-preview-note");
+  const form = document.querySelector("#default-site-form"), frame = document.querySelector("#default-site-preview-frame"), note = document.querySelector("#default-site-preview-note"), caption = document.querySelector("#default-site-preview-caption");
   if (!form || !frame || !note) return;
   const mode = form.elements.mode.value;
-  if (mode === "abort") { frame.closest(".default-site-preview-frame-wrap").classList.add("hidden"); note.classList.remove("hidden"); note.textContent = "No page is shown for this mode \u2014 the connection is closed immediately."; return; }
-  if (mode === "redirect") { frame.closest(".default-site-preview-frame-wrap").classList.add("hidden"); note.classList.remove("hidden"); const destination = form.elements.redirectUrl.value.trim(); note.textContent = destination ? `No page is shown for this mode \u2014 visitors are redirected to ${destination}.` : "No page is shown for this mode \u2014 enter a redirect destination above."; return; }
-  frame.closest(".default-site-preview-frame-wrap").classList.remove("hidden"); note.classList.add("hidden");
+  if (mode === "abort") { frame.closest(".default-site-preview-frame-wrap").classList.add("hidden"); note.classList.remove("hidden"); note.textContent = "No page is shown for this mode \u2014 the connection is closed immediately."; caption?.classList.add("hidden"); return; }
+  if (mode === "redirect") { frame.closest(".default-site-preview-frame-wrap").classList.add("hidden"); note.classList.remove("hidden"); const destination = form.elements.redirectUrl.value.trim(); note.textContent = destination ? `No page is shown for this mode \u2014 visitors are redirected to ${destination}.` : "No page is shown for this mode \u2014 enter a redirect destination above."; caption?.classList.add("hidden"); return; }
+  frame.closest(".default-site-preview-frame-wrap").classList.remove("hidden"); note.classList.add("hidden"); caption?.classList.remove("hidden");
   if (mode === "custom") { frame.srcdoc = form.elements.customHtml.value || "<p style=\"font:14px sans-serif;color:#95a4ba;padding:20px\">Enter Custom HTML above to preview it here.</p>"; return; }
   const title = form.elements.title.value || (mode === "welcome" ? "Gateway ready" : "Route not found");
   const message = form.elements.message.value || "The gateway is responding, but this address has not been configured.";
