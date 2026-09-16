@@ -2,7 +2,7 @@
 
 ## Current release status
 
-`v0.11.101` is a stable, day-to-day release. The product has moved well past the original alpha creation flow described in earlier versions of this document — Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts are all implemented, along with authentication, access control, certificates, backups, and full dashboard reporting. This document reflects what's actually shipped and what's genuinely still ahead.
+`v0.11.112` is a stable, day-to-day release. The product has moved well past the original alpha creation flow described in earlier versions of this document — Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts are all implemented, along with authentication, access control, certificates, backups, and full dashboard reporting. This document reflects what's actually shipped and what's genuinely still ahead.
 
 ## Product direction
 
@@ -39,6 +39,7 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 - Performance view with request throughput, response times, and per-route breakdowns.
 - Rotating access and activity logs.
 - Update-available banner when a newer image is deployed.
+- A redacted support-report export exists (version, config health, certificate readiness, upstream checks, recent events) but its UI entry point is currently hidden pending a readability rewrite of the report's output format.
 
 ### Data and operations
 
@@ -49,6 +50,7 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 ### Brand and docs
 
 - Current icon and wordmark (v0.11.99) used consistently across the login screen, sidebar, themed default pages, and this README.
+- A sitewide design-token system (colors, spacing, radius, and type scale defined once and reused everywhere) underpins the interface, so new UI stays visually consistent by default.
 - Integrated, searchable in-app documentation covering every configurable field, including 2FA and the update-notification banner.
 - Companion marketing site with an installation guide covering Docker Compose, plain `docker run`, and Unraid.
 
@@ -56,7 +58,7 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 
 Roughly in priority order:
 
-- **Richer certificate diagnostics** — on-demand checks that distinguish DNS, inbound port, TLS, and upstream failures per domain, plus a redacted support-report export.
+- **Richer certificate diagnostics** — on-demand checks that distinguish DNS, inbound port, TLS, and upstream failures per domain.
 - **Wildcard/DNS-challenge certificates** — selected DNS-provider integrations for domains that can't use HTTP-01 validation. Needs encrypted secret storage for provider API credentials before it ships.
 - **Browsable backup/restore history** — today a restore validates and rolls back safely, but there's no UI history of past backups beyond what's on disk.
 - **Container picker for Proxy/Streaming targets** — letting a target be selected from a list of running Docker containers instead of typed as an IP/hostname, gated behind an opt-in Docker-socket mount since it needs real access to the Engine API. Also needs a shared Docker network between Site Gateway and the target container to actually be reachable, not just discoverable.
