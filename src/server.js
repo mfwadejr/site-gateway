@@ -69,6 +69,8 @@ const probeFailures = { gateway: 0, http: 0, https: 0 };
 let iconCatalog = null;
 let storage;
 
+
+// --- Small utility helpers (activity log, dir sizing, env parsing, passwords) -----------
 function recordActivity(message, status = "ok") {
   const entry = { message, status, at: new Date().toISOString() };
   recentActivity.unshift(entry);
@@ -121,6 +123,8 @@ function activeAdministrators() {
   return users.filter(user => user.role === "administrator" && user.status === "active");
 }
 
+
+// --- Sessions & auth cookies --------------------------------------------------------------
 function slugify(value) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
 }
@@ -151,6 +155,8 @@ const saveStreams = async () => storage.saveCollection("streams", streams);
 const saveAccessLists = async () => storage.saveCollection("access_lists", accessLists);
 const saveSettings = async () => storage.saveSettings(settings);
 
+
+// --- Data loading (hosted sites) and shared validation helpers -----------------------------
 async function clearDirectoryContents(directory) {
   await fsp.mkdir(directory, { recursive: true });
   let lastError = null;
@@ -214,6 +220,8 @@ async function loadSites() {
   await saveSettings();
 }
 
+
+// --- Domain / target / stream-port validation -----------------------------------------------
 function normalizeDomain(value) {
   return String(value || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
@@ -263,6 +271,8 @@ function streamPortConflict(port, exceptId) {
   return null;
 }
 
+
+// --- Header / location / custom-config sanitizing for Proxy & Hosted advanced options -------
 function cleanHeaders(value) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 30).map(item => ({ name: String(item.name || "").trim(), value: String(item.value || "").trim() }))
@@ -284,6 +294,7 @@ function cleanCustomConfig(value) {
   if (/(^|\n)\s*(?:\{|admin\b|storage\b|import\b|persist_config\b)/i.test(config)) throw Object.assign(new Error("Global blocks, imports, and Caddy administration settings are not allowed here."), { status: 400 });
   return config;
 }
+
 
 function applyAdvancedSettings(item, body) {
   if (body.upstreams !== undefined) {
@@ -313,6 +324,9 @@ function applyAdvancedSettings(item, body) {
   if (body.locations !== undefined) item.locations = cleanLocations(body.locations);
 }
 
+
+// --- Caddyfile generation: turns hosted sites/proxies/redirects/streams/access lists
+//     into the actual Caddy configuration and reloads Caddy with it -------------------------
 function expectedStatusMatches(status, specification = "200-499") {
   return String(specification).split(",").some(part => {
     const value = part.trim();
@@ -383,6 +397,10 @@ function proxyBlock(target, item, indent = "  ") {
   return output;
 }
 
+
+// Writes the themed default ("no route configured") static HTML page to disk. Keep
+// this HTML in sync with the client-side preview in features.js's
+// defaultSiteThemedHtml() -- see the comment there.
 async function writeDefaultSitePage() {
   const selected = settings.defaultSite || {};
   const title = String(selected.title || (selected.mode === "welcome" ? "Gateway ready" : "Route not found")).replace(/[<>]/g, "");
@@ -393,6 +411,9 @@ async function writeDefaultSitePage() {
   await fsp.writeFile(path.join(defaultSiteDir, "index.html"), html);
 }
 
+
+// renderCaddyfile -- builds the full Caddy JSON/Caddyfile config from current state
+// (sites, proxies, redirects, streams, access lists, default site settings).
 function renderCaddyfile() {
   const email = String(process.env.ACME_EMAIL || "").trim();
   const lines = ["{", "  admin localhost:2019", "  persist_config off", `  storage file_system ${managedCertificatesDir}`];
@@ -425,6 +446,9 @@ function renderCaddyfile() {
   return `${lines.join("\n")}\n`;
 }
 
+
+// syncCaddy -- applies the generated config to the running Caddy instance and
+// records success/failure (gatewayError, lastGatewayReload) for the dashboard.
 async function syncCaddy() {
   const nextPath = `${caddyfilePath}.next`;
   const previous = await fsp.readFile(caddyfilePath, "utf8").catch(() => null);
@@ -457,6 +481,8 @@ async function syncCaddy() {
   }
 }
 
+
+// --- Status helpers & public (client-facing, secret-stripped) view builders ------------------
 function siteStatus(site) {
   if (!site.enabled) return "disabled";
   if (site.domain && gatewayError) return "error";
@@ -477,6 +503,8 @@ function publicStream(stream) {
   return { ...stream, status: stream.enabled === false ? "disabled" : activeStreams.has(stream.id) ? "running" : "error", upstream: upstreamHealth.get(stream.id) || null };
 }
 
+
+// --- Certificate inventory & domain readiness diagnostics --------------------------------------
 async function walkFiles(directory) {
   const output = [];
   for (const entry of await fsp.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error))) {
@@ -541,6 +569,7 @@ async function pruneOrphanedCertificates(candidateDomains) {
   if (removed.size) recordActivity(`Removed stored certificate data for ${orphaned.join(", ")} (no longer in use).`);
 }
 
+
 async function domainReadiness() {
   const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.enabled && item.domain).flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
   const certs = await certificateInventory();
@@ -554,6 +583,8 @@ async function domainReadiness() {
   }));
 }
 
+
+// --- Upstream (proxy target) health checks ------------------------------------------------------
 async function checkProxy(proxy) {
   if (!proxy.enabled) { const result = { status: "disabled", checkedAt: new Date().toISOString(), history: [] }; upstreamHealth.set(proxy.id, result); return result; }
   if (proxy.healthEnabled === false) { const result = { status: "unmonitored", checkedAt: null, history: [] }; upstreamHealth.set(proxy.id, result); return result; }
@@ -584,6 +615,8 @@ async function checkAllProxies() {
 
 const SENSITIVE_QUERY_PARAM_PATTERNS = [/token/i, /secret/i, /password/i, /passwd/i, /auth/i, /session/i, /api[-_]?key/i, /credential/i];
 
+
+// --- Access log ingestion (tailing Caddy's access log into SQLite) ------------------------------
 function redactUri(uri) {
   const str = String(uri || "");
   const queryIndex = str.indexOf("?");
@@ -624,6 +657,8 @@ async function importAccessLogsToSqlite() {
   } catch (error) { console.warn("Could not import access logs into SQLite:", error.message); }
 }
 
+
+// --- Raw TCP probing, used for streaming-host health checks --------------------------------------
 function tcpProbe(port, timeoutMs = 1000) {
   return new Promise(resolve => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
@@ -655,6 +690,8 @@ function stableProbe(name, responding) {
     : { status: "error", healthy: false, responding: false };
 }
 
+
+// --- Icon catalog (searchable dashboard-icons list) & icon caching -------------------------------
 async function loadIconCatalog() {
   if (iconCatalog) return iconCatalog;
   try {
@@ -691,6 +728,9 @@ async function cacheIcon(slug) {
   return `/site-icons/${filename}`;
 }
 
+
+// --- Dashboard snapshot: aggregates health/status across every subsystem for the
+//     Overview page and the /api/dashboard endpoint --------------------------------------------
 async function dashboardSnapshot() {
   const hosted = sites.map(publicSite);
   const proxyHosts = proxies.map(publicProxy);
@@ -757,6 +797,8 @@ async function dashboardSnapshot() {
   };
 }
 
+
+// --- Hosted site process/lifecycle control --------------------------------------------------------
 async function startSite(site) {
   if (!site.enabled || activeServers.has(site.id)) return;
   const root = path.join(sitesDir, site.id);
@@ -788,6 +830,8 @@ async function restartSite(site) {
 // Streaming hosts relay raw TCP/UDP on a specific port straight to a host:port target — no domain, no HTTP,
 // no Caddy involvement. This is the same pattern as startSite()/stopSite() above: a dedicated listener Site
 // Gateway owns directly, just for a plain socket instead of an HTTP server.
+
+// --- Streaming host process/lifecycle control -------------------------------------------------------
 async function startStream(stream) {
   if (stream.enabled === false || activeStreams.has(stream.id)) return;
   const [targetHost, targetPortRaw] = String(stream.target || "").split(":");
@@ -869,6 +913,8 @@ async function checkStream(stream) {
   return result;
 }
 
+
+// --- Upload handling (hosted site ZIP install) ------------------------------------------------------
 function validatePort(port, exceptId) {
   if (!Number.isInteger(port) || port < minPort || port > maxPort) return `Port must be between ${minPort} and ${maxPort}.`;
   if (sites.some(site => site.port === port && site.id !== exceptId)) return "That port is already assigned.";
@@ -913,6 +959,8 @@ async function installUpload(site, file) {
 
 const portableCollections = { "sites.json": () => sites, "proxies.json": () => proxies, "redirects.json": () => redirects, "streams.json": () => streams, "access-lists.json": () => accessLists, "users.json": () => users, "groups.json": () => groups, "settings.json": () => settings };
 
+
+// --- Backups: create / open / list / restore, including encryption -----------------------------------
 async function protectBackup(buffer, password) {
   if (!password) return buffer;
   const salt = crypto.randomBytes(16), iv = crypto.randomBytes(12), key = await scryptAsync(password, salt, 32), cipher = crypto.createCipheriv("aes-256-gcm", key, iv), encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
@@ -1041,6 +1089,11 @@ const upload = multer({ dest: uploadDir, limits: { fileSize: 250 * 1024 * 1024, 
 const certificateUpload = multer({ dest: uploadDir, limits: { fileSize: 5 * 1024 * 1024, files: 2 } });
 const iconUpload = multer({ dest: uploadDir, limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 app.disable("x-powered-by");
+
+// ============================================================================================
+// HTTP layer: Express app setup, auth middleware, and every /api/* route.
+// Routes below are grouped by area; see the section comments for each group.
+// ============================================================================================
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.get(["/", "/index.html"], (req, res) => {
@@ -1052,6 +1105,8 @@ app.get(["/", "/index.html"], (req, res) => {
 app.use(express.static(publicDir));
 app.use("/site-icons", express.static(iconsDir, { immutable: true, maxAge: "30d", setHeaders: res => res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'") }));
 
+
+// --- Session / login / MFA login / logout ------------------------------------------------------------
 app.get("/api/session", (req, res) => {
   const user = sessionUser(req);
   res.json({ authenticated: Boolean(user), setupRequired: Boolean(user?.setupRequired), installationSetupPending: users.some(item => item.setupRequired), user: user ? publicUser(user) : null, username: user?.username || null });
@@ -1129,6 +1184,8 @@ app.post("/api/logout", (req, res) => {
   res.setHeader("Set-Cookie", "webserver_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
   res.json({ ok: true });
 });
+
+// --- Public access-check endpoint used by Caddy's forward_auth for Access Lists -----------------------
 function accessSession(req, listId) {
   const token = cookieMap(req.headers.cookie).site_gateway_access; if (!token) return null;
   const [storedList, username, expires, signature] = token.split(".");
@@ -1143,6 +1200,8 @@ app.get("/api/access-check", (req, res) => {
   const original = String(req.headers["x-forwarded-uri"] || "/"); const safeReturn = original.startsWith("/") && !original.startsWith("//") ? original : "/";
   res.redirect(302, `/_site-gateway/login?list=${encodeURIComponent(listId)}&return=${encodeURIComponent(safeReturn)}`);
 });
+
+// --- Themed login page served for Access-List-protected routes ------------------------------------------
 app.get("/_site-gateway/login", (req, res) => {
   const listId = String(req.query.list || ""), list = accessLists.find(item => item.id === listId && item.enabled !== false);
   if (!list) return res.status(404).send("Access policy not found."); const safeReturn = String(req.query.return || "/").startsWith("/") ? String(req.query.return || "/") : "/";
@@ -1157,6 +1216,8 @@ app.post("/_site-gateway/login", async (req, res, next) => {
     res.setHeader("Set-Cookie", `site_gateway_access=${value}.${sign(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200${secure}`); res.redirect(303, safeReturn);
   } catch (error) { next(error); }
 });
+
+// --- First-run admin setup ---------------------------------------------------------------------------------
 app.use("/api", (req, res, next) => {
   const user = sessionUser(req);
   if (!user) return res.status(401).json({ error: "Please sign in." });
@@ -1182,8 +1243,12 @@ app.post("/api/setup/admin", async (req, res, next) => {
     res.json({ ok: true });
   } catch (error) { next(error); }
 });
+
+// --- Everything below requires an authenticated session (auth middleware applied above) --------------------
 app.use("/api", (req, res, next) => { currentAuditActor = req.user?.id || null; return req.user.setupRequired ? res.status(428).json({ error: "Complete the initial administrator setup before continuing." }) : next(); });
 app.use("/api", (req, res, next) => { if (req.path.startsWith("/account/")) return next(); if (req.method === "GET" || req.user.role === "administrator") return next(); const operational = /^\/(sites|proxies|redirects|streams|access-lists)(\/|$)/.test(req.path); if (req.user.role === "standard" && operational) return next(); return res.status(403).json({ error: "Administrator access is required for this action." }); });
+
+// --- Account: password change & MFA setup/confirm/disable/recovery-codes -----------------------------------
 app.post("/api/account/password", async (req, res, next) => {
   try {
     const currentPassword = String(req.body.currentPassword || "");
@@ -1242,6 +1307,8 @@ app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
     res.json({ ok: true, recoveryCodes: codes });
   } catch (error) { next(error); }
 });
+
+// --- Config, Users, Audit log, Groups, Access List <-> Group assignment --------------------------------------
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError } }));
 app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/audit", (req, res) => req.user.role === "administrator" ? res.json(storage.listAudit({ user: req.query.user, action: req.query.action, status: req.query.status }).map(item => ({ ...item, actor: users.find(user => user.id === item.actor_id)?.username || "System" }))) : res.status(403).json({ error: "Administrator access is required." }));
@@ -1310,6 +1377,8 @@ app.post("/api/access-lists/:id/groups", async (req, res, next) => { try { if (r
 app.post("/api/groups", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const name = String(req.body.name || "").trim().slice(0, 80); if (!name) return res.status(400).json({ error: "Group name is required." }); if (groups.some(group => group.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ error: "That group already exists." }); const group = { id: "group-" + crypto.randomBytes(4).toString("hex"), name, enabled: true, members: [], createdAt: new Date().toISOString() }; groups.push(group); await saveGroups(); recordActivity("Group “" + name + "” created."); res.status(201).json(group); } catch (error) { next(error); } });
 app.patch("/api/groups/:id", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const group = groups.find(value => value.id === req.params.id); if (!group) return res.status(404).json({ error: "Group not found." }); if (req.body.name !== undefined) { const name = String(req.body.name || "").trim().slice(0, 80); if (!name) return res.status(400).json({ error: "Group name is required." }); group.name = name; } if (req.body.enabled !== undefined) group.enabled = Boolean(req.body.enabled); if (Array.isArray(req.body.members)) group.members = [...new Set(req.body.members)].filter(id => users.some(user => user.id === id)); await saveGroups(); recordActivity("Group “" + group.name + "” updated."); res.json(group); } catch (error) { next(error); } });
 app.delete("/api/groups/:id", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const index = groups.findIndex(value => value.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Group not found." }); const [group] = groups.splice(index, 1); await saveGroups(); recordActivity("Group “" + group.name + "” deleted."); res.status(204).end(); } catch (error) { next(error); } });
+
+// --- Settings, dashboard, certificates, health checks, domain readiness ---------------------------------------
 app.get("/api/settings", (req, res) => req.user.role === "administrator" ? res.json({ ...settings, backupDirectory: backupsDir }) : res.status(403).json({ error: "Administrator access is required." }));
 app.post("/api/settings/verify-admin", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error:"Administrator access is required." }); if (String(req.body.username || "").trim().toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(422).json({ error:"Administrator username or password is incorrect." }); res.json({ ok:true }); } catch (error) { next(error); } });
 app.post("/api/settings/verify-username", (req, res) => { if (req.user.role !== "administrator") return res.status(403).json({ error:"Administrator access is required." }); const username = String(req.body.username || "").trim().toLowerCase(); res.json({ valid: Boolean(username && username === String(req.user.username || "").toLowerCase()) }); });
@@ -1326,6 +1395,10 @@ app.post("/api/health/check", async (req, res, next) => {
   catch (error) { next(error); }
 });
 app.get("/api/readiness", async (req, res, next) => { try { res.json({ checkedAt: new Date().toISOString(), routes: await domainReadiness() }); } catch (error) { next(error); } });
+
+// GET /api/support-report -- generates the downloadable diagnostics report (gateway
+// health, storage integrity, every route's config, certificate status, domain
+// readiness, and recent activity) used for troubleshooting.
 app.get("/api/support-report", async (req, res, next) => {
   try {
     if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
@@ -1335,6 +1408,8 @@ app.get("/api/support-report", async (req, res, next) => {
     res.setHeader("Content-Disposition", `attachment; filename="site-gateway-support-${new Date().toISOString().slice(0,10)}.json"`); res.type("json").send(JSON.stringify(report, null, 2));
   } catch (error) { next(error); }
 });
+
+// --- Upstream health, Logs, and Performance (request throughput/trend) endpoints --------------------------------
 app.get("/api/upstreams", (req, res) => res.json(proxies.map(publicProxy)));
 app.post("/api/upstreams/check", async (req, res, next) => {
   try { res.json(await checkAllProxies()); }
@@ -1363,6 +1438,8 @@ app.get("/api/performance", (req, res, next) => {
     });
   } catch (error) { next(error); }
 });
+
+// --- Icon search and per-entity icon upload/URL/removal -----------------------------------------------------------
 app.get("/api/icons/search", async (req, res, next) => {
   try {
     const query = String(req.query.q || "").trim().toLowerCase().slice(0, 80);
@@ -1422,6 +1499,8 @@ app.post("/api/:kind/:id/icon", iconUpload.single("icon"), async (req, res, next
   } catch (error) { next(error); }
   finally { if (req.file?.path) await fsp.rm(req.file.path, { force: true }).catch(() => {}); }
 });
+
+// --- Hosted Sites: create / toggle / replace files / delete / edit --------------------------------------------------
 app.post("/api/sites", upload.single("files"), async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim();
@@ -1516,6 +1595,8 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     res.json(publicSite(site));
   } catch (error) { next(error); }
 });
+
+// --- Proxy Hosts: create / edit / custom certificate upload / toggle / delete ---------------------------------------
 app.post("/api/proxies", async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim();
@@ -1620,6 +1701,8 @@ app.delete("/api/proxies/:id", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+
+// --- Access Lists: create / edit / assignments / delete ------------------------------------------------------------
 app.post("/api/access-lists", async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim();
@@ -1685,6 +1768,8 @@ app.delete("/api/access-lists/:id", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+
+// --- Redirect Hosts: create / edit / delete -------------------------------------------------------------------------
 app.post("/api/redirects", async (req, res, next) => {
   try {
     const name = String(req.body.name || "").trim(); const domain = normalizeDomain(req.body.domain); const domains = normalizeDomains(domain, req.body.domains); const target = String(req.body.target || "").trim().replace(/\/$/, "");
@@ -1713,6 +1798,8 @@ app.delete("/api/redirects/:id", async (req, res, next) => {
   try { const index = redirects.findIndex(item => item.id === req.params.id); if (index < 0) return res.status(404).json({ error: "Redirect Host not found." }); const [item] = redirects.splice(index, 1); await syncCaddy(); await pruneOrphanedCertificates(normalizeDomains(item.domain, item.domains)); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” deleted.`); res.status(204).end(); } catch (error) { next(error); }
 });
 
+
+// --- Streaming Hosts: list / create / edit / toggle / delete -----------------------------------------------------------
 app.get("/api/streams", (req, res) => res.json(streams.map(publicStream)));
 app.post("/api/streams", async (req, res, next) => {
   try {
@@ -1777,6 +1864,8 @@ app.delete("/api/streams/:id", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+
+// --- Settings (general), log retention/pruning, log download, factory reset ---------------------------------------------
 app.patch("/api/settings", async (req, res, next) => {
   try {
     if (req.body.defaultSite) {
@@ -1802,6 +1891,8 @@ app.get("/api/logs/prune/preview", (req, res, next) => { try { if (req.user.role
 app.get("/api/logs/download", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const payload = { product: "Site Gateway", generatedAt: new Date().toISOString(), access: storage.listAccessEvents(500), activity: storage.listActivity(500), audit: storage.listAudit({}) }; res.setHeader("Content-Disposition", `attachment; filename="site-gateway-logs-${new Date().toISOString().slice(0, 10)}.json"`); res.json(payload); } catch (error) { next(error); } });
 app.post("/api/settings/reset-defaults", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error:"Administrator access is required." }); if (String(req.body.confirmation || "") !== "RESTORE DEFAULT") return res.status(400).json({ error:"Type RESTORE DEFAULT exactly to continue." }); if (String(req.body.username || "").trim().toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(401).json({ error:"Administrator credentials were not accepted." }); settings.defaultSite = { mode:"themed404", redirectUrl:"", redirectCode:302, preservePath:true, title:"Route not found", message:"The gateway is responding, but this address has not been configured.", customHtml:"" }; settings.backups = { enabled:false, frequency:"daily", hour:2, retention:7, type:"complete", includeLogs:false, encrypt:false, lastRunAt:null, lastStatus:null }; settings.certificateHealth = { warningDays:30, criticalDays:7, staleMinutes:10 }; await saveSettings(); recordActivity("Gateway preferences restored to defaults."); res.json({ ...settings, backupDirectory:backupsDir }); } catch (error) { next(error); } });
 app.post("/api/factory-reset", async (req, res, next) => { try { if (String(req.body.confirmation || "") !== "FACTORY RESET") return res.status(400).json({ error:"Type FACTORY RESET exactly to continue." }); if (String(req.body.username || "").toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(401).json({ error:"Administrator credentials were not accepted." }); await Promise.all([...activeServers.keys()].map(stopSite)); await Promise.all([...activeStreams.keys()].map(stopStream)); storage.close(); for (const directory of [sitesDir, uploadDir, caddyDir, iconsDir, logsDir, backupsDir, defaultSiteDir, certificatesRoot, path.join(dataDir,"database")]) await clearDirectoryContents(directory); storage = await openStorage(dataDir, backupsDir); sites = []; proxies = []; users = []; redirects = []; streams = []; accessLists = []; groups = []; settings = {}; recentActivity.splice(0); await loadSites(); await syncCaddy(); res.setHeader("Set-Cookie", "webserver_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"); res.status(202).json({ ok:true }); } catch (error) { next(error); } });
+
+// --- Backups: list / create / import / download / restore / delete -----------------------------------------------------
 app.use("/api/backups", (req, res, next) => req.user.role === "administrator" ? next() : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/backups", async (req, res, next) => { try { res.json(await listBackups()); } catch (error) { next(error); } });
 app.post("/api/backups", async (req, res, next) => {
@@ -1825,8 +1916,11 @@ app.post("/api/backups/:filename/restore", async (req, res, next) => {
 app.delete("/api/backups/:filename", async (req, res, next) => {
   try { const filename = path.basename(req.params.filename); if (!filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Invalid backup." }); await fsp.rm(path.join(backupsDir, filename)); recordActivity(`Backup ${filename} deleted.`); res.status(204).end(); } catch (error) { next(error); }
 });
+
 function humanizeGatewayActivityError(message) { const text = String(message || "Unexpected gateway error"); if (/upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(text)) return "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; if (/upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(text)) return "Gateway configuration rejected: HTTPS upstream requires HTTPS transport settings. Change the upstream URL or transport setting."; if (/duplicate.*address|already.*site address/i.test(text)) return "Gateway configuration rejected: This hostname or address is already used by another host. Choose a unique hostname and port."; if (/dial tcp|no such host|lookup .* no such host|upstream.*(invalid|malformed)/i.test(text)) return "Gateway configuration rejected: The upstream address could not be reached or is invalid. Check the hostname, IP address, and port."; if (/invalid hostname|host name.*invalid|malformed.*host/i.test(text)) return "Gateway configuration rejected: The hostname is not valid. Use a valid domain name without a protocol or path."; if (/unrecognized directive|unknown directive|parsing caddyfile tokens/i.test(text)) return "Gateway configuration rejected: The gateway configuration contains an unsupported or malformed directive. Check the selected host settings."; if (/certificate|tls.*(config|handshake)|no certificate/i.test(text)) return "Gateway configuration rejected: The TLS certificate configuration is invalid or unavailable. Check the certificate, key, and HTTPS settings."; return text.replace(/^Gateway configuration was rejected:\s*/i, "Gateway configuration rejected: ").replace(/\s+Details:\s+[\s\S]*$/i, ""); }
 const GATEWAY_CONFIG_ROUTE = /^\/api\/(sites|proxies|redirects|streams|access-lists)(\/|$)/i;
+
+// --- Error handling middleware & server startup -------------------------------------------------------------------------
 app.use((error, req, res, next) => {
   console.error(error);
   const rawMessage = error.message || "Something went wrong.";
@@ -1848,6 +1942,8 @@ app.listen(adminPort, "0.0.0.0", () => {
 setTimeout(() => checkAllProxies().catch(error => console.warn("Initial upstream checks failed:", error.message)), 1500).unref();
 setInterval(() => checkAllProxies().catch(error => console.warn("Upstream checks failed:", error.message)), 60000).unref();
 
+
+// --- Scheduled jobs: automatic backups, log pruning, public IP checks, graceful shutdown ---------------------------------
 async function runScheduledBackup() {
   const schedule = settings.backups || {}; if (!schedule.enabled || Number(schedule.hour) !== new Date().getHours()) return;
   const last = schedule.lastRunAt ? new Date(schedule.lastRunAt) : null; const elapsed = last ? Date.now() - last.getTime() : Infinity;
