@@ -44,7 +44,7 @@ async function api(url, options = {}) {
 // --- Login/dashboard shell, toast, and small formatting helpers ------------------
 function showLogin(message = "") { state.user = null; state.users = []; state.view = "overview"; const form = $("#login-form"); form.reset(); form.elements.username.value = ""; form.elements.password.value = ""; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; $("#mfa-login-form").reset(); $("#mfa-login-form").classList.add("hidden"); $("#login-form").classList.remove("hidden"); $("#mfa-login-error").textContent = ""; setTimeout(() => form.elements.username.focus(), 0); }
 function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); }
-function toast(message) { const el = $("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
+function toast(message, type = "success") { const el = $("#toast"); el.textContent = message; el.classList.toggle("toast-error", type === "error"); el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
 function publicUrl(item) { return item.domain ? `${item.tls === "http" ? "http" : "https"}://${item.domain}` : `${location.protocol}//${location.hostname}:${item.port}`; }
 
@@ -337,10 +337,11 @@ function renderPerformance() {
   $("#performance-sparkline").setAttribute("viewBox", `0 0 ${width} ${height}`);
   $("#performance-sparkline").innerHTML = points.length ? `${gridLines}<path d="${areaPath}" fill="var(--green)" opacity="0.12" stroke="none" /><path d="${smoothLine}" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />` : "";
   if (!points.length) $("#performance-sparkline-labels").innerHTML = '<span class="axis-label" style="left:0;width:100%;top:45%;text-align:center">No request data for this window yet.</span>';
-  const routes = data.routes || [];
+  const routes = (data.routes || []).filter(route => !selected || route.host === selected);
   state.performanceErrorBreakdowns = {};
   const countCell = (count, errors, breakdown, host) => { if (!errors) return `${count.toLocaleString()}`; if (!breakdown?.length) return `${count.toLocaleString()} <span class="count-divider">·</span> <span class="http-status bad">${errors.toLocaleString()}</span>`; state.performanceErrorBreakdowns[host] = { total: errors, breakdown }; return `${count.toLocaleString()} <span class="count-divider">·</span> <button type="button" class="http-status bad count-link-button" data-error-host="${escapeHtml(host)}">${errors.toLocaleString()}</button>`; };
-  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${countCell(route.hourRequests, route.hourErrors)}</td><td>${countCell(route.dayRequests, route.dayErrors, route.errorBreakdown, route.host)}</td><td>${route.dayAvgMs == null ? "—" : `${route.dayAvgMs} ms`}</td></tr>`).join("") : '<tr><td colspan="4" class="quiet-state">No requests have been logged yet.</td></tr>';
+  const formatAvgMs = ms => ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`;
+  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${countCell(route.hourRequests, route.hourErrors)}</td><td>${countCell(route.dayRequests, route.dayErrors, route.errorBreakdown, route.host)}</td><td>${formatAvgMs(route.dayAvgMs)}</td></tr>`).join("") : '<tr><td colspan="4" class="quiet-state">No requests have been logged yet.</td></tr>';
   if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });
 }
 
@@ -362,7 +363,7 @@ function renderUsers() {
     return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><div class="user-head-actions"><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span>${menu}</div></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${roleLabel}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : roleAction === "viewer" ? "Viewer" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}</div><div class="card-footer">${statusToggle}</div></article>`;
   }).join("") : '<p class="quiet-state">No users found.</p>';
   document.querySelectorAll("#user-list .user-card").forEach(card => { card.style.position = "relative"; card.style.minHeight = "250px"; card.style.paddingBottom = "64px"; const head = card.querySelector(".user-card-head"), status = head?.querySelector(".status-pill"), footer = card.querySelector(".card-footer"); if (!head || !footer) return; if (status) footer.prepend(status); });
-  document.querySelectorAll("#user-list .user-card").forEach(card => { const user = state.users.find(item => item.id === card.dataset.userId); const old = card.querySelector('[data-user-action="role"]'); if (!user || !old) return; const select = document.createElement("select"); select.className = "user-role-select"; select.setAttribute("aria-label", `Role for ${user.username}`); select.innerHTML = '<option value="administrator">Administrator</option><option value="standard">Standard User</option><option value="viewer">Viewer</option>'; select.value = user.role; select.addEventListener("change", async () => { try { await api(`/api/users/${user.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ role:select.value }) }); await loadFeatureView(); toast("User role updated."); } catch (error) { select.value = user.role; toast(error.message); } }); old.replaceWith(select); });
+  document.querySelectorAll("#user-list .user-card").forEach(card => { const user = state.users.find(item => item.id === card.dataset.userId); const old = card.querySelector('[data-user-action="role"]'); if (!user || !old) return; const select = document.createElement("select"); select.className = "user-role-select"; select.setAttribute("aria-label", `Role for ${user.username}`); select.innerHTML = '<option value="administrator">Administrator</option><option value="standard">Standard User</option><option value="viewer">Viewer</option>'; select.value = user.role; select.addEventListener("change", async () => { try { await api(`/api/users/${user.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ role:select.value }) }); await loadFeatureView(); toast("User role updated."); } catch (error) { select.value = user.role; toast(error.message, "error"); } }); old.replaceWith(select); });
 }
 
 
@@ -475,7 +476,7 @@ async function boot() {
   if (!state.loadedVersion) state.loadedVersion = state.config.version;
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
   $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh(); if (state.view !== "overview") await loadFeatureView();
-  if (!state.healthTimer) state.healthTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboard().catch(error => toast(error.message)); }, 30000);
+  if (!state.healthTimer) state.healthTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboard().catch(error => toast(error.message, "error")); }, 30000);
   if (!state.updateCheckTimer) state.updateCheckTimer = setInterval(() => { if (!$("#dashboard").classList.contains("hidden")) checkForUpdate().catch(() => {}); }, 60000);
 }
 
@@ -500,20 +501,20 @@ $("#logout").addEventListener("click", async () => { await fetch("/api/logout", 
 
 // --- Dashboard actions: run certificate check, download support report, jump to
 //     an attention item's view -------------------------------------------------------------
-$("#check-health").addEventListener("click", async event => { const button = event.currentTarget; button.disabled = true; button.textContent = "Checking…"; try { const result = await api("/api/health/check", { method:"POST" }); state.dashboard = result.dashboard; state.certificates = result.certificates; state.readiness = { routes:result.readiness }; renderCertificates(); toast("Certificate and domain checks completed."); } catch (error) { toast(error.message); } finally { button.disabled = false; button.textContent = "Run certificate check"; } });
+$("#check-health").addEventListener("click", async event => { const button = event.currentTarget; button.disabled = true; button.textContent = "Checking…"; try { const result = await api("/api/health/check", { method:"POST" }); state.dashboard = result.dashboard; state.certificates = result.certificates; state.readiness = { routes:result.readiness }; renderCertificates(); toast("Certificate and domain checks completed."); } catch (error) { toast(error.message, "error"); } finally { button.disabled = false; button.textContent = "Run certificate check"; } });
 $("#download-support")?.addEventListener("click", () => { location.href = "/api/support-report"; });
-$("#attention-list").addEventListener("click", event => { const target = event.target.closest("[data-issue-target]")?.dataset.issueTarget; if (target) { state.view = target; render(); loadFeatureView().catch(error => toast(error.message)); } });
+$("#attention-list").addEventListener("click", event => { const target = event.target.closest("[data-issue-target]")?.dataset.issueTarget; if (target) { state.view = target; render(); loadFeatureView().catch(error => toast(error.message, "error")); } });
 
 // --- Primary navigation (sidebar view switching) -------------------------------------------
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }
-document.querySelectorAll("nav, .aside-utilities, .brand").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); } }));
-$("#dashboard-view").addEventListener("click", event => { const target = event.target.closest("[data-target], [data-view]"); if (!target) return; state.view = target.dataset.target || target.dataset.view; render(); loadFeatureView().catch(error => toast(error.message)); });
+document.querySelectorAll("nav, .aside-utilities, .brand").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message, "error")); } }));
+$("#dashboard-view").addEventListener("click", event => { const target = event.target.closest("[data-target], [data-view]"); if (!target) return; state.view = target.dataset.target || target.dataset.view; render(); loadFeatureView().catch(error => toast(error.message, "error")); });
 
 // --- Logs & Performance filter controls -----------------------------------------------------
-$("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message)));
-$("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
-$("#performance-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
-$("#performance-range").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message)));
+$("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message, "error")));
+$("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
+$("#performance-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
+$("#performance-range").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
 
 // --- Performance: themed error-breakdown popup, replacing the old hover tooltip ------------
 function showErrorBreakdown(host, total, breakdown) { let dialog = document.querySelector("#error-breakdown-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "error-breakdown-dialog"; document.body.append(dialog); } const rows = breakdown.map(item => `<div class="error-breakdown-row"><span>${escapeHtml(item.status)}</span><span>${item.count.toLocaleString()}</span></div>`).join(""); dialog.innerHTML = `<form method="dialog" class="dialog-card compact"><div class="dialog-heading"><div><p class="eyebrow">Performance · Last 24h</p><h2>${escapeHtml(host)}</h2></div></div><p class="muted">${total.toLocaleString()} error response${total === 1 ? "" : "s"} in the last 24 hours, by status code.</p><div class="error-breakdown-list">${rows}</div><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`; dialog.showModal(); }
@@ -539,7 +540,7 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("close", () => { closeMenus(); dialog.querySelectorAll('input[type="password"]').forEach(input => input.value = ""); }));
 
 // --- Hosted Sites & Proxy Hosts: create form submit handlers --------------------------------
-$("#refresh-health").addEventListener("click", () => refreshDashboard().catch(error => toast(error.message)));
+$("#refresh-health").addEventListener("click", () => refreshDashboard().catch(error => toast(error.message, "error")));
 $("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refresh(); toast("Hosted site created and gateway applied."); } catch (error) { $("#create-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 $("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refresh(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { $("#proxy-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 
@@ -575,7 +576,7 @@ $("#site-grid").addEventListener("click", async event => {
   const card = event.target.closest(".site-card"); if (!card) return; const action = event.target.closest("[data-action]")?.dataset.action, kind = card.dataset.kind;
   if (event.target.closest(".menu-button")) { const opening = !card.classList.contains("menu-open"); closeMenus(); card.classList.toggle("menu-open", opening); card.querySelector(".menu-button").setAttribute("aria-expanded", String(opening)); return; } if (!action) return;
   closeMenus();
-  if (action === "toggle") { const toggleButton = event.target.closest(".toggle"), wasOn = toggleButton.classList.contains("on"); toggleButton.classList.toggle("on", !wasOn); toggleButton.disabled = true; const base = kind === "proxy" ? "proxies" : "sites"; try { await api(`/api/${base}/${card.dataset.id}/toggle`, { method: "POST" }); await refresh(); toast("Status and gateway configuration updated."); } catch (error) { toggleButton.classList.toggle("on", wasOn); toggleButton.disabled = false; toast(error.message || "Could not update status."); } }
+  if (action === "toggle") { const toggleButton = event.target.closest(".toggle"), wasOn = toggleButton.classList.contains("on"); toggleButton.classList.toggle("on", !wasOn); toggleButton.disabled = true; const base = kind === "proxy" ? "proxies" : "sites"; try { await api(`/api/${base}/${card.dataset.id}/toggle`, { method: "POST" }); await refresh(); toast("Status and gateway configuration updated."); } catch (error) { toggleButton.classList.toggle("on", wasOn); toggleButton.disabled = false; toast(error.message || "Could not update status.", "error"); } }
   if (action === "settings") openSettings(kind, card.dataset.id);
   if (action === "delete") { state.pendingDelete = { kind, id: card.dataset.id }; $("#confirm-title").textContent = kind === "proxy" ? "Delete this proxy host?" : "Delete this hosted site?"; $("#confirm-copy").textContent = kind === "proxy" ? "Its domain route will be removed from the gateway." : "Its route and uploaded files will be permanently removed."; $("#confirm-dialog").showModal(); }
   if (action === "replace") { state.pendingReplace = card.dataset.id; $("#replace-files").click(); }
@@ -592,7 +593,7 @@ document.querySelector("#redirect-list")?.addEventListener("click", event => {
 
 // --- Delete confirmation dialog and replace-files handler ------------------------------------
 $("#confirm-dialog").addEventListener("close", async () => { if ($("#confirm-dialog").returnValue === "confirm" && state.pendingDelete) { const base = state.pendingDelete.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.pendingDelete.id}`, { method: "DELETE" }); await refresh(); toast("Entry deleted and gateway updated."); } state.pendingDelete = null; });
-$("#replace-files").addEventListener("change", async event => { if (!event.target.files[0] || !state.pendingReplace) return; const data = new FormData(); data.append("files", event.target.files[0]); try { await api(`/api/sites/${state.pendingReplace}/files`, { method: "POST", body: data }); toast("Site files updated."); } catch (error) { toast(error.message); } event.target.value = ""; state.pendingReplace = null; });
+$("#replace-files").addEventListener("change", async event => { if (!event.target.files[0] || !state.pendingReplace) return; const data = new FormData(); data.append("files", event.target.files[0]); try { await api(`/api/sites/${state.pendingReplace}/files`, { method: "POST", body: data }); toast("Site files updated."); } catch (error) { toast(error.message, "error"); } event.target.value = ""; state.pendingReplace = null; });
 
 
 // --- Icon picker dialog: search, upload, URL, and reset-to-fallback -------------------------
@@ -659,7 +660,7 @@ $("#user-list").addEventListener("click", async event => {
     closeMenus();
     if (!await themedUserConfirm(`Permanently delete user “${user.username}”? This cannot be undone.`, "Delete user")) return;
     button.disabled = true;
-    try { await api(`/api/users/${user.id}`, { method: "DELETE" }); await loadFeatureView(); toast("User deleted."); } catch (error) { toast(error.message); } finally { button.disabled = false; }
+    try { await api(`/api/users/${user.id}`, { method: "DELETE" }); await loadFeatureView(); toast("User deleted."); } catch (error) { toast(error.message, "error"); } finally { button.disabled = false; }
     return;
   }
   button.disabled = true;
@@ -667,7 +668,7 @@ $("#user-list").addEventListener("click", async event => {
     const body = button.dataset.userAction === "role" ? { role: button.dataset.value } : { status: button.dataset.value };
     await api(`/api/users/${user.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     await loadFeatureView(); toast("User updated.");
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message, "error"); }
   finally { button.disabled = false; }
 });
 
@@ -688,10 +689,10 @@ window.addEventListener("hashchange", () => {
   if (requestedHash.startsWith("administration/")) history.replaceState(null, "", `${location.pathname}${location.search}#administration`);
   state.view = location.hash.slice(1) || "overview";
   render();
-  loadFeatureView().catch(error => toast(error.message));
+  loadFeatureView().catch(error => toast(error.message, "error"));
 });
 
-boot().catch(error => toast(error.message));
+boot().catch(error => toast(error.message, "error"));
 
 
 // --- Proxy form: keep the upstream-TLS fields in sync with the target URL scheme ------------
@@ -767,7 +768,7 @@ $("#account-mfa-enable").addEventListener("click", async () => {
     $("#mfa-setup-error").textContent = "";
     $("#mfa-setup-confirm-form").reset();
     $("#mfa-setup-dialog").showModal();
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message, "error"); }
 });
 $("#mfa-setup-cancel").addEventListener("click", () => { $("#mfa-setup-dialog").close(); });
 $("#mfa-setup-confirm-form").addEventListener("submit", async event => {
@@ -796,7 +797,7 @@ $("#account-mfa-disable").addEventListener("click", async () => {
     state.user.mfaEnabled = false;
     renderAccount();
     toast("Two-factor authentication disabled.");
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message, "error"); }
 });
 $("#account-mfa-recovery").addEventListener("click", async () => {
   const password = await requestMfaPassword("Regenerate recovery codes", "Confirm your password to continue");
@@ -806,5 +807,5 @@ $("#account-mfa-recovery").addEventListener("click", async () => {
     $("#mfa-recovery-codes").textContent = result.recoveryCodes.join("\n");
     $("#mfa-recovery-dialog").showModal();
     toast("Recovery codes regenerated. Your old codes no longer work.");
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message, "error"); }
 });
