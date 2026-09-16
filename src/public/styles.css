@@ -281,6 +281,6 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 @media(max-width:760px){.performance-table th:nth-child(2),.performance-table td:nth-child(2){display:none}.performance-table th:nth-child(1),.performance-table td:nth-child(1){width:40%}.performance-table th:nth-child(3),.performance-table td:nth-child(3){width:30%}.performance-table th:nth-child(4),.performance-table td:nth-child(4){width:30%}}
 .mfa-qr{display:flex;justify-content:center;padding:16px;background:#fff;border-radius:12px;margin:16px 0}
 .mfa-qr svg{width:200px;height:200px}
-.mfa-recovery-codes{background:#0a1423;border:1px solid var(--line);border-radius:10px;padding:16px;font-size:14px;line-height:1.8;letter-spacing:.02em;white-space:pre-wrap;user-select:all}
-@media(prefers-color-scheme:light){.mfa-recovery-codes{background:#f3f6fa}}
+.mfa-recovery-codes{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:16px;font-size:14px;line-height:1.8;letter-spacing:.02em;white-space:pre-wrap;user-select:all}
+
 #account-view>.dashboard-panel+.dashboard-panel{margin-top:18px}
