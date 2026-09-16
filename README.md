@@ -1,295 +1,160 @@
 <div align="center">
-  <img src="src/public/icon.png" alt="Site Gateway icon" width="180">
-  <h1>Site Gateway</h1>
+  <img src="src/public/site-gateway-icon-approved.png" alt="Site Gateway icon" width="88">
+  <br>
+  <img src="src/public/site-gateway-wordmark-approved.png" alt="Site Gateway" width="280">
   <p><strong>Host. Proxy. Secure.</strong></p>
-  <p>A friendly, self-hosted gateway for websites, applications, domains, and automatic HTTPS.</p>
+  <p>A friendly, self-hosted gateway for homelabs and small teams — publish static sites, reverse-proxy your apps, forward raw TCP/UDP streams, and manage TLS and access from one calm dashboard.</p>
   <p>
     <a href="https://github.com/mfwadejr/site-gateway2/actions/workflows/container.yml"><img alt="Container build" src="https://github.com/mfwadejr/site-gateway2/actions/workflows/container.yml/badge.svg"></a>
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Public alpha" src="https://img.shields.io/badge/status-public%20alpha-FFBF69">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.11.101-62E6A7">
   </p>
   <p>
+    <a href="#why-site-gateway">Why Site Gateway</a> ·
+    <a href="#what-you-get">What you get</a> ·
     <a href="#quick-start">Quick start</a> ·
-    <a href="#domains-proxy-hosts-and-tls">Domains &amp; TLS</a> ·
-    <a href="#unraid-alpha-install">Unraid</a> ·
-    <a href="#zimaos-alpha-install">ZimaOS</a> ·
-    <a href="INSTALL-v0.9.0-alpha.1.md">v0.9 installation guide</a> ·
+    <a href="#configuration">Configuration</a> ·
+    <a href="#unraid">Unraid</a> ·
+    <a href="#zimaos">ZimaOS</a> ·
     <a href="ROADMAP.md">Roadmap</a>
   </p>
 </div>
 
 ---
 
-Site Gateway gives a home server one clear control panel for two jobs: publishing uploaded static sites and routing domains to applications already running on your network. Caddy handles the gateway, certificates, renewals, redirects, compression, and WebSocket forwarding behind the scenes.
+## Why Site Gateway
 
-| Publish | Route | Protect | Operate |
+Most homelabs end up with the same problem: a handful of self-hosted apps, a couple of static sites, maybe a game server, and no clean way to expose any of it without hand-editing Nginx or Caddy configs every time something changes. Site Gateway is a single container that gives that setup one dashboard: point a domain at it, pick what you're publishing, and it handles routing, certificates, and renewal behind the scenes with [Caddy](https://caddyserver.com/).
+
+It's intentionally narrower than a general-purpose proxy manager. You describe *what* you want (a site, a proxy target, a redirect, a raw port forward) and Site Gateway writes and safely reloads the underlying gateway configuration — no Caddyfile required.
+
+## What you get
+
+| Hosted Sites | Proxy Hosts | Redirect Hosts | Streaming Hosts |
 | --- | --- | --- | --- |
-| Upload a ZIP or `index.html` | Proxy domains to LAN apps or containers | Automatic HTTPS certificates and renewal | Enable, disable, replace, and delete from one dashboard |
-| Assign direct testing ports | Host multiple domains on ports 80/443 | Optional HSTS and HTTPS redirects | Persistent `/data` storage with PUID/PGID support |
+| Upload a ZIP or `index.html` and publish static files on a domain and/or a direct port | Point a domain at Plex, Jellyfin, Vaultwarden, or any HTTP app — TLS, HSTS, and headers included | Send one or more domains to a canonical destination with 301/302/307/308 | Forward raw TCP/UDP ports straight to a service — game servers, SSH, anything that isn't HTTP |
 
-> [!NOTE]
-> Site Gateway is intentionally simpler than a general-purpose proxy manager. You provide the site or destination; the guided interface writes and safely reloads the gateway configuration.
+- **Automatic HTTPS** — Caddy issues and renews public certificates; internal, HTTP-only, and uploaded custom-certificate modes are also supported.
+- **Live dashboard** — gateway/HTTP/HTTPS/storage health, hosted and proxy counts, certificate status, throughput, uptime, memory, disk, and version info at a glance.
+- **Access Lists** — reusable login/network policies combining accounts, groups, and IP/CIDR rules across any host.
+- **Two-factor authentication** — TOTP-based MFA for administrator and user accounts, with recovery codes.
+- **Users, groups, and roles** — Administrator and Standard User roles, with account lifecycle controls.
+- **Backups** — configuration or complete `.sgbackup` archives, downloadable, importable, schedulable, and optionally AES-256-GCM encrypted.
+- **Certificates page** — issuer, expiration, days remaining, and renewal health for every managed and uploaded certificate.
+- **Performance and logs** — request throughput, response times, and rotating access/activity logs per host.
+- **SQLite-backed persistence** — no external database container; everything lives under one `/data` volume.
 
-## Alpha features
-
-- Password-protected, responsive dashboard with live gateway health
-- Hosted-site, proxy-host, TLS-domain, and attention totals at a glance
-- Runtime uptime, memory, persistent-data size, disk space, and installed versions
-- Recent configuration activity for the current container session
-- Confirmed Caddy, HTTP port 80, and HTTPS port 443 health checks with manual and automatic refresh
-- Searchable Dashboard Icons picker with validated local storage under `/data/icons`
-- Consistent two-letter icon fallbacks for hosted sites and proxy hosts
-- Create a site from a ZIP archive or a single `index.html`
-- One independently enabled/disabled port per site
-- Caddy gateway on ports 80 and 443
-- Domain routing and automatic HTTPS for hosted sites
-- Reverse proxy hosts for containers, LAN services, and applications
-- Redirect Hosts with 301, 302, 307, and 308 responses and optional path preservation
-- Reusable Access Lists with LAN/CIDR rules and a themed username/password sign-in page
-- Collapsible Proxy Host controls for custom locations, headers, compression, upstream TLS, health expectations, and expert Caddy snippets
-- Public, internal, HTTP-only, and uploaded custom-certificate modes
-- Automatic certificate renewal and HTTP-to-HTTPS redirects
-- Configurable themed welcome, 404, redirect, no-response, and custom-HTML fallback pages
-- Integrated, searchable documentation with real-world setup examples
-- Administrator workspace for users, gateway defaults, security guidance, and backup/restore
-- Downloadable, importable, scheduled, retained, and optionally encrypted `.sgbackup` archives
-- Replace a site's files without recreating it
-- Delete sites and their stored files
-- Persistent configuration and uploads under `/data`
-- Built-in transactional SQLite configuration database at `/data/database/site-gateway.sqlite`
-- Unified certificate storage under `/data/certificates` and fixed backup storage under `/data/backups`
-- Path traversal protection for ZIP extraction and a 250 MB upload limit
-- Clean shutdown and automatic site restart after a container restart
-
-Hosted uploads remain static-only (HTML, CSS, JavaScript, images, fonts, and downloads). Dynamic applications can be connected as proxy hosts. Site Gateway does not execute uploaded PHP, Node, Python, or database code.
+Hosted uploads remain static-only (HTML, CSS, JS, images, fonts, downloads). Dynamic applications are connected as Proxy Hosts instead — Site Gateway does not execute uploaded PHP, Node, Python, or database code.
 
 ## Quick start
 
-Requirements: Docker Engine with Docker Compose.
+Requirements: Docker Engine with Docker Compose, and ports 80/443 free on the host (plus 8080 for the dashboard).
 
-1. Edit `compose.yaml` and replace `change-this-password` with a strong password.
-2. From this folder, run:
+1. Copy `.env.example` to `.env` and set `ADMIN_PASSWORD` and `SESSION_SECRET`.
+2. Pull and start the published image:
 
    ```bash
-   docker compose up -d --build
+   docker compose -f compose.release.yaml pull
+   docker compose -f compose.release.yaml up -d
    ```
 
-3. Open `http://YOUR-SERVER-IP:8080`.
-4. Sign in with `admin` and the password you chose.
-5. Select **New site**, provide a name and unused port, then upload either:
-   - a ZIP with `index.html` at its root; or
-   - a single `index.html` file.
-6. Open the site from its arrow button or visit `http://YOUR-SERVER-IP:PORT`.
+3. Open `http://YOUR-SERVER-IP:8080` and sign in with `admin` and the password you set.
+4. Finish first-time setup (you'll be asked to confirm or change the display name, username, and password).
+5. Create your first route from the dashboard — Hosted, Proxy, Redirect, or Streaming.
 
-The included Compose file publishes site ports 9000–9099. Docker cannot add a host port to an already-running container, so any site port must be included in the published range. Change `SITE_PORT_MIN`, `SITE_PORT_MAX`, and the Compose `ports` range together before starting the container if you want a different range.
+Prefer to build from source instead of pulling the image? Use `compose.yaml` and `docker compose up -d --build`.
 
-For domain routing and automatic certificates, point the domain's DNS record at this server and forward public ports 80 and 443 to the container. If another reverse proxy already owns those ports, stop it or map Site Gateway to temporary alternate host ports for LAN testing; public ACME issuance will not work until 80/443 traffic reaches Site Gateway.
+The included Compose files publish site ports 9000–9099 for direct-LAN access to Hosted Sites. Docker can't add a host port to an already-running container, so change `SITE_PORT_MIN`, `SITE_PORT_MAX`, and the Compose `ports` range together, before starting the container, if you want a different range. The same applies to Streaming Hosts — publish the TCP/UDP port you plan to use before creating the route in the dashboard.
+
+For domain routing and automatic certificates, point the domain's DNS record at this server and forward public ports 80 and 443 to the container. If another reverse proxy already owns those ports, stop it or use temporary alternate host ports for LAN testing — public ACME issuance won't work until 80/443 traffic actually reaches Site Gateway.
 
 ## Domains, proxy hosts, and TLS
 
-Use **Hosted sites** for uploaded files. A domain is optional; when present, Caddy serves the site on ports 80/443 and automatically obtains and renews a public certificate. Direct site ports remain available for LAN testing.
+Use **Hosted Sites** for uploaded files. A domain is optional; when present, Caddy serves the site on ports 80/443 and automatically obtains and renews a public certificate. Direct site ports remain available for LAN testing.
 
-Use **Proxy hosts** to connect a domain to an existing application such as `http://192.168.1.20:3000` or another container name and port. Caddy supplies the normal forwarded headers and supports WebSocket upgrades automatically.
+Use **Proxy Hosts** to connect a domain to an existing application, such as `http://192.168.1.20:3000` or another container's name and port. Caddy supplies the standard forwarded headers and supports WebSocket upgrades automatically.
 
-Automatic HTTPS requires valid public DNS and inbound access to port 80 or 443. Caddy renews certificates automatically before expiration. HSTS is optional and should only be enabled after HTTPS works reliably.
+Use **Streaming Hosts** for anything that isn't HTTP — game servers, SSH, or other raw TCP/UDP services. These need their port published in Compose up front, since Docker can't add ports to a running container.
 
-## Install from the published image
+Automatic HTTPS requires valid public DNS and inbound access to port 80 or 443. HSTS is optional and should only be enabled after HTTPS is confirmed working.
 
-Each push to `main` automatically publishes `ghcr.io/mfwadejr/site-gateway2:latest` for both Intel/AMD and ARM64 servers. Copy `.env.example` to `.env`, replace the password and session secret, then run:
+## Configuration
 
-```bash
-docker compose -f compose.release.yaml pull
-docker compose -f compose.release.yaml up -d
-```
+| Variable | Default | Purpose |
+|---|---:|---|
+| `ADMIN_USERNAME` | `admin` | Bootstrap dashboard login name |
+| `ADMIN_PASSWORD` | — | Bootstrap dashboard password; **required**, always change it |
+| `SESSION_SECRET` | — | **Required.** Any random string; rotating it signs everyone out |
+| `ADMIN_PORT` | `8080` | Dashboard port inside the container |
+| `SITE_PORT_MIN` / `SITE_PORT_MAX` | `9000` / `9099` | Direct-LAN port range Hosted Sites can bind to |
+| `DATA_DIR` | `/data` | Persistent state location |
+| `BACKUP_PASSWORD` | empty | Encryption password used only when encrypted scheduled backups are enabled |
+| `PUID` / `PGID` | `1000` / `1000` | User/group the container writes files as (Unraid: `99`/`100`) |
+| `ACME_EMAIL` | empty | Optional certificate account email |
 
-To upgrade later:
+At startup, the container creates the complete `/data` hierarchy, applies `PUID`/`PGID` ownership, then drops root privileges. Configuration lives in SQLite at `/data/database/site-gateway.sqlite`; hosted files live under `/data/sites`; backups under `/data/backups`; certificates under `/data/certificates`.
 
-```bash
-docker compose -f compose.release.yaml pull
-docker compose -f compose.release.yaml up -d
-```
+## Unraid
 
-This recreates only the application container. Uploaded sites remain in the persistent data mount.
+1. Add the container from **Docker → Add Container** using the image `ghcr.io/mfwadejr/site-gateway2:latest`, or search Community Applications once a template is published.
+2. Map ports `80`, `443` (TCP+UDP), `8080`, and `9000-9099` as above, plus any Streaming Host ports you plan to use.
+3. Map one path, e.g. `/mnt/user/appdata/site-gateway:/data`.
+4. Set `PUID=99` and `PGID=100` so the container writes to `/data` as the `nobody`/`users` account Unraid expects.
+5. Set `ADMIN_PASSWORD` and `SESSION_SECRET`, then start the container and open `http://UNRAID-IP:8080`.
 
-## ZIP layout
+For automatic image-based upgrades, Unraid's **Update Container** action pulls the newest `latest` image; if you use Watchtower, `compose.release.yaml` includes its opt-in label.
 
-Preferred:
+## ZimaOS
 
-```text
-my-site.zip
-├── index.html
-├── styles.css
-├── app.js
-└── images/
-    └── logo.png
-```
-
-A ZIP containing one top-level folder is also accepted; Site Gateway unwraps that folder automatically.
-
-## Unraid alpha install
-
-### Option A: Compose Manager
-
-1. Install **Compose Manager** from Community Applications if it is not already present.
-2. Copy this project folder to `/mnt/user/appdata/site-gateway/app`.
-3. In `compose.yaml`, change the volume to `/mnt/user/appdata/site-gateway/data:/data`.
-4. Set a strong `ADMIN_PASSWORD`. Optionally set a long random `SESSION_SECRET`.
-5. Add the stack in Compose Manager and choose **Compose Up**.
-6. Open `http://UNRAID-IP:8080`.
-
-For automatic image-based upgrades, use `compose.release.yaml` instead. Unraid's **Update Container** action can pull the newest `latest` image. If you already use Watchtower, the release Compose file includes its opt-in label.
-
-### Option B: build from the Unraid terminal
-
-```bash
-cd /mnt/user/appdata/site-gateway/app
-docker compose up -d --build
-```
-
-If Unraid reports a port conflict, change the admin port mapping's left side (for example `8180:8080`) or choose a different site-port range. Allow the selected site ports through any LAN firewall.
-
-## ZimaOS alpha install
-
-1. Copy this folder into ZimaOS storage, for example `/DATA/AppData/site-gateway/app`.
-2. Change the Compose volume to `/DATA/AppData/site-gateway/data:/data`.
-3. Set a strong `ADMIN_PASSWORD` and optionally `SESSION_SECRET`.
-4. In the ZimaOS app interface, use its custom app / Compose import option and paste or select `compose.yaml`. If that option is unavailable in your release, use the terminal:
+1. Copy this folder into ZimaOS storage, e.g. `/DATA/AppData/site-gateway/app`.
+2. Point the Compose volume at `/DATA/AppData/site-gateway/data:/data`.
+3. Set `ADMIN_PASSWORD` and `SESSION_SECRET` (and `PUID`/`PGID` if needed — ZimaOS typically uses `1000:1000`).
+4. Import `compose.yaml` (or `compose.release.yaml` for image-based upgrades) through ZimaOS's custom app / Compose import option, or run it from the terminal:
 
    ```bash
    cd /DATA/AppData/site-gateway/app
    docker compose up -d --build
    ```
 
-5. Open `http://ZIMAOS-IP:8080`.
-
-For simple upgrades, import `compose.release.yaml`; use ZimaOS's container update/recreate action whenever a new image is published. The `/data` mount keeps all sites during replacement.
-
-## Migrating from Web Server
-
-The product, repository, image, and default container are now named Site Gateway. Existing data does not need to move. Stop and remove the old container, then run the new image while mounting the existing folder:
-
-```bash
-docker stop web-server
-docker rm web-server
-docker pull ghcr.io/mfwadejr/site-gateway2:latest
-docker run -d --name site-gateway --restart unless-stopped \
-  -p 8080:8080 -p 80:80 -p 443:443 -p 9000-9099:9000-9099 \
-  -v /DATA/AppData/web-server:/data \
-  -e ADMIN_USERNAME=admin \
-  -e ADMIN_PASSWORD='YOUR_EXISTING_PASSWORD' \
-  -e SESSION_SECRET='YOUR_EXISTING_SESSION_SECRET' \
-  -e PUID=1000 -e PGID=1000 \
-  ghcr.io/mfwadejr/site-gateway2:latest
-```
-
-After confirming the sites appear, you may keep the legacy host folder or rename it to `/DATA/AppData/site-gateway` while the container is stopped and update the mount accordingly. Unraid users should retain `/mnt/user/appdata/web-server` as the template's Data path for the first upgraded launch.
-
-## Configuration
-
-| Variable | Default | Purpose |
-|---|---:|---|
-| `ADMIN_USERNAME` | `admin` | Dashboard login name |
-| `ADMIN_PASSWORD` | `change-this-password` | Dashboard password; always change it |
-| `SESSION_SECRET` | derived | Optional stable signing secret for login sessions |
-| `ADMIN_PORT` | `8080` | Dashboard port inside the container |
-| `SITE_PORT_MIN` | `9000` | Lowest allowed site port |
-| `SITE_PORT_MAX` | `9099` | Highest allowed site port |
-| `DATA_DIR` | `/data` | Persistent state location |
-| `BACKUP_PASSWORD` | empty | Encryption password used only when encrypted scheduled backups are enabled |
-| `PUID` | `1000` | UID that owns and runs against persistent files |
-| `PGID` | `1000` | GID that owns and runs against persistent files |
-| `ACME_EMAIL` | empty | Optional certificate account email |
-
-At startup, the container creates the complete `/data` hierarchy, applies `PUID`/`PGID` ownership, and then drops root privileges. Configuration is stored in SQLite, hosted files remain in `/data/sites`, backups use `/data/backups`, uploaded certificates use `/data/certificates/custom`, and Caddy owns `/data/certificates/managed`. With the ZimaOS bind mount, these appear under `/DATA/AppData/site-gateway` on the host. Unraid commonly uses `PUID=99` and `PGID=100`; ZimaOS typically uses `1000:1000`.
+5. Open `http://ZIMAOS-IP:8080`. Use ZimaOS's container update/recreate action whenever a new image is published — the `/data` mount keeps all sites during replacement.
 
 ## Backup and update
 
-Open **Administration → Backup & restore** to create a Configuration or Complete backup. Manual backups download to the browser. Scheduled backups are stored under `/data/backups`, retained according to the interface setting, and can use AES-256-GCM encryption when `BACKUP_PASSWORD` is configured. A Complete backup contains a consistent SQLite snapshot, portable JSON recovery data, hosted files, local icons, custom fallback assets, and both custom and Caddy-managed certificate storage; logs are optional. Because certificate backups contain private keys, encryption is strongly recommended.
+Open **Administration → Backup & restore** to create a Configuration or Complete backup. Manual backups download to the browser; scheduled backups are stored under `/data/backups` and can be AES-256-GCM encrypted when `BACKUP_PASSWORD` is set. A Complete backup contains a consistent SQLite snapshot, portable JSON recovery data, hosted files, local icons, custom fallback assets, and certificate storage. Because certificate backups contain private keys, encryption is strongly recommended.
 
-Before restoring, Site Gateway checks the archive manifest and creates a complete pre-restore safety backup. It then reloads persisted state and validates the resulting Caddy configuration. Store important backups on a separate disk or NAS share—copies in the same appdata volume do not protect against disk failure.
+Before restoring, Site Gateway checks the archive manifest, creates a complete pre-restore safety backup, then reloads and validates the resulting configuration.
 
-To rebuild after pulling a new version:
+To upgrade:
 
 ```bash
-docker compose up -d --build
+docker compose -f compose.release.yaml pull
+docker compose -f compose.release.yaml up -d
 ```
 
-Your sites remain intact because they live in the mounted data directory.
-
-## Publishing updates
-
-The GitHub Actions workflow builds and publishes a fresh multi-architecture container whenever code is pushed to `main`. Alpha release tags publish an exact version and the moving `alpha` channel. For example, `v0.9.0-alpha.1` publishes `ghcr.io/mfwadejr/site-gateway2:0.9.0-alpha.1` and `ghcr.io/mfwadejr/site-gateway2:alpha`. The package starts private if the GitHub account's package defaults require it; make the `site-gateway2` package public in GitHub package settings so Unraid and ZimaOS can pull without credentials.
-
-### Monitoring in v0.5.0-alpha.1
-
-- Certificate inventory shows issuer, expiration date, days remaining, provisioning state, and the last certificate-file update reported by Caddy.
-- Dashboard alerts call out certificates within 30 days of expiration and unreachable proxy upstreams.
-- Enabled proxy targets are checked every 60 seconds with a four-second timeout; status, HTTP response, latency, and recent in-memory history are available to the dashboard.
-- Caddy access logs are stored as rotating JSON files under `/data/logs` and displayed without request headers. Gateway activity and errors are also appended to `/data/logs/activity.jsonl`.
-
-`v0.5.0-alpha.2` clarifies that a missing stored certificate is **not detected**, rather than claiming issuance is actively provisioning, and includes a consistency pass for dashboard indicators, cards, and log controls.
-
-### Users and roles in v0.6.0-alpha.1
-
-- The environment-defined administrator becomes the initial persistent Administrator on first startup after upgrading.
-- Administrators can create users, assign Administrator or Standard User roles, reset passwords, disable accounts, and archive or restore accounts.
-- Standard Users have read-only access to dashboard health, hosted sites, proxy hosts, certificates, and logs. Per-host ownership and granular permissions are planned for a later release.
-- Passwords are stored as salted scrypt hashes in the SQLite database; plaintext passwords are never written to disk.
-- Site Gateway prevents removal of the final active Administrator and blocks users from disabling or archiving their own active session.
-
-### Gateway management in v0.7.0-alpha.1
-
-- Administration and Documentation appear directly above the installed-version divider; Administration is role-restricted.
-- Proxy Hosts support multiple custom locations using `path | destination | strip-or-preserve`, request/response headers, upstream TLS controls, custom certificates, Access Lists, compression, and configurable health checks.
-- Access List credentials are stored as salted password hashes and presented through a Site Gateway-themed login form. Network rules accept exact IP addresses, CIDR ranges, or Caddy's `private_ranges` token.
-- Redirect Hosts and the configurable Default Site compile to native Caddy routes and are validated before reload.
-- Expert Caddy snippets are administrator-only, size-limited, screened against global directives, and validated as part of the complete generated configuration.
-
-### Storage foundation in v0.8.0-alpha.1
-
-- SQLite is built into the container and stores configuration at `/data/database/site-gateway.sqlite`; no external database container or port is required.
-- A seeded Local Gateway instance scopes every stored entity in preparation for future multi-instance management.
-- Existing JSON installations are imported once into SQLite after a complete migration backup is written to `/data/backups`; original JSON snapshots remain under `/data/migrations`.
-- Failed first-time imports remove the incomplete database so the migration safely retries after the source problem is corrected.
-- Caddy-managed certificates and internal CA data live under `/data/certificates/managed`; uploaded certificates live under `/data/certificates/custom`; public exports are reserved under `/data/certificates/exports`.
-- Backups contain a consistent SQLite snapshot, portable JSON recovery records, checksums, and optional complete filesystem content.
-
-### First login in v0.8.0-alpha.2
-
-- Fresh installations explain that the administrator credentials supplied to Docker are bootstrap credentials.
-- After the first successful sign-in, the administrator must confirm or change the display name, username, and password before opening the dashboard.
-- Completing setup rotates the account session identity and requires one final sign-in with the finalized credentials.
-- Existing installations are treated as already configured and are not interrupted by the new workflow.
-
-### Trust and visibility in v0.9.0-alpha.1
-
-- Certificate details include source, covered domains, issuer, validity, serial number, fingerprint, expiration, and the last detected file update.
-- Configurable warning thresholds, 30-day and 7-day totals, uploaded-certificate mismatch detection, and linked dashboard alerts make certificate state actionable.
-- On-demand diagnostics distinguish DNS, HTTP/HTTPS listener, TLS, and upstream failures for each configured domain.
-- Administrators can download a redacted support report that excludes credentials, private keys, cookies, secrets, and expert configuration.
-- Password minimums are eight characters throughout, and authentication forms are cleared after use.
+This recreates only the application container — your sites, certificates, and configuration remain in the mounted data directory.
 
 ## Security notes
 
-- Use unique bootstrap credentials during installation, then finalize the persistent administrator account during first-time setup.
-- Keep the dashboard on a trusted LAN or behind a trusted HTTPS reverse proxy/VPN. The alpha dashboard itself serves plain HTTP.
-- Do not expose the admin dashboard directly to the internet.
-- Uploaded static JavaScript runs for visitors. Only publish files you trust.
-- The container starts as root only to apply `PUID`/`PGID` ownership and grant Caddy the `cap_net_bind_service` capability, then drops both the Node app and Caddy to the unprivileged `PUID:PGID` user (default `1000:1000`) via `su-exec`. It does not require access to the Docker socket.
+- Use a unique bootstrap password during installation, then finish first-time setup to finalize the persistent administrator account.
+- Enable two-factor authentication on administrator accounts.
+- Keep the dashboard on a trusted LAN or behind a trusted HTTPS reverse proxy/VPN — don't expose the admin dashboard directly to the internet.
+- Uploaded static JavaScript runs for visitors; only publish files you trust.
+- The container starts as root only to apply `PUID`/`PGID` ownership and grant Caddy `cap_net_bind_service`, then drops both the Node app and Caddy to the unprivileged `PUID:PGID` user. It does not require access to the Docker socket.
 
 ## Troubleshooting
 
 - **Site shows Error:** another process probably owns its port. Check `docker logs site-gateway`, then recreate the site on a free published port.
 - **Site cannot be reached:** confirm the port is within the published Compose range and allowed through the server firewall.
-- **Permission denied under `/data`:** make the host data directory writable by UID/GID 1000, or adjust ownership to match your environment.
+- **Permission denied under `/data`:** make the host data directory writable by the configured `PUID`/`PGID`.
 - **Upload fails:** verify the file is below 250 MB and the extracted root contains `index.html`.
-- **Dashboard port is busy:** change only the host side, such as `8180:8080`, then browse to port 8180.
+- **Dashboard port is busy:** change only the host side, e.g. `8180:8080`, then browse to port 8180.
+- **Streaming Host has no traffic:** confirm the TCP/UDP port is published in Compose *before* creating the route — Docker can't add ports to a running container.
 
-## Alpha roadmap
+## Roadmap
 
-Good next additions are per-site access logs, certificate status reporting, drag-and-drop folder upload, rollback/history, health checks, access lists, and guided DNS diagnostics.
+See [ROADMAP.md](ROADMAP.md) for what's shipped and what's next.
 
 ## License
 
