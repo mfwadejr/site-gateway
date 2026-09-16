@@ -371,6 +371,7 @@ function render() {
   const items = state.view === "hosted" ? state.sites : state.proxies;
   $("#site-grid").innerHTML = items.map(state.view === "hosted" ? hostedCard : proxyCard).join("");
   $("#empty").classList.toggle("hidden", !state.loaded || items.length > 0);
+  $("#empty .empty-icon").textContent = state.view === "hosted" ? "↗" : "⇌";
   $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : "Create your first proxy host";
   $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : "Connect a domain to another container, application, or LAN service.";
   $("#page-title").textContent = state.view === "hosted" ? "Hosted sites" : "Proxy hosts";
