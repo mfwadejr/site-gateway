@@ -359,7 +359,7 @@ function renderUsers() {
     const roleLabel = user.role === "administrator" ? "Administrator" : user.role === "viewer" ? "Viewer" : "Standard User";
     const lifecycle = user.status === "archived" ? `<button class="button secondary" data-user-action="status" data-value="active">Restore</button>` : `<button class="button secondary danger-text" data-user-action="status" data-value="archived">Archive</button>`;
     const statusToggle = user.status === "archived" ? "" : `<button class="toggle ${user.status === "active" ? "on" : ""}" data-user-action="status" data-value="${user.status === "active" ? "disabled" : "active"}" aria-label="${user.status === "active" ? "Disable" : "Enable"} ${escapeHtml(user.username)}"><span></span></button>`;
-    const menu = `<div class="menu-wrap"><button class="icon-button menu-button" type="button" aria-label="User options" aria-expanded="false">•••</button><div class="menu"><button data-user-action="icon">Change icon</button>${!isSelf ? `<button data-user-action="delete" class="danger-text">Delete</button>` : ""}</div></div>`;
+    const menu = `<div class="menu-wrap"><button class="icon-button menu-button" type="button" aria-label="User options" aria-expanded="false">•••</button><div class="menu"><button data-user-action="icon">Change icon</button>${!isSelf && user.mfaEnabled ? `<button data-user-action="mfa-disable">Disable 2FA</button>` : ""}${!isSelf ? `<button data-user-action="delete" class="danger-text">Delete</button>` : ""}</div></div>`;
     return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><div class="user-head-actions"><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span>${menu}</div></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${roleLabel}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : roleAction === "viewer" ? "Viewer" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}</div><div class="card-footer">${statusToggle}</div></article>`;
   }).join("") : '<p class="quiet-state">No users found.</p>';
   document.querySelectorAll("#user-list .user-card").forEach(card => { card.style.position = "relative"; card.style.minHeight = "250px"; card.style.paddingBottom = "64px"; const head = card.querySelector(".user-card-head"), status = head?.querySelector(".status-pill"), footer = card.querySelector(".card-footer"); if (!head || !footer) return; if (status) footer.prepend(status); });
@@ -655,6 +655,13 @@ $("#user-list").addEventListener("click", async event => {
   if (button.dataset.userAction === "password") {
     closeMenus();
     state.passwordTarget = user.id; $("#password-form").reset(); $("#password-error").textContent = ""; $("#password-title").textContent = `Reset ${user.username} password`; $("#password-dialog").showModal(); return;
+  }
+  if (button.dataset.userAction === "mfa-disable") {
+    closeMenus();
+    if (!await themedUserConfirm(`Disable two-factor authentication for “${user.username}”? They’ll be able to sign in with just their password until they set it up again.`, "Disable 2FA")) return;
+    button.disabled = true;
+    try { await api(`/api/users/${user.id}/mfa/disable`, { method: "POST" }); await loadFeatureView(); toast("Two-factor authentication disabled."); } catch (error) { toast(error.message, "error"); } finally { button.disabled = false; }
+    return;
   }
   if (button.dataset.userAction === "delete") {
     closeMenus();

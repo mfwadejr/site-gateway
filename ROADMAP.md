@@ -2,7 +2,7 @@
 
 ## Current release status
 
-`v0.11.112` is a stable, day-to-day release. The product has moved well past the original alpha creation flow described in earlier versions of this document — Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts are all implemented, along with authentication, access control, certificates, backups, and full dashboard reporting. This document reflects what's actually shipped and what's genuinely still ahead.
+`v0.11.118` is a stable, day-to-day release. The product has moved well past the original alpha creation flow described in earlier versions of this document — Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts are all implemented, along with authentication, access control, certificates, backups, and full dashboard reporting. This document reflects what's actually shipped and what's genuinely still ahead.
 
 ## Product direction
 
@@ -23,7 +23,7 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 - Local users with Administrator and Standard User roles, account lifecycle controls (disable/archive/restore).
 - Groups, used to grant Access List membership without managing users one by one.
 - Access Lists combining accounts, groups, and IP/CIDR network rules behind a themed sign-in page.
-- Optional two-factor authentication (TOTP) with a self-service My Account view for enrolling and managing it.
+- Optional two-factor authentication (TOTP) with a self-service My Account view for enrolling and managing it, plus an administrator-side override (Administration → Users → “•••” → Disable 2FA) for a user who's locked out with no recovery codes left. Logged to the Audit log.
 - First-time setup flow that finalizes the persistent administrator account from bootstrap credentials.
 
 ### Certificates and TLS
@@ -36,7 +36,7 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 
 - Live dashboard health for the gateway, HTTP, HTTPS, and storage, plus hosted/proxy/certificate counts and throughput.
 - System panel: uptime, memory, persistent-data size, disk space, installed app/Caddy versions, public IP.
-- Performance view with request throughput, response times, and per-route breakdowns.
+- Performance view with request throughput, response times, and per-route breakdowns — the host filter applies to the throughput table as well as the trend chart, average response times display in seconds once they pass 1000ms, and per-domain error counts open a themed breakdown by status code.
 - Rotating access and activity logs.
 - Update-available banner when a newer image is deployed.
 - A redacted support-report export exists (version, config health, certificate readiness, upstream checks, recent events) but its UI entry point is currently hidden pending a readability rewrite of the report's output format.
@@ -51,7 +51,8 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 
 - Current icon and wordmark (v0.11.99) used consistently across the login screen, sidebar, themed default pages, and this README.
 - A sitewide design-token system (colors, spacing, radius, and type scale defined once and reused everywhere) underpins the interface, so new UI stays visually consistent by default.
-- Integrated, searchable in-app documentation covering every configurable field, including 2FA and the update-notification banner.
+- Integrated, searchable in-app documentation covering every configurable field, including 2FA (self-service and the administrator override) and the update-notification banner.
+- Toast notifications are color-coded — error toasts render distinctly from success/neutral ones, using the same token-driven theming as the rest of the interface.
 - Companion marketing site with an installation guide covering Docker Compose, plain `docker run`, and Unraid.
 
 ## What's next

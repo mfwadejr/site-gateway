@@ -1368,6 +1368,19 @@ app.delete("/api/users/:id", async (req, res, next) => {
     res.status(204).end();
   } catch (error) { next(error); }
 });
+app.post("/api/users/:id/mfa/disable", async (req, res, next) => {
+  try {
+    if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+    const user = users.find(item => item.id === req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    if (!user.mfaEnabled) return res.status(400).json({ error: "Two-factor authentication isn\u2019t enabled for this user." });
+    user.mfaEnabled = false; user.mfaSecret = null; user.mfaPendingSecret = null; user.mfaRecoveryCodes = [];
+    user.updatedAt = new Date().toISOString();
+    await saveUsers();
+    recordActivity(`Administrator “${req.user.username}” disabled two-factor authentication for “${user.username}”.`, "warning");
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
 app.get("/api/sites", (req, res) => res.json(sites.map(publicSite)));
 app.get("/api/proxies", (req, res) => res.json(proxies.map(proxy => publicProxy(proxy, req.user.role === "administrator"))));
 app.get("/api/redirects", (req, res) => res.json(redirects));
