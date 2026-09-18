@@ -79,7 +79,7 @@ function renderBackups() {
   const completeBackups = state.backups.filter(item => item.type === "complete"), configBackups = state.backups.filter(item => item.type === "configuration");
   const summaryEl = document.querySelector("#backup-summary");
   if (summaryEl) summaryEl.textContent = state.backups.length ? `${completeBackups.length} Complete (${formatBytes(completeBackups.reduce((sum, item) => sum + item.size, 0))}), ${configBackups.length} Configuration only (${formatBytes(configBackups.reduce((sum, item) => sum + item.size, 0))}).` : "";
-  document.querySelector("#backup-list").innerHTML = state.backups.length ? state.backups.map(item => `<article class="data-row backup-row" data-backup="${extendedEscape(item.filename)}"><span class="status-dot ${item.valid ? "running" : "error"}"></span><div><strong>${extendedEscape(item.filename)}</strong><small>${formatTime(item.createdAt)}</small></div><div><span class="chip type-${extendedEscape(item.type)}">${backupTypeLabel(item.type)}</span><small>Site Gateway ${extendedEscape(item.appVersion)}</small></div><div><strong>${formatBytes(item.size)}</strong><small>${item.valid ? "Verified manifest" : "Unreadable manifest"}</small></div><div class="row-actions"><a class="button secondary" href="/api/backups/${encodeURIComponent(item.filename)}/download">Download</a><button class="button secondary" data-backup-action="restore">Restore</button><button class="button secondary danger-text" data-backup-action="delete">Delete</button></div></article>`).join("") : '<p class="quiet-state padded">No stored backups yet.</p>';
+  document.querySelector("#backup-list").innerHTML = state.backups.length ? state.backups.map(item => `<article class="data-row backup-row" data-backup="${extendedEscape(item.filename)}"><span class="status-dot ${item.valid ? "running" : "error"}"></span><div><strong title="${extendedEscape(item.filename)}">${backupTypeLabel(item.type)} backup — ${formatTime(item.createdAt)}</strong><small>${formatBytes(item.size)}</small></div><div><span class="chip type-${extendedEscape(item.type)}">${backupTypeLabel(item.type)}</span><small>Site Gateway ${extendedEscape(item.appVersion)}</small></div><div><strong>${item.valid ? "Verified" : "Unreadable"}</strong><small>${item.valid ? "Manifest checks out" : "Manifest could not be read"}</small></div><div class="row-actions"><a class="button secondary" href="/api/backups/${encodeURIComponent(item.filename)}/download">Download</a><button class="button secondary" data-backup-action="restore">Restore</button><button class="button secondary danger-text" data-backup-action="delete">Delete</button></div></article>`).join("") : '<p class="quiet-state padded">No stored backups yet.</p>';
 }
 // Toggle the "configuration only" warning banner whenever scheduling or the
 // backup type changes.
@@ -275,7 +275,7 @@ document.addEventListener("click", event => { if (event.target.closest(".create-
 function decorateAccessToggles() { document.querySelectorAll("#access-list [data-access-id]").forEach(card => { const item = state.accessLists.find(value => value.id === card.dataset.accessId); const footer = card.querySelector(".card-footer"); if (!footer || !item) return; card.querySelectorAll(".menu [data-access-action=toggle]").forEach(button => button.remove()); if (footer.querySelector("[data-access-action=toggle]")) return; let actions = footer.querySelector(".card-actions"); if (!actions) { actions = document.createElement("div"); actions.className = "card-actions"; footer.append(actions); } const toggle = document.createElement("button"); toggle.className = "toggle " + (item.enabled !== false ? "on" : ""); toggle.dataset.accessAction = "toggle"; toggle.setAttribute("aria-label", (item.enabled !== false ? "Disable" : "Enable") + " Access List"); toggle.innerHTML = "<span></span>"; actions.append(toggle); }); }
 function decorateGroupCards() { document.querySelectorAll('[data-admin-panel="groups"] .group-card').forEach(card => { const group = state.groups.find(value => value.id === card.querySelector("[data-group-action]")?.dataset.groupId); if (!group) return; const icon = card.querySelector(".site-icon"); if (icon && icon.textContent.trim() === "GR") icon.innerHTML = featureIcon(group, "GR"); const menu = card.querySelector(".menu"); if (menu && !menu.querySelector("[data-group-action=icon]")) { const button = document.createElement("button"); button.dataset.groupAction = "icon"; button.dataset.groupId = group.id; button.textContent = "Change icon"; menu.prepend(button); } }); }
 document.addEventListener("click", event => { const button = event.target.closest("[data-group-action=icon]"); if (!button) return; event.preventDefault(); event.stopImmediatePropagation(); openIconPicker("groups", button.dataset.groupId); }, true);
-function normalizeAdminTabOrder() { const tabs = document.querySelector(".admin-tabs"); if (!tabs) return; const order = ["users","groups","defaults","audit","backups","retention","api","danger"]; order.forEach((name, index) => { const button = tabs.querySelector(`[data-admin-tab="${name}"]`); if (button) { if (name === "retention") button.textContent = "Logs & Retention"; tabs.append(button); } }); }
+function normalizeAdminTabOrder() { const tabs = document.querySelector(".admin-tabs"); if (!tabs) return; const order = ["system","users","groups","defaults","audit","backups","retention","api","danger"]; order.forEach((name, index) => { const button = tabs.querySelector(`[data-admin-tab="${name}"]`); if (button) { if (name === "retention") button.textContent = "Logs & Retention"; tabs.append(button); } }); }
 document.addEventListener("click", event => { if (event.target.closest(".admin-tabs")) setTimeout(normalizeAdminTabOrder, 0); });
 
 // --- Backup encryption password field: placeholder/visibility polish -------------
@@ -290,7 +290,7 @@ function renderEncryptionToggle() {
   const available = Boolean(state.config && state.config.backup && state.config.backup.encryptionAvailable);
   const savedEncrypt = Boolean(state.settings && state.settings.backups && state.settings.backups.encrypt);
   encryptionToggle.className = "encryption-toggle";
-  let message = "Uses the container\u2019s <code>BACKUP_PASSWORD</code> value. Enable only after configuring that value.";
+  let message = "<code>BACKUP_PASSWORD</code> is configured \u2014 scheduled backups can be encrypted.";
   if (!available && savedEncrypt) message = "This is enabled but <code>BACKUP_PASSWORD</code> is no longer configured \u2014 encrypted scheduled backups will fail until it\u2019s set again.";
   else if (!available) message = "<code>BACKUP_PASSWORD</code> not configured \u2014 set it in the container\u2019s environment to enable encrypted scheduled backups.";
   encryptionToggle.innerHTML = '<span class="field-label">Encrypt scheduled backups</span><span class="encryption-toggle-box"><input name="encrypt" type="checkbox"' + (available ? "" : " disabled") + (savedEncrypt ? " checked" : "") + '><span' + (!available ? ' class="warning-text"' : '') + '>' + message + '</span></span>';
@@ -446,7 +446,7 @@ async function renderBackupHistory() {
 // saved value, so the integration can never be switched on without its prerequisite.
 function renderDockerPanel() {
   if (state.user?.role !== "administrator") return;
-  const panel = document.querySelector('[data-admin-panel="defaults"]'); if (!panel) return;
+  const panel = document.querySelector('[data-admin-panel="system"] .system-integrations'); if (!panel) return;
   const socketMounted = state.config?.docker?.socketMounted === true;
   const enabled = socketMounted && (state.settings?.dockerIntegration?.enabled === true || state.config?.docker?.enabled === true);
   let section = panel.querySelector(".docker-integration-section");
@@ -524,11 +524,84 @@ document.addEventListener("click", async event => {
 });
 
 
+// --- System tab: environment/integration status, storage, scheduled jobs, sync, restart --------
+function renderSystemPanel() {
+  if (state.user?.role !== "administrator") return;
+  const tabs = document.querySelector(".admin-tabs"), users = document.querySelector('[data-admin-panel="users"]');
+  if (!tabs || !users) return;
+  let tab = tabs.querySelector('[data-admin-tab="system"]');
+  if (!tab) { tab = document.createElement("button"); tab.dataset.adminTab = "system"; tab.textContent = "System"; tabs.insertBefore(tab, tabs.firstChild); }
+  let panel = document.querySelector('[data-admin-panel="system"]');
+  if (!panel) { panel = document.createElement("section"); panel.dataset.adminPanel = "system"; panel.className = "settings-panel hidden"; users.parentElement.insertBefore(panel, users); }
+  if (!panel.dataset.ready) {
+    panel.dataset.ready = "1";
+    panel.innerHTML = [
+      '<div class="panel-heading"><div><h2>System</h2><p class="muted">What\u2019s configured, what\u2019s running, and what this deployment can do. Nothing here is customizable except the Docker toggle below and the action buttons \u2014 everything else is status.</p></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Integrations</h2></div></div><div class="system-integrations"></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Security status</h2></div></div><div id="system-security" class="health-grid"></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Sync</h2></div><button type="button" id="system-resync" class="button secondary">Resync now</button></div><p id="system-sync-status" class="muted"></p></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div id="system-jobs" class="dashboard-jobs-list"></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Storage</p><h2>Disk usage</h2></div></div><div id="system-storage" class="health-grid"></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Build</p><h2>Version</h2></div></div><div id="system-version" class="muted"></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Reload & restart</h2></div></div><p class="muted">Reloading re-applies the current configuration to Caddy with no downtime. Restarting stops and restarts the whole application \u2014 only available when a restart policy is set on the container.</p><div class="row-actions"><button type="button" id="system-reload" class="button secondary">Reload gateway config</button><button type="button" id="system-restart" class="button secondary danger-text" disabled>Restart application</button></div><p id="system-restart-status" class="muted"></p></div>',
+    ].join("");
+    panel.querySelector("#system-resync").addEventListener("click", async event => {
+      const button = event.currentTarget; button.disabled = true; const original = button.textContent; button.textContent = "Resyncing\u2026";
+      try { await api("/api/gateway/resync", { method: "POST" }); toast("Gateway configuration re-synced."); await refresh(); }
+      catch (error) { toast(error.message, "error"); }
+      finally { button.disabled = false; button.textContent = original; }
+    });
+    panel.querySelector("#system-reload").addEventListener("click", async event => {
+      const button = event.currentTarget; button.disabled = true; const original = button.textContent; button.textContent = "Reloading\u2026";
+      try { await api("/api/system/reload", { method: "POST" }); toast("Gateway configuration reloaded."); await refresh(); }
+      catch (error) { toast(error.message, "error"); }
+      finally { button.disabled = false; button.textContent = original; }
+    });
+    panel.querySelector("#system-restart").addEventListener("click", async event => {
+      if (!await themedConfirm("Restart Site Gateway?", "The application will stop and restart. This takes a few seconds and briefly interrupts hosted sites and the dashboard.", "Restart")) return;
+      const button = event.currentTarget; button.disabled = true; button.textContent = "Restarting\u2026";
+      try { await api("/api/system/restart", { method: "POST" }); toast("Restarting \u2014 this dashboard will be unavailable briefly."); }
+      catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = "Restart application"; }
+    });
+  }
+  renderSystemStatus(panel);
+}
+async function renderSystemStatus(panel) {
+  panel = panel || document.querySelector('[data-admin-panel="system"]');
+  if (!panel || panel.classList.contains("hidden")) return;
+  const security = document.querySelector("#system-security"), storage = document.querySelector("#system-storage"),
+    version = document.querySelector("#system-version"), jobs = document.querySelector("#system-jobs"),
+    syncStatus = document.querySelector("#system-sync-status"), restartButton = document.querySelector("#system-restart"),
+    restartStatus = document.querySelector("#system-restart-status");
+  if (jobs) jobs.innerHTML = (state.dashboard?.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${extendedEscape(job.name)}</strong><small>${job.enabled ? `Active \u00b7 ${extendedEscape(job.schedule)}` : "Disabled"}</small></span></div>`).join("") || '<p class="quiet-state">No scheduled jobs reported.</p>';
+  if (syncStatus) { const drift = (state.dashboard?.attention || []).some(item => item.kind === "drift"); syncStatus.textContent = drift ? "Configuration drift detected \u2014 the running gateway no longer matches the last known-good configuration." : `Gateway configuration is in sync. Last reload: ${state.dashboard?.gateway?.lastReload ? formatTime(state.dashboard.gateway.lastReload) : "unknown"}.`; syncStatus.className = drift ? "muted status-warning" : "muted"; }
+  if (version) version.innerHTML = `Site Gateway v${extendedEscape(state.config?.version || "unknown")}<br>Data directory: <code>${extendedEscape(state.config?.storage?.databasePath ? state.config.storage.databasePath.replace(/\/database\/.*/, "") : "/data")}</code> &middot; Admin port: <code>${extendedEscape(String(state.config?.adminPort ?? ""))}</code> &middot; Site ports: <code>${extendedEscape(String(state.config?.minPort ?? ""))}\u2013${extendedEscape(String(state.config?.maxPort ?? ""))}</code>`;
+  try {
+    const [sec, store, policy] = await Promise.all([
+      api("/api/system/security"),
+      api("/api/system/storage"),
+      api("/api/system/restart-policy"),
+    ]);
+    if (security) security.innerHTML = [
+      { ok: !sec.adminPasswordIsDefault, label: "ADMIN_PASSWORD", detail: sec.adminPasswordIsDefault ? "Still using the built-in default \u2014 set this before exposing the dashboard." : "Configured." },
+      { ok: !sec.sessionSecretIsDefault, label: "SESSION_SECRET", detail: sec.sessionSecretIsDefault ? "Not set \u2014 sessions are keyed off the admin credentials instead of an independent secret." : "Configured." },
+      { ok: sec.acmeEmailConfigured, label: "ACME_EMAIL", detail: sec.acmeEmailConfigured ? "Configured." : "Not set \u2014 certificate issuance will proceed without a registration contact." },
+    ].map(row => `<div class="health-tile"><span class="status-dot ${row.ok ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>${row.label}</strong><small>${row.detail}</small></span></div>`).join("");
+    if (storage) {
+      const rows = Object.entries(store.breakdown || {}).map(([key, bytes]) => `<div class="health-tile"><span class="status-dot running"></span><span class="health-tile-copy"><strong>${key[0].toUpperCase()}${key.slice(1)}</strong><small>${formatBytes(bytes)}</small></span></div>`).join("");
+      const capacity = store.capacity ? `<div class="health-tile"><span class="status-dot ${store.capacity.availableBytes / store.capacity.totalBytes > 0.1 ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>Disk</strong><small>${formatBytes(store.capacity.availableBytes)} free of ${formatBytes(store.capacity.totalBytes)}</small></span></div>` : "";
+      storage.innerHTML = rows + capacity || '<p class="quiet-state">Storage usage unavailable.</p>';
+    }
+    if (restartButton) { restartButton.disabled = !policy.restartAvailable; if (restartStatus) restartStatus.textContent = policy.reason || (policy.policyName ? `Restart policy: ${policy.policyName}.` : ""); }
+  } catch { /* Status widgets keep their last-known values if a refresh call fails. */ }
+}
+
 // --- Wire the new panels into the shared refresh entry point ----------------------------------
 const baseRenderExtendedViews = window.renderExtendedViews;
 window.renderExtendedViews = function () {
   baseRenderExtendedViews();
   renderApiTokensPanel();
+  renderSystemPanel();
   renderDockerPanel();
   decorateContainerPickers();
   renderBackupHistory();

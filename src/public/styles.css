@@ -709,6 +709,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .inline-status{grid-column:1/-1;margin:0;color:var(--green);font-size:.8rem;font-weight:700}
 .inline-status.status-success{color:var(--green)}
 .inline-status.status-warning{color:var(--warning)}
+.muted.status-warning{color:var(--warning)}
 .encryption-grid{align-items:start}
 .encryption-toggle{align-items:flex-start;padding-top:28px}
 .encryption-toggle small{display:block;margin-top:5px;color:var(--muted);font-size:.72rem;line-height:1.4}
@@ -770,6 +771,22 @@ label.check-control:has(input[name="upstreamTlsInsecure"]) small{grid-column:2!i
 label.check-control:has(input[name="upstreamTlsInsecure"]){position:relative;height:44px!important;min-height:44px!important;margin-bottom:42px!important;display:flex!important;flex-wrap:nowrap!important;align-items:center!important}
 label.check-control:has(input[name="upstreamTlsInsecure"]) span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 label.check-control:has(input[name="upstreamTlsInsecure"]) small{position:absolute;left:0;top:calc(100% + 7px);width:100%;padding:0!important;white-space:normal}
+
+/* Custom-drawn select (Task #20): native <select> popups can't be reliably themed dark across
+   browsers, so this replaces the popup only -- the native select stays for value/form/event
+   compatibility, positioned invisibly beneath the trigger. */
+.custom-select{position:relative;display:block;width:100%;margin-top:7px}
+.custom-select select{position:absolute;inset:0;opacity:0;pointer-events:none;margin:0;width:100%;height:100%}
+.custom-select-trigger{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);width:100%;border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-3);background:var(--field-bg);color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.custom-select-trigger::after{content:"";width:9px;height:9px;flex:0 0 auto;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg) translateY(-2px)}
+.custom-select-trigger:focus-visible{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(var(--green-rgb),.1)}
+.custom-select-trigger[aria-expanded="true"]::after{transform:rotate(225deg) translateY(-2px)}
+.custom-select-trigger:disabled{opacity:.55;cursor:not-allowed}
+.custom-select-menu{position:fixed;z-index:2147483647;max-height:min(280px,40vh);overflow:auto;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);box-shadow:var(--shadow);padding:4px}
+.custom-select-option{padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);cursor:pointer;color:var(--text);font-size:.85rem}
+.custom-select-option:hover,.custom-select-option.is-highlighted{background:rgba(var(--panel-rgb),.6);background:var(--field-bg)}
+.custom-select-option.is-selected{color:var(--green)}
+.custom-select-option.is-disabled{color:var(--muted);cursor:not-allowed}
 
 /* Shared diagnostic lists: Certificates, Access Logs, Gateway Events, Audit */
 select{appearance:none!important;-webkit-appearance:none!important;background-repeat:no-repeat!important;background-position:right 14px center!important;background-size:16px!important}

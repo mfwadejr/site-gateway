@@ -1342,11 +1342,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.get(["/", "/index.html"], (req, res) => {
   const html = fs.readFileSync(path.join(publicDir, "index.html"), "utf8")
-    .replace(/\/(app|features)\.js\?v=[^"']+/g, `/$1.js?v=${appVersion}`)
+    .replace(/\/(app|features|select-enhance)\.js\?v=[^"']+/g, `/$1.js?v=${appVersion}`)
     .replace(/\/styles\.css\?v=[^"']+/g, `/styles.css?v=${appVersion}`);
   res.type("html").send(html);
 });
-app.use(express.static(publicDir));
+app.use(express.static(publicDir, { setHeaders: (res, filePath) => { if (/\/(app|features)\.js$/.test(filePath)) res.setHeader("Cache-Control", "no-cache"); } }));
 app.use("/site-icons", express.static(iconsDir, { immutable: true, maxAge: "30d", setHeaders: res => res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'") }));
 
 
@@ -1570,6 +1570,62 @@ app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
 
 // --- Config, Users, Audit log, Groups, Access List <-> Group assignment --------------------------------------
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) }, docker: { socketMounted: dockerSocketMounted, enabled: dockerSocketMounted && settings.dockerIntegration?.enabled === true } }));
+
+// --- System tab: storage usage, restart-policy check, and self-restart -----------------------------------
+app.get("/api/system/storage", async (req, res, next) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  try {
+    const breakdown = {};
+    for (const [key, dir] of Object.entries({ sites: sitesDir, backups: backupsDir, certificates: certificatesRoot, logs: logsDir, database: path.join(dataDir, "database") })) {
+      breakdown[key] = await directorySize(dir);
+    }
+    let capacity = null;
+    try {
+      const stats = await fsp.statfs(dataDir);
+      capacity = { totalBytes: stats.blocks * stats.bsize, freeBytes: stats.bfree * stats.bsize, availableBytes: stats.bavail * stats.bsize };
+    } catch { /* statfs isn't available on every platform/Node build -- degrade to breakdown-only. */ }
+    res.json({ dataDir, breakdown, usedBytes: Object.values(breakdown).reduce((sum, value) => sum + value, 0), capacity });
+  } catch (error) { next(error); }
+});
+// Inspects this container's own restart policy via the Docker Engine API, reusing the same
+// mounted-socket + self-identification (process.env.HOSTNAME) pattern as the container picker.
+async function ownRestartPolicy() {
+  if (!dockerSocketMounted) return { checked: false, policyName: null, restartAvailable: false, reason: "Docker socket not detected — mount /var/run/docker.sock to check the restart policy." };
+  const ownId = String(process.env.HOSTNAME || "").trim();
+  if (!ownId) return { checked: false, policyName: null, restartAvailable: false, reason: "Could not determine this container's own ID." };
+  try {
+    const own = await dockerRequest(`/containers/${encodeURIComponent(ownId)}/json`);
+    const policyName = own?.HostConfig?.RestartPolicy?.Name || "no";
+    const restartAvailable = ["always", "unless-stopped", "on-failure"].includes(policyName);
+    return { checked: true, policyName, restartAvailable, reason: restartAvailable ? null : `Restart policy is "${policyName}" — set it to "unless-stopped" (or similar) in your container config to enable restarting from here.` };
+  } catch (error) { return { checked: false, policyName: null, restartAvailable: false, reason: `Could not read the container's restart policy: ${error.message}` }; }
+}
+app.get("/api/system/restart-policy", async (req, res, next) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  try { res.json(await ownRestartPolicy()); } catch (error) { next(error); }
+});
+app.get("/api/system/security", (req, res) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  res.json({
+    adminPasswordIsDefault: process.env.ADMIN_PASSWORD === undefined,
+    sessionSecretIsDefault: process.env.SESSION_SECRET === undefined,
+    acmeEmailConfigured: Boolean(String(process.env.ACME_EMAIL || "").trim()),
+  });
+});
+app.post("/api/system/restart", async (req, res, next) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  try {
+    const policy = await ownRestartPolicy();
+    if (!policy.restartAvailable) return res.status(409).json({ error: policy.reason || "Restarting is not available." });
+    recordActivity("Administrator restarted Site Gateway.", "warning");
+    res.json({ ok: true });
+    setTimeout(() => process.exit(0), 250);
+  } catch (error) { next(error); }
+});
+app.post("/api/system/reload", async (req, res, next) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  try { await syncCaddy(); recordActivity("Administrator reloaded the gateway configuration."); res.json({ ok: true, lastGatewayReload }); } catch (error) { next(error); }
+});
 app.post("/api/gateway/resync", async (req, res, next) => {
   if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
   try {
@@ -2238,7 +2294,9 @@ app.patch("/api/settings", async (req, res, next) => {
       const days = key => Math.min(Math.max(Number(value[key]) || 30, 7), 3650);
       settings.logsRetention = { ...settings.logsRetention, accessDays: days("accessDays"), activityDays: days("activityDays"), auditDays: days("auditDays"), certificateDays: days("certificateDays"), securityDays: days("securityDays"), pruningEnabled: value.pruningEnabled === true };
     }
-    await syncCaddy(); await saveSettings(); recordActivity("Administration settings updated."); res.json({ ...settings, backupDirectory: backupsDir });
+    if (req.body.defaultSite) await syncCaddy();
+    await saveSettings();
+    recordActivity("Administration settings updated."); res.json({ ...settings, backupDirectory: backupsDir });
   } catch (error) { next(error); }
 });
 app.post("/api/logs/prune", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); if (!settings.logsRetention?.pruningEnabled) return res.status(409).json({ error: "Automatic pruning is disabled. Enable it and save the retention policy first." }); const mode = req.body?.mode === "scheduled" ? "scheduled" : "manual"; const stamp = new Date().toISOString().replace(/[:.]/g, "-"); const snapshot = path.join(backupsDir, `pre-prune-${stamp}.sqlite`); storage.backupTo(snapshot); const counts = storage.pruneEvents(settings.logsRetention); settings.logsRetention = { ...settings.logsRetention, lastRunAt: new Date().toISOString(), lastRunMode: mode, lastRunCounts: counts, lastRunSnapshot: snapshot }; await saveSettings(); recordActivity(`${mode === "scheduled" ? "Scheduled" : "Manual"} log pruning completed: ${Object.values(counts).reduce((sum, value) => sum + value, 0)} records removed.`); res.json({ counts, snapshot }); } catch (error) { next(error); } });

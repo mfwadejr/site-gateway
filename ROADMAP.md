@@ -34,6 +34,21 @@
 - The Top Paths popout now states it's showing the top 10, matching the existing server-side cap.
 - The Runtime/System dashboard panel's top accent bar changed from a stray `--blue` token to `--green`, matching the default accent already used by every other dashboard tile.
 
+`v0.15.2` fixed regressions introduced by `v0.15.1` and one deeper architectural bug:
+
+- The dashboard attention tile's inline "Resync now" button (added in `v0.15.1`) silently did nothing — a script-generation guard meant to avoid double-adding its click handler matched on markup text that had already been introduced by the same change, so the handler was never actually attached. Fixed and verified by checking for the handler's functional code rather than just a string match.
+- The Needs Attention dashboard chip and the attention-tile detail rows used different colors (amber vs. red) for the same condition; aligned to red.
+- Configuration drift kept re-reporting immediately after a successful resync. The `v0.15.1` fix (order-independent JSON comparison) was necessary but not sufficient — the deeper issue was comparing a live running config against a freshly re-adapted Caddyfile, which will almost never match because Caddy fills in runtime defaults (automation policy, TLS management state) that never appear in a bare adapted config. Rewrote drift detection to compare two live-config snapshots against a captured baseline instead, recapturing that baseline after every successful sync.
+- Removed the redundant "Resync now" callout from the Gateway Defaults page, superseded by the dashboard's inline button.
+
+`v0.16.0` adds the System tab and closes out a round of fixes found during live use of `v0.15.x`:
+
+- **New System tab** (Administration, first tab) — a read-only operations/diagnostics page: environment and integration status (Docker socket, `BACKUP_PASSWORD`), security status (default-credential and `ACME_EMAIL` detection), persistent gateway sync status with a Resync control, a scheduled-jobs table, per-folder storage usage, version/runtime info, and Reload/Restart controls. Restart is only enabled when the Docker socket is mounted and the container's own restart policy (checked via the Docker Engine API) is `always`, `unless-stopped`, or `on-failure`. The only interactive elements on the page are the Docker container-picker toggle (moved here from Gateway Defaults, which no longer carries integration/environment content) and the action buttons — everything else is status.
+- Fixed a real correctness bug: `PATCH /api/settings` called `syncCaddy()` unconditionally before saving anything, for every settings change — including backups, certificate-health, and log-retention changes that have nothing to do with the Caddy config. An unrelated Caddy resync failure could silently discard and revert a just-saved change before it was ever persisted. `syncCaddy()` now only runs when a `defaultSite` change is part of the request; everything else saves unconditionally.
+- The "Encrypt scheduled backups" toggle's helper text now positively confirms when `BACKUP_PASSWORD` is configured, instead of showing the same generic instructional copy regardless of whether it's set.
+- `app.js`/`features.js`/`select-enhance.js` are now served with `Cache-Control: no-cache`, so browsers always revalidate instead of potentially serving a stale cached copy despite the version query string.
+- Native `<select>` popups across the app are now replaced with a custom-drawn dark-themed listbox (the underlying native select is kept for form/value/event compatibility) — the `color-scheme` CSS hint shipped in `v0.15.1` turned out not to reliably theme native dropdown popups across real browsers/engines.
+
 ## Product direction
 
 Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, clear health reporting, and guided setup instead of exposing raw server configuration. **Caddy** remains the managed gateway — Site Gateway stores a small route model and generates/validates Caddy configuration rather than reimplementing certificate and proxy behavior itself.
@@ -82,6 +97,8 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 - PUID/PGID-aware startup for Unraid and ZimaOS-style permission models.
 - A durable, database-backed history of every backup, restore, and deletion attempt, shown as a human-readable timeline.
 - An opt-in Docker container picker (gated on the Docker socket being mounted and readable) for choosing Proxy/Streaming targets from the host’s running containers instead of typing them by hand.
+
+- A System tab (Administration) surfacing environment/integration status, security status, storage usage, scheduled jobs, gateway sync status, and reload/restart controls in one read-only operations page.
 
 ### Brand and docs
 
