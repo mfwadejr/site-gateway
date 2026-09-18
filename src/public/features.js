@@ -211,8 +211,10 @@ document.querySelector("#access-list").addEventListener("click", event => { if (
 
 
 // --- Administration: tab switching between admin panel sections ----------------
-document.querySelector(".admin-tabs").addEventListener("click", event => { const button = event.target.closest("[data-admin-tab]"); if (!button) return; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item === button)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== button.dataset.adminTab)); document.querySelector("#open-create").classList.toggle("hidden", button.dataset.adminTab !== "users"); });
-document.querySelector(".admin-tabs").addEventListener("click", event => { const button = event.target.closest("[data-admin-tab]"); if (!button) return; state.adminTab = button.dataset.adminTab; history.replaceState(null, "", `${location.pathname}${location.search}#administration/${state.adminTab}`); });
+// A single handler updates state and defers to the real render() for tab-active classes, panel
+// visibility, and the shared Create button's visibility/text -- render() is the one place that
+// logic lives, so this never drifts out of sync with it the way two separate DOM-poking handlers did.
+document.querySelector(".admin-tabs").addEventListener("click", event => { const button = event.target.closest("[data-admin-tab]"); if (!button) return; state.adminTab = button.dataset.adminTab; render(); });
 if (state.adminTab && state.view === "administration") document.querySelector(`[data-admin-tab="${state.adminTab}"]`)?.click();
 
 
