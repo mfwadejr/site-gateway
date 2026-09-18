@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.15.1-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.15.2-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·

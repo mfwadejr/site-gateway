@@ -638,6 +638,10 @@ async function syncCaddy() {
     await execFileAsync("caddy", ["reload", "--config", caddyfilePath, "--adapter", "caddyfile"]);
     gatewayError = null;
     lastGatewayReload = new Date().toISOString();
+    try {
+      const liveAfterReload = await caddyAdminRequest({ method: "GET", path: "/config/" });
+      if (liveAfterReload.status === 200) lastKnownGoodCaddyConfig = JSON.parse(liveAfterReload.body);
+    } catch (error) { console.warn("Could not capture post-reload config baseline:", error.message); }
   } catch (error) {
     const rejectedReason = error.stderr || error.message;
     let rollbackSucceeded = false;
@@ -659,6 +663,7 @@ async function syncCaddy() {
 
 
 let configDrift = { checkedAt: null, drift: false, detail: null };
+let lastKnownGoodCaddyConfig = null;
 function caddyAdminRequest(options, body) {
   return new Promise((resolve, reject) => {
     const request = http.request({ host: "127.0.0.1", port: 2019, timeout: 5000, ...options }, response => {
@@ -682,28 +687,18 @@ function stableStringify(value) {
 async function checkConfigDrift() {
   const wasDrifting = configDrift.drift;
   try {
-    const caddyfileContent = await fsp.readFile(caddyfilePath, "utf8").catch(() => null);
-    if (!caddyfileContent) return;
-    const [adapted, live] = await Promise.all([
-      caddyAdminRequest({ method: "POST", path: "/adapt", headers: { "Content-Type": "text/caddyfile" } }, caddyfileContent),
-      caddyAdminRequest({ method: "GET", path: "/config/" })
-    ]);
-    if (adapted.status !== 200 || live.status !== 200) return;
-    const adaptedParsed = JSON.parse(adapted.body);
-    const adaptedConfig = adaptedParsed && adaptedParsed.config !== undefined ? adaptedParsed.config : adaptedParsed;
+    const live = await caddyAdminRequest({ method: "GET", path: "/config/" });
+    if (live.status !== 200) return;
     const liveConfig = JSON.parse(live.body);
-    // Compare with sorted-key serialization, not raw JSON.stringify: Caddy\u2019s freshly-adapted
-    // config and its live running config can serialize object keys in a different order even when
-    // they\u2019re semantically identical, which previously registered as a false-positive drift.
-    const drift = stableStringify(adaptedConfig) !== stableStringify(liveConfig);
-    configDrift = { checkedAt: new Date().toISOString(), drift, detail: drift ? "Caddy\u2019s live configuration no longer matches the saved configuration." : null };
-    // Log only the false->true transition (not every 10-minute check while it persists or is clear),
-    // so Gateway Events shows exactly when drift was (re-)detected \u2014 useful for confirming whether
-    // a report of drift reappearing "right after resync" actually lines up with a real check, or with
-    // this job\u2019s normal 10-minute cadence instead.
-    if (drift && !wasDrifting) recordActivity("Configuration drift detected: Caddy\u2019s live configuration no longer matches the saved configuration.", "warning");
+    if (!lastKnownGoodCaddyConfig) {
+      lastKnownGoodCaddyConfig = liveConfig;
+      configDrift = { checkedAt: new Date().toISOString(), drift: false, detail: null };
+      return;
+    }
+    const drift = stableStringify(lastKnownGoodCaddyConfig) !== stableStringify(liveConfig);
+    configDrift = { checkedAt: new Date().toISOString(), drift, detail: drift ? "Caddy\u2019s live configuration no longer matches the last known-good configuration." : null };
+    if (drift && !wasDrifting) recordActivity("Configuration drift detected: Caddy\u2019s live configuration no longer matches the last known-good configuration.", "warning");
   } catch (error) {
-    // Caddy admin API unreachable, or transient error: don\u2019t flag drift on a check we couldn\u2019t complete.
     configDrift = { ...configDrift, checkedAt: new Date().toISOString() };
   }
 }
@@ -1018,7 +1013,7 @@ async function dashboardSnapshot() {
       publicIp: publicIpState.address,
       publicIpCheckedAt: publicIpState.checkedAt,
       publicIpError: publicIpState.error,
-      jobs: [{ name: "Upstream checks", enabled: true, schedule: "60s" }, { name: "Scheduled backups", enabled: Boolean(settings.backups?.enabled), schedule: settings.backups?.enabled ? settings.backups.frequency : "off" }, { name: "Log pruning", enabled: Boolean(settings.logsRetention?.pruningEnabled), schedule: settings.logsRetention?.pruningEnabled ? "15m" : "off" }, { name: "Access-log import", enabled: true, schedule: "30s" }, { name: "Public IP check", enabled: true, schedule: "60m" }]
+      jobs: [{ name: "Upstream checks", enabled: true, schedule: "60s" }, { name: "Scheduled backups", enabled: Boolean(settings.backups?.enabled), schedule: settings.backups?.enabled ? settings.backups.frequency : "off" }, { name: "Log pruning", enabled: Boolean(settings.logsRetention?.pruningEnabled), schedule: settings.logsRetention?.pruningEnabled ? "15m" : "off" }, { name: "Access-log import", enabled: true, schedule: "30s" }, { name: "Public IP check", enabled: true, schedule: "60m" }, { name: "Configuration drift check", enabled: true, schedule: "10m" }]
     },
     activity: recentActivity
   };
@@ -1579,6 +1574,10 @@ app.post("/api/gateway/resync", async (req, res, next) => {
   if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
   try {
     await syncCaddy();
+    try {
+      const liveAfterResync = await caddyAdminRequest({ method: "GET", path: "/config/" });
+      if (liveAfterResync.status === 200) lastKnownGoodCaddyConfig = JSON.parse(liveAfterResync.body);
+    } catch (error) { console.warn("Could not capture post-resync config baseline:", error.message); }
     configDrift = { checkedAt: new Date().toISOString(), drift: false, detail: null };
     recordActivity(`Gateway configuration re-synced by \u201c${req.user.username}\u201d.`);
     res.json({ ok: true });

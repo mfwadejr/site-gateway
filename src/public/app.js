@@ -189,7 +189,7 @@ function renderDashboard() {
   $("#dash-attention-total").textContent = data.attention.length;
   $("#dash-attention-detail").textContent = data.attention.length ? `${data.attention.length} item${data.attention.length === 1 ? "" : "s"} to review` : "No current issues";
   applyTileAccents(data);
-  $("#dash-attention-chip").classList.toggle("accent-warning", data.attention.length > 0);
+  $("#dash-attention-chip").classList.toggle("accent-danger", data.attention.length > 0);
   $("#dash-attention-chip").classList.toggle("accent-green", data.attention.length === 0);
   $("#dash-attention-icon").textContent = data.attention.length > 0 ? "!" : "✓";
   $("#dash-throughput-total").textContent = data.throughput?.liveRequests ?? 0;
@@ -602,6 +602,16 @@ $("#logout").addEventListener("click", async () => { await fetch("/api/logout", 
 $("#check-health").addEventListener("click", async event => { const button = event.currentTarget; button.disabled = true; button.textContent = "Checking…"; try { const result = await api("/api/health/check", { method:"POST" }); state.dashboard = result.dashboard; state.certificates = result.certificates; state.readiness = { routes:result.readiness }; renderCertificates(); toast("Certificate and domain checks completed."); } catch (error) { toast(error.message, "error"); } finally { button.disabled = false; button.textContent = "Run certificate check"; } });
 $("#download-support")?.addEventListener("click", () => { location.href = "/api/support-report"; });
 $("#attention-list").addEventListener("click", event => { const target = event.target.closest("[data-issue-target]")?.dataset.issueTarget; if (target) { const [view, adminTab] = target.split("/"); state.view = view; if (view === "administration" && adminTab) state.adminTab = adminTab; render(); loadFeatureView().catch(error => toast(error.message, "error")); } });
+$("#attention-list").addEventListener("click", async event => {
+  const button = event.target.closest("[data-drift-resync]");
+  if (!button) return;
+  button.disabled = true; button.textContent = "Resyncing…";
+  try {
+    await api("/api/gateway/resync", { method: "POST" });
+    toast("Gateway configuration re-synced.");
+    await refresh();
+  } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = "Resync now"; }
+});
 
 // --- Primary navigation (sidebar view switching) -------------------------------------------
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }

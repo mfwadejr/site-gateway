@@ -326,27 +326,6 @@ document.addEventListener("click", async event => { const button = event.target.
 document.addEventListener("click", event => { const button = event.target.closest('[data-retention-action="download"]'); if (!button) return; window.location.href = "/api/logs/download"; });
 document.addEventListener("click", async event => { const button = event.target.closest('[data-retention-action="prune"]'); if (!button) return; event.preventDefault(); event.stopImmediatePropagation(); try { const preview = await api("/api/logs/prune/preview"); const counts = preview.counts || {}; const total = Object.values(counts).reduce((sum, value) => sum + value, 0); let dialog = document.querySelector("#retention-prune-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "retention-prune-dialog"; document.body.append(dialog); } dialog.innerHTML = `<form method="dialog" class="dialog-card compact"><div class="dialog-heading"><div><p class="eyebrow">Log Retention</p><h2>Confirm pruning</h2></div></div><p class="muted">This will remove records older than your saved retention periods.</p><p class="muted">Access: <strong>${counts.access || 0}</strong> · Activity: <strong>${counts.activity || 0}</strong> · Certificates: <strong>${counts.certificate || 0}</strong> · Security: <strong>${counts.security || 0}</strong> · Audit: <strong>${counts.audit || 0}</strong></p><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button><button value="confirm" class="button primary">Confirm pruning</button></div></form>`; dialog.showModal(); const result = await new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true })); if (result !== "confirm") return; const response = await api("/api/logs/prune", { method: "POST" }); toast(`Pruning completed. ${Object.values(response.counts || {}).reduce((sum, value) => sum + value, 0)} record${total === 1 ? "" : "s"} removed.`); } catch (error) { toast(error.message); } }, true);
 
-// --- Config drift: show a resync callout in Administration > Default site when drift is detected --------
-function renderConfigDriftCallout() {
-  const callout = document.querySelector("#config-drift-callout");
-  if (!callout) return;
-  const drift = (state.dashboard?.attention || []).some(item => item.kind === "drift");
-  callout.hidden = !drift;
-}
-setInterval(renderConfigDriftCallout, 1000);
-document.addEventListener("click", async event => {
-  const button = event.target.closest("#config-resync");
-  if (!button) return;
-  button.disabled = true;
-  try {
-    await api("/api/gateway/resync", { method: "POST" });
-    toast("Gateway configuration re-synced.");
-    await refresh();
-    renderConfigDriftCallout();
-  } catch (error) { toast(error.message); } finally { button.disabled = false; }
-});
-
-
 // ============================================================================================
 // v0.15.0 additions: API access tokens, backup history, and the Docker container picker.
 // ============================================================================================
