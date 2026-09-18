@@ -482,6 +482,40 @@ async function syncCaddy() {
 }
 
 
+let configDrift = { checkedAt: null, drift: false, detail: null };
+function caddyAdminRequest(options, body) {
+  return new Promise((resolve, reject) => {
+    const request = http.request({ host: "127.0.0.1", port: 2019, timeout: 5000, ...options }, response => {
+      let data = "";
+      response.on("data", chunk => { data += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode, body: data }));
+    });
+    request.on("error", reject);
+    request.on("timeout", () => request.destroy(new Error("Caddy admin API request timed out.")));
+    if (body) request.write(body);
+    request.end();
+  });
+}
+async function checkConfigDrift() {
+  try {
+    const caddyfileContent = await fsp.readFile(caddyfilePath, "utf8").catch(() => null);
+    if (!caddyfileContent) return;
+    const [adapted, live] = await Promise.all([
+      caddyAdminRequest({ method: "POST", path: "/adapt", headers: { "Content-Type": "text/caddyfile" } }, caddyfileContent),
+      caddyAdminRequest({ method: "GET", path: "/config/" })
+    ]);
+    if (adapted.status !== 200 || live.status !== 200) return;
+    const adaptedParsed = JSON.parse(adapted.body);
+    const adaptedConfig = adaptedParsed && adaptedParsed.config !== undefined ? adaptedParsed.config : adaptedParsed;
+    const liveConfig = JSON.parse(live.body);
+    const drift = JSON.stringify(adaptedConfig) !== JSON.stringify(liveConfig);
+    configDrift = { checkedAt: new Date().toISOString(), drift, detail: drift ? "Caddy\u2019s live configuration no longer matches the saved configuration." : null };
+  } catch (error) {
+    // Caddy admin API unreachable, or transient error: don\u2019t flag drift on a check we couldn\u2019t complete.
+    configDrift = { ...configDrift, checkedAt: new Date().toISOString() };
+  }
+}
+
 // --- Status helpers & public (client-facing, secret-stripped) view builders ------------------
 function siteStatus(site) {
   if (!site.enabled) return "disabled";
@@ -758,6 +792,7 @@ async function dashboardSnapshot() {
   for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention." });
   for (const proxy of proxyHosts.filter(item => item.enabled && item.upstream?.status === "unhealthy")) attention.push({ kind: "upstream", name: proxy.name, message: `Upstream is unavailable${proxy.upstream.error ? ` · ${proxy.upstream.error}` : ""}.` });
   for (const certificate of certificates.certificates.filter(item => ["warning", "critical", "expired", "mismatch"].includes(item.status))) attention.push({ kind: "certificate", target: "certificates", name: certificate.domain, message: certificate.status === "expired" ? "Certificate has expired." : certificate.status === "mismatch" ? "The uploaded certificate does not cover this domain." : `Certificate expires in ${certificate.daysRemaining} day${certificate.daysRemaining === 1 ? "" : "s"}.` });
+  if (configDrift.drift) attention.push({ kind: "drift", name: "Configuration drift", message: "Caddy\u2019s live configuration no longer matches the saved configuration.", target: "administration" });
   const disk = await fsp.statfs(dataDir).catch(() => null);
   const databaseIntegrity = storage.integrity();
   return {
@@ -1309,7 +1344,16 @@ app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
 });
 
 // --- Config, Users, Audit log, Groups, Access List <-> Group assignment --------------------------------------
-app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError } }));
+app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) } }));
+app.post("/api/gateway/resync", async (req, res, next) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  try {
+    await syncCaddy();
+    configDrift = { checkedAt: new Date().toISOString(), drift: false, detail: null };
+    recordActivity(`Gateway configuration re-synced by \u201c${req.user.username}\u201d.`);
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
 app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/audit", (req, res) => req.user.role === "administrator" ? res.json(storage.listAudit({ user: req.query.user, action: req.query.action, status: req.query.status }).map(item => ({ ...item, actor: users.find(user => user.id === item.actor_id)?.username || "System" }))) : res.status(403).json({ error: "Administrator access is required." }));
 app.post("/api/users", async (req, res, next) => {
@@ -1954,6 +1998,8 @@ app.listen(adminPort, "0.0.0.0", () => {
 
 setTimeout(() => checkAllProxies().catch(error => console.warn("Initial upstream checks failed:", error.message)), 1500).unref();
 setInterval(() => checkAllProxies().catch(error => console.warn("Upstream checks failed:", error.message)), 60000).unref();
+setTimeout(() => checkConfigDrift().catch(error => console.warn("Config drift check failed:", error.message)), 10000).unref();
+setInterval(() => checkConfigDrift().catch(error => console.warn("Config drift check failed:", error.message)), 10 * 60000).unref();
 
 
 // --- Scheduled jobs: automatic backups, log pruning, public IP checks, graceful shutdown ---------------------------------
