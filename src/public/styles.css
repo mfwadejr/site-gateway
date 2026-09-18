@@ -149,6 +149,7 @@ header{align-items:flex-end}
 /* Dashboard */
 .mobile-nav{display:none}
 .dashboard-view{margin-top:38px}
+#certificates-view,#performance-view,#logs-view{margin-top:var(--space-7)}
 .metric-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-4)}
 .metric-card{min-width:0;padding:20px;border:1px solid var(--line);border-radius:var(--radius-2xl);background:linear-gradient(145deg,rgba(var(--panel2-rgb),.95),rgba(var(--card-shade-rgb),.95));color:var(--text);text-align:left;position:relative;overflow:hidden}
 .metric-card::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--card-accent,var(--green));opacity:.85}
