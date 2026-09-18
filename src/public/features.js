@@ -429,7 +429,6 @@ async function renderBackupHistory() {
     panel.append(section);
   }
   const list = section.querySelector("#backup-history-list");
-  if (panel.classList.contains("hidden")) return;
   try {
     const events = await api("/api/backups/history");
     list.innerHTML = events.length ? events.map(item => {
