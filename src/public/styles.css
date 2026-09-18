@@ -776,6 +776,7 @@ label.check-control:has(input[name="upstreamTlsInsecure"]) small{position:absolu
 
 .system-integrations:not(:empty){margin-top:var(--space-3)}
 .system-integrations .check-control{margin:0}
+#system-sync-status+p{margin-top:var(--space-3)}
 #system-restart-status{margin-top:var(--space-3)}
 
 /* Custom-drawn select (Task #20): native <select> popups can't be reliably themed dark across
