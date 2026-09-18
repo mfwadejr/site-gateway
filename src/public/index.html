@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0b1220">
+  <meta name="theme-color" content="#08101d">
   <title>Site Gateway</title>
   <meta name="description" content="Host sites, proxy services, and manage HTTPS from one simple dashboard.">
   <link rel="icon" type="image/png" href="/site-gateway-icon-approved.png">
-  <link rel="stylesheet" href="/styles.css?v=0.12.0">
+  <link rel="stylesheet" href="/styles.css?v=0.13.0">
 </head>
 
 <!-- ================================================================
@@ -86,7 +86,6 @@
     </aside>
     <main>
       <div class="utility-bar" aria-label="Account and appearance">
-        <label class="theme-control" for="theme-select"><span>Theme</span><select id="theme-select" aria-label="Color theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
         <div class="account-control"><span>Signed in as <strong id="user-label">admin</strong></span><button id="logout" class="text-button">Sign out</button></div>
       </div>
       <nav class="mobile-nav" aria-label="Dashboard sections">
@@ -430,6 +429,6 @@
   <div id="toast" class="toast" role="status"></div>
   <div id="update-banner" class="update-banner hidden" role="status"><span>A new version of Site Gateway is available.</span><div class="update-banner-actions"><button id="update-banner-refresh" class="button primary">Refresh</button><button id="update-banner-dismiss" class="text-button">Dismiss</button></div></div>
   <!-- App scripts: core (app.js) then extended views/admin (features.js) -->
-  <script src="/app.js?v=0.11.119" defer></script><script src="/features.js?v=0.11.114" defer></script>
+  <script src="/app.js?v=0.13.0" defer></script><script src="/features.js?v=0.13.0" defer></script>
 </body>
 </html>

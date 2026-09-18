@@ -1,5 +1,5 @@
 // ============================================================================
-// app.js -- core client application: state, API helper, theme, dashboard,
+// app.js -- core client application: state, API helper, dashboard,
 // Hosted Sites & Proxy Hosts rendering, routing between views, dialogs (create/
 // edit/icon/user/account/MFA), and every event listener for those areas. The
 // remaining views (Streaming, Redirects, Access Lists, Administration panels)
@@ -18,19 +18,6 @@ if (!document.querySelector("#settings-access-list")) { const anchor = document.
 const proxyAccessLabel = document.querySelector("#proxy-form [name=accessListId]")?.closest("label"); const proxyTlsLabel = document.querySelector("#proxy-form [name=tls]")?.closest("label"); if (proxyAccessLabel && proxyTlsLabel) proxyTlsLabel.before(proxyAccessLabel);
 const settingsAccessLabel = document.querySelector("#settings-access-list")?.closest("label"); const settingsTlsLabel = document.querySelector("#settings-form [name=tls]")?.closest("label"); if (settingsAccessLabel && settingsTlsLabel) settingsTlsLabel.before(settingsAccessLabel);
 document.querySelector("#settings-advanced [name=accessListId]")?.closest("label")?.remove();
-
-// --- Theme (light/dark/system) -------------------------------------------------
-const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
-
-function applyTheme(preference) {
-  const effective = preference === "system" ? (systemTheme.matches ? "dark" : "light") : preference;
-  document.documentElement.dataset.theme = effective;
-  document.querySelector('meta[name="theme-color"]').content = effective === "dark" ? "#08101d" : "#f3f6fa";
-}
-const savedTheme = localStorage.getItem("webserver-theme") || "system";
-$("#theme-select").value = savedTheme; applyTheme(savedTheme);
-$("#theme-select").addEventListener("change", event => { localStorage.setItem("webserver-theme", event.target.value); applyTheme(event.target.value); });
-systemTheme.addEventListener("change", () => { if ($("#theme-select").value === "system") applyTheme("system"); });
 
 // --- API helper ------------------------------------------------------------------
 
