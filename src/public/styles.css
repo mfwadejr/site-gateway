@@ -598,6 +598,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 
 /* Backup & restore form layout */
 .settings-form .form-section{grid-column:1/-1;padding:var(--space-1) 0 20px;border-bottom:1px solid var(--line)}
+#default-site-help{grid-column:1/-1;margin:0 0 var(--space-4)}
 .settings-form .form-section+.form-section{padding-top:20px}
 .settings-form .form-section:last-of-type{border-bottom:0}
 .settings-form .form-section .eyebrow{margin-bottom:var(--space-3)}
