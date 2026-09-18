@@ -1590,7 +1590,7 @@ app.get("/api/system/storage", async (req, res, next) => {
 // Inspects this container's own restart policy via the Docker Engine API, reusing the same
 // mounted-socket + self-identification (process.env.HOSTNAME) pattern as the container picker.
 async function ownRestartPolicy() {
-  if (!dockerSocketMounted) return { checked: false, policyName: null, restartAvailable: false, reason: "Docker socket not detected — mount /var/run/docker.sock to check the restart policy." };
+  if (!dockerSocketMounted) return { checked: false, policyName: null, restartAvailable: false, reason: "Restart availability can’t be verified — mount /var/run/docker.sock into this container so Site Gateway can confirm it will come back up before offering a restart." };
   const ownId = String(process.env.HOSTNAME || "").trim();
   if (!ownId) return { checked: false, policyName: null, restartAvailable: false, reason: "Could not determine this container's own ID." };
   try {
