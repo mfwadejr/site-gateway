@@ -663,6 +663,8 @@ async function syncCaddy() {
 
 
 let configDrift = { checkedAt: null, drift: false, detail: null };
+let lastUpstreamCheckAt = null;
+let lastAccessLogImportAt = null;
 let lastKnownGoodCaddyConfig = null;
 function caddyAdminRequest(options, body) {
   return new Promise((resolve, reject) => {
@@ -1014,10 +1016,10 @@ async function dashboardSnapshot() {
       publicIpCheckedAt: publicIpState.checkedAt,
       publicIpError: publicIpState.error,
       jobs: [
-        { name: "Upstream checks", enabled: true, schedule: "60s", lastRunAt: null },
+        { name: "Upstream checks", enabled: true, schedule: "60s", lastRunAt: lastUpstreamCheckAt },
         { name: "Scheduled backups", enabled: Boolean(settings.backups?.enabled), schedule: settings.backups?.enabled ? settings.backups.frequency : "off", lastRunAt: settings.backups?.lastRunAt || null, lastStatus: settings.backups?.lastStatus || null },
         { name: "Log pruning", enabled: Boolean(settings.logsRetention?.pruningEnabled), schedule: settings.logsRetention?.pruningEnabled ? "15m" : "off", lastRunAt: settings.logsRetention?.lastRunAt || null },
-        { name: "Access-log import", enabled: true, schedule: "30s", lastRunAt: null },
+        { name: "Access-log import", enabled: true, schedule: "30s", lastRunAt: lastAccessLogImportAt },
         { name: "Public IP check", enabled: true, schedule: "60m", lastRunAt: publicIpState.checkedAt || null },
         { name: "Configuration drift check", enabled: true, schedule: "10m", lastRunAt: configDrift.checkedAt || null },
       ]
@@ -2370,8 +2372,8 @@ app.listen(adminPort, "0.0.0.0", () => {
   if (adminPassword === "change-this-password") console.warn("WARNING: Change ADMIN_PASSWORD before exposing the dashboard.");
 });
 
-setTimeout(() => checkAllProxies().catch(error => console.warn("Initial upstream checks failed:", error.message)), 1500).unref();
-setInterval(() => checkAllProxies().catch(error => console.warn("Upstream checks failed:", error.message)), 60000).unref();
+setTimeout(() => checkAllProxies().then(() => { lastUpstreamCheckAt = new Date().toISOString(); }).catch(error => console.warn("Initial upstream checks failed:", error.message)), 1500).unref();
+setInterval(() => checkAllProxies().then(() => { lastUpstreamCheckAt = new Date().toISOString(); }).catch(error => console.warn("Upstream checks failed:", error.message)), 60000).unref();
 setTimeout(() => checkConfigDrift().catch(error => console.warn("Config drift check failed:", error.message)), 10000).unref();
 setInterval(() => checkConfigDrift().catch(error => console.warn("Config drift check failed:", error.message)), 10 * 60000).unref();
 
@@ -2395,8 +2397,8 @@ setTimeout(() => runScheduledBackup().catch(error => console.warn("Scheduled bac
 setInterval(() => runScheduledBackup().catch(error => console.warn("Scheduled backup check failed:", error.message)), 15 * 60000).unref();
 async function runScheduledPruning() { if (!settings.logsRetention?.pruningEnabled || !storage?.pruneEvents) return; try { const stamp = new Date().toISOString().replace(/[:.]/g, "-"); const snapshot = path.join(backupsDir, `pre-prune-${stamp}.sqlite`); storage.backupTo(snapshot); const counts = storage.pruneEvents(settings.logsRetention); settings.logsRetention = { ...settings.logsRetention, lastRunAt: new Date().toISOString(), lastRunMode: "scheduled", lastRunCounts: counts, lastRunSnapshot: snapshot }; await saveSettings(); recordActivity(`Scheduled log pruning completed: ${Object.values(counts).reduce((sum, value) => sum + value, 0)} records removed.`); } catch (error) { recordActivity(`Scheduled log pruning failed: ${error.message}`, "error"); } }
 setInterval(() => runScheduledPruning(), 15 * 60000).unref();
-setTimeout(() => importAccessLogsToSqlite(), 8000).unref();
-setInterval(() => importAccessLogsToSqlite(), 30000).unref();
+setTimeout(() => importAccessLogsToSqlite().then(() => { lastAccessLogImportAt = new Date().toISOString(); }).catch(error => console.warn("Access-log import failed:", error.message)), 8000).unref();
+setInterval(() => importAccessLogsToSqlite().then(() => { lastAccessLogImportAt = new Date().toISOString(); }).catch(error => console.warn("Access-log import failed:", error.message)), 30000).unref();
 
 async function checkPublicIp() {
   try {

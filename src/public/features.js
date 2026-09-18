@@ -446,16 +446,24 @@ async function renderBackupHistory() {
 // saved value, so the integration can never be switched on without its prerequisite.
 function renderDockerPanel() {
   if (state.user?.role !== "administrator") return;
-  const panel = document.querySelector('[data-admin-panel="system"] .system-integrations'); if (!panel) return;
+  const scope = document.querySelector('[data-admin-panel="system"]'); if (!scope) return;
+  const envStatus = scope.querySelector("#system-env-status"), integrations = scope.querySelector(".system-integrations");
+  if (!envStatus || !integrations) return;
   const socketMounted = state.config?.docker?.socketMounted === true;
   const enabled = socketMounted && (state.settings?.dockerIntegration?.enabled === true || state.config?.docker?.enabled === true);
-  let section = panel.querySelector(".docker-integration-section");
-  if (!section) {
-    section = document.createElement("div");
-    section.className = "docker-integration-section";
-    section.innerHTML = '<p class="docker-integration-heading">Docker container selection</p><div class="health-grid"><div class="health-tile" id="docker-integration-status"><span class="status-dot"></span><span class="health-tile-copy"><strong>Docker socket</strong><small id="docker-integration-help"></small></span></div></div><label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
-    panel.append(section);
-    section.querySelector("#docker-integration-toggle").addEventListener("change", async event => {
+  let tile = envStatus.querySelector("#docker-integration-status");
+  if (!tile) {
+    tile = document.createElement("div");
+    tile.className = "health-tile";
+    tile.id = "docker-integration-status";
+    tile.innerHTML = '<span class="status-dot"></span><span class="health-tile-copy"><strong>Docker socket</strong><small id="docker-integration-help"></small></span>';
+    envStatus.append(tile);
+  }
+  let control = integrations.querySelector(".check-control");
+  if (!control) {
+    integrations.innerHTML = '<label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
+    control = integrations.querySelector(".check-control");
+    control.querySelector("#docker-integration-toggle").addEventListener("change", async event => {
       const checkbox = event.currentTarget;
       checkbox.disabled = true;
       try { state.settings = await api("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dockerIntegration: { enabled: checkbox.checked } }) }); toast(checkbox.checked ? "Container selection enabled." : "Container selection disabled."); }
@@ -463,14 +471,14 @@ function renderDockerPanel() {
       finally { checkbox.disabled = false; renderDockerPanel(); decorateContainerPickers(); }
     });
   }
-  const toggle = section.querySelector("#docker-integration-toggle");
+  const toggle = integrations.querySelector("#docker-integration-toggle");
   toggle.checked = enabled;
   toggle.disabled = !socketMounted;
-  section.querySelector("#docker-integration-status .status-dot").className = `status-dot ${socketMounted ? "running" : "idle"}`;
-  section.querySelector("#docker-integration-help").textContent = socketMounted
+  tile.querySelector(".status-dot").className = `status-dot ${socketMounted ? "running" : "idle"}`;
+  tile.querySelector("#docker-integration-help").textContent = socketMounted
     ? "Site Gateway reads the Docker socket read-only to list running containers, and only offers containers that share a Docker network with it."
     : "Docker socket not detected — mount /var/run/docker.sock into this container to enable container selection.";
-  section.querySelector(".check-control").classList.toggle("is-disabled", !socketMounted);
+  control.classList.toggle("is-disabled", !socketMounted);
 }
 // Adds the "Pick from running containers" button beside every target field, and keeps its
 // visibility in step with the integration's current state.
@@ -540,7 +548,7 @@ function renderSystemPanel() {
       '<div class="panel-heading"><div><h2>System</h2><p class="muted">What\u2019s configured, what\u2019s running, and what this deployment can do. Nothing here is customizable except the Docker toggle below and the action buttons \u2014 everything else is status.</p></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Integrations</h2></div></div><div id="system-env-status" class="health-grid"></div><div class="system-integrations"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Security status</h2></div></div><div id="system-security" class="health-grid"></div></div>',
-      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Sync</h2></div><button type="button" id="system-resync" class="button secondary">Resync now</button></div><p id="system-sync-status" class="muted"></p></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Sync</h2></div></div><p id="system-sync-status" class="muted"></p><div class="row-actions"><button type="button" id="system-resync" class="button secondary">Resync now</button></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div id="system-jobs" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Storage</p><h2>Disk usage</h2></div></div><div id="system-storage" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Build</p><h2>Version</h2></div></div><div id="system-version" class="muted"></div></div>',

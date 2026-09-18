@@ -773,10 +773,8 @@ label.check-control:has(input[name="upstreamTlsInsecure"]){position:relative;hei
 label.check-control:has(input[name="upstreamTlsInsecure"]) span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 label.check-control:has(input[name="upstreamTlsInsecure"]) small{position:absolute;left:0;top:calc(100% + 7px);width:100%;padding:0!important;white-space:normal}
 
-.docker-integration-section{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
-.docker-integration-heading{font-weight:600;margin:0 0 var(--space-2)}
-.docker-integration-section .health-tile{margin-bottom:var(--space-3)}
-.docker-integration-section .check-control{margin-top:var(--space-3)}
+.system-integrations:not(:empty){margin-top:var(--space-3)}
+.system-integrations .check-control{margin:0}
 #system-restart-status{margin-top:var(--space-3)}
 
 /* Custom-drawn select (Task #20): native <select> popups can't be reliably themed dark across
