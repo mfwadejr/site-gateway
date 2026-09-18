@@ -452,8 +452,8 @@ function renderDockerPanel() {
   let section = panel.querySelector(".docker-integration-section");
   if (!section) {
     section = document.createElement("div");
-    section.className = "dashboard-panel docker-integration-section";
-    section.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">Integrations</p><h2>Docker container selection</h2></div></div><p class="muted" id="docker-integration-help"></p><label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
+    section.className = "docker-integration-section";
+    section.innerHTML = '<p class="docker-integration-heading">Docker container selection</p><p class="muted" id="docker-integration-help"></p><label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
     panel.append(section);
     section.querySelector("#docker-integration-toggle").addEventListener("change", async event => {
       const checkbox = event.currentTarget;
@@ -580,7 +580,7 @@ async function renderSystemStatus(panel) {
     envStatus.innerHTML = `<div class="health-tile"><span class="status-dot ${encryptionAvailable ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>BACKUP_PASSWORD</strong><small>${encryptionAvailable ? "Configured \u2014 scheduled backups can be encrypted." : "Not set \u2014 configure it in the container\u2019s environment to enable encrypted scheduled backups."}</small></span></div>`;
   }
   if (syncStatus) { const drift = (state.dashboard?.attention || []).some(item => item.kind === "drift"); syncStatus.textContent = drift ? "Configuration drift detected \u2014 the running gateway no longer matches the last known-good configuration." : `Gateway configuration is in sync. Last reload: ${state.dashboard?.gateway?.lastReload ? formatTime(state.dashboard.gateway.lastReload) : "unknown"}.`; syncStatus.className = drift ? "muted status-warning" : "muted"; }
-  if (version) version.innerHTML = `Site Gateway v${extendedEscape(state.config?.version || "unknown")}<br>Data directory: <code>${extendedEscape(state.config?.storage?.databasePath ? state.config.storage.databasePath.replace(/\/database\/.*/, "") : "/data")}</code> &middot; Admin port: <code>${extendedEscape(String(state.config?.adminPort ?? ""))}</code> &middot; Site ports: <code>${extendedEscape(String(state.config?.minPort ?? ""))}\u2013${extendedEscape(String(state.config?.maxPort ?? ""))}</code>`;
+  if (version) version.innerHTML = `Site Gateway v${extendedEscape(state.config?.version || "unknown")}<br>Access this dashboard at: <code>${extendedEscape(location.origin)}</code><br>Data directory: <code>${extendedEscape(state.config?.storage?.databasePath ? state.config.storage.databasePath.replace(/\/database\/.*/, "") : "/data")}</code> &middot; Site ports: <code>${extendedEscape(String(state.config?.minPort ?? ""))}\u2013${extendedEscape(String(state.config?.maxPort ?? ""))}</code>`;
   try {
     const [sec, store, policy] = await Promise.all([
       api("/api/system/security"),

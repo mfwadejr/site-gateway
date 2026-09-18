@@ -51,6 +51,8 @@
 
 `v0.16.1` is a fix for a gap in `v0.16.0`'s own System tab: the Environment & Integrations section never actually rendered a `BACKUP_PASSWORD` status row (only the Docker socket status was there), despite the backend already exposing that data via `/api/config`. Fixed.
 
+`v0.16.2` fixes two more issues found live-testing the System tab: the Docker container-selection sub-section was wrapped in its own `.dashboard-panel` styling while already nested inside the Integrations panel's own `.dashboard-panel`, producing a visibly doubled border/corner-radius/padding — de-chromed it into a plain sub-section instead. Also, the Version section's "Admin port" line showed the container's *internal* listening port, which isn't necessarily the port you actually reach the dashboard on through Docker's port mapping — replaced with the browser's own current address (`location.origin`), which is always correct regardless of how the port is mapped.
+
 ## Product direction
 
 Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, clear health reporting, and guided setup instead of exposing raw server configuration. **Caddy** remains the managed gateway — Site Gateway stores a small route model and generates/validates Caddy configuration rather than reimplementing certificate and proxy behavior itself.
