@@ -453,7 +453,7 @@ function renderDockerPanel() {
   if (!section) {
     section = document.createElement("div");
     section.className = "docker-integration-section";
-    section.innerHTML = '<p class="docker-integration-heading">Docker container selection</p><div class="health-tile" id="docker-integration-status"><span class="status-dot"></span><span class="health-tile-copy"><strong>Docker socket</strong><small id="docker-integration-help"></small></span></div><label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
+    section.innerHTML = '<p class="docker-integration-heading">Docker container selection</p><div class="health-grid"><div class="health-tile" id="docker-integration-status"><span class="status-dot"></span><span class="health-tile-copy"><strong>Docker socket</strong><small id="docker-integration-help"></small></span></div></div><label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
     panel.append(section);
     section.querySelector("#docker-integration-toggle").addEventListener("change", async event => {
       const checkbox = event.currentTarget;
@@ -574,7 +574,7 @@ async function renderSystemStatus(panel) {
     version = document.querySelector("#system-version"), jobs = document.querySelector("#system-jobs"),
     syncStatus = document.querySelector("#system-sync-status"), restartButton = document.querySelector("#system-restart"),
     restartStatus = document.querySelector("#system-restart-status");
-  if (jobs) jobs.innerHTML = (state.dashboard?.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${extendedEscape(job.name)}</strong><small>${job.enabled ? `Active \u00b7 ${extendedEscape(job.schedule)}` : "Disabled"}</small></span></div>`).join("") || '<p class="quiet-state">No scheduled jobs reported.</p>';
+  if (jobs) jobs.innerHTML = (state.dashboard?.system?.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${extendedEscape(job.name)}</strong><small>${job.enabled ? `Active \u00b7 ${extendedEscape(job.schedule)}` : "Disabled"}</small></span></div>`).join("") || '<p class="quiet-state">No scheduled jobs reported.</p>';
   const envStatus = document.querySelector("#system-env-status");
   if (envStatus) {
     const encryptionAvailable = Boolean(state.config?.backup?.encryptionAvailable);
