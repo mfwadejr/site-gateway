@@ -56,3 +56,9 @@ services:
       # - "25565:25565/udp"
     volumes:
       - ./data:/data
+      # Optional: enables "Pick from running containers" for Proxy and Streaming
+      # host targets (Administration > Gateway defaults > Docker container selection).
+      # Read-only, but be deliberate: access to the Docker socket is effectively root
+      # on the host -- anything that can talk to it can start privileged containers and
+      # mount the host filesystem. Leave this commented out unless you want the feature.
+      # - /var/run/docker.sock:/var/run/docker.sock:ro

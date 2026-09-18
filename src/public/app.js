@@ -8,7 +8,7 @@
 
 // --- Shared DOM shortcut and app state ----------------------------------------
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {} };
+const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [] };
 
 // One-time DOM patches: move the Access List field into the create/settings
 // forms (features.js owns the Access List data, this file owns these forms).
@@ -148,6 +148,33 @@ function probeCopy(service, ready, error, unconfigured = "Not configured") {
 
 function renderDashboardJobs(system) { const columns = document.querySelector("#dashboard-view .dashboard-columns"), health = columns?.firstElementChild; if (!columns) return; let panel = document.querySelector("#dashboard-jobs"); if (!panel) { panel = document.createElement("section"); panel.id = "dashboard-jobs"; panel.className = "dashboard-panel dashboard-jobs-panel"; columns.insertBefore(panel, columns.children[1] || null); } if (health && health.parentElement === columns) columns.parentElement.insertBefore(health, columns); panel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div class="dashboard-jobs-list">${(system.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${escapeHtml(job.name)}</strong><small>${job.enabled ? `Active · ${escapeHtml(job.schedule)}` : "Disabled"}</small></span></div>`).join("")}</div>`; }
 function updateDashboardUptime(seconds) { const started = window.__dashboardStartedAt || (window.__dashboardStartedAt = Date.now() - Number(seconds || 0) * 1000); const target = document.querySelector("#system-uptime"); if (!target) return; const elapsed = Math.max(0, Math.floor((Date.now() - started) / 1000)); target.textContent = formatDuration(elapsed); }
+// Dashboard tiles share one baseline accent (green) and switch to the existing
+// --warning / --danger tokens when the thing they count is actually in trouble --
+// the same mechanism the "Needs attention" chip already used.
+const TILE_ACCENT_CLASSES = ["accent-green", "accent-blue", "accent-amber", "accent-purple", "accent-warning", "accent-danger"];
+function setTileAccent(valueId, level) {
+  const tile = $(valueId)?.closest(".metric-card, .metric-chip");
+  if (!tile) return;
+  tile.classList.remove(...TILE_ACCENT_CLASSES);
+  tile.classList.add(level === "danger" ? "accent-danger" : level === "warning" ? "accent-warning" : "accent-green");
+}
+function applyTileAccents(data) {
+  const group = value => !value?.total || !value.errors ? "green" : value.errors >= value.total ? "danger" : "warning";
+  setTileAccent("#dash-hosted-total", group(data.hosted));
+  const upstreams = data.upstreams || { total: 0, unhealthy: 0 };
+  const proxyLevel = group(data.proxies);
+  setTileAccent("#dash-proxy-total", proxyLevel !== "green" ? proxyLevel : upstreams.unhealthy > 0 ? (upstreams.unhealthy >= upstreams.total ? "danger" : "warning") : "green");
+  const certificates = data.certificates || {};
+  const certificateLevel = (certificates.expired || 0) + (certificates.mismatch || 0) > 0 ? "danger" : (certificates.warning || 0) + (certificates.critical || 0) > 0 ? "warning" : "green";
+  setTileAccent("#dash-tls-total", certificateLevel);
+  // Redirect hosts have no runtime failure state of their own, so they stay on the baseline.
+  setTileAccent("#dash-redirect-total", "green");
+  const streaming = data.streamingPorts || { total: 0, listening: 0 };
+  setTileAccent("#dash-stream-total", !streaming.total || streaming.listening === streaming.total ? "green" : streaming.listening === 0 ? "danger" : "warning");
+  // Throughput is a rate, not a health signal: there is no "bad" value to react to.
+  setTileAccent("#dash-throughput-total", "green");
+}
+
 function renderDashboard() {
   const data = state.dashboard; if (!data) return;
   if (data.system) renderDashboardJobsSafe(data.system);
@@ -161,6 +188,7 @@ function renderDashboard() {
   $("#dash-stream-total").textContent = state.streams?.length || 0;
   $("#dash-attention-total").textContent = data.attention.length;
   $("#dash-attention-detail").textContent = data.attention.length ? `${data.attention.length} item${data.attention.length === 1 ? "" : "s"} to review` : "No current issues";
+  applyTileAccents(data);
   $("#dash-attention-chip").classList.toggle("accent-warning", data.attention.length > 0);
   $("#dash-attention-chip").classList.toggle("accent-green", data.attention.length === 0);
   $("#dash-attention-icon").textContent = data.attention.length > 0 ? "!" : "✓";
@@ -221,14 +249,14 @@ function canAdmin() { return state.user?.role === "administrator"; }
 function hostedCard(site) {
   const status = site.status === "running" ? "running" : site.status === "error" ? "error" : "disabled";
   const upstream = !site.enabled || site.upstream?.status === "unmonitored" ? "Monitoring paused" : !site.upstream || site.upstream.status === "pending" ? "Upstream check pending" : site.upstream.status === "healthy" ? `Upstream ${site.upstream.httpStatus} · ${site.upstream.responseMs} ms` : `Upstream unavailable · ${escapeHtml(site.upstream.error || "check failed")}`;
-  const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Site options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Domain & TLS</button><button data-action="icon">Change icon</button><button data-action="replace">Replace files</button><button data-action="delete" class="danger-text">Delete site</button></div></div>` : "";
+  const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Site options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Domain & TLS</button><button data-action="icon">Change icon</button><button data-action="caddy-config">View Caddy config</button><button data-action="replace">Replace files</button><button data-action="delete" class="danger-text">Delete site</button></div></div>` : "";
   const toggle = canManage() ? `<button class="toggle ${site.enabled ? "on" : ""}" data-action="toggle" aria-label="${site.enabled ? "Disable" : "Enable"} ${escapeHtml(site.name)}"><span></span></button>` : "";
   return `<article class="site-card" data-id="${site.id}" data-kind="hosted"><div class="card-top"><div class="site-icon">${iconMarkup(site)}</div>${menu}</div><h2>${escapeHtml(site.name)}</h2><p class="address">${escapeHtml(site.domain || `Port ${site.port}`)}</p>${site.domain ? `<p class="gateway-address ${site.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(site))}</p>` : ""}<p class="upstream-copy ${site.upstream?.status === "unhealthy" ? "bad" : ""}">${upstream}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(site)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(site.name)}">↗</a></div></div></article>`;
 }
 function proxyCard(proxy) {
   const status = proxy.status === "running" ? "running" : proxy.status === "error" ? "error" : "disabled";
   const upstream = !proxy.enabled || proxy.upstream?.status === "unmonitored" ? "Monitoring paused" : !proxy.upstream || proxy.upstream.status === "pending" ? "Upstream check pending" : proxy.upstream.status === "healthy" ? `Upstream ${proxy.upstream.httpStatus} · ${proxy.upstream.responseMs} ms` : `Upstream unavailable · ${escapeHtml(proxy.upstream.error || "check failed")}`;
-  const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="icon">Change icon</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div>` : "";
+  const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="icon">Change icon</button><button data-action="caddy-config">View Caddy config</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div>` : "";
   const toggle = canManage() ? `<button class="toggle ${proxy.enabled ? "on" : ""}" data-action="toggle" aria-label="${proxy.enabled ? "Disable" : "Enable"} ${escapeHtml(proxy.name)}"><span></span></button>` : "";
   const access = proxy.accessListId ? (state.accessLists.find(item => item.id === proxy.accessListId)?.name || "Access List") : "Public · no Access List";
   return `<article class="site-card proxy" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy)}</div>${menu}</div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><p class="upstream-copy ${proxy.upstream?.status === "unhealthy" ? "bad" : ""}">${upstream}</p><p class="access-summary">${escapeHtml(access)}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
@@ -279,6 +307,20 @@ function renderLogs() {
 
 // --- Performance view: summary, request trend chart (hand-drawn SVG sparkline),
 //     and the per-domain throughput table -----------------------------------------------
+// Clock-boundary label spacing per selected range (hours -> minutes between labels).
+const PERFORMANCE_LABEL_MINUTES = { 1: 15, 3: 30, 6: 60, 12: 120, 24: 180, 72: 720, 168: 1440 };
+function formatChartTime(value, intervalMinutes) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  if (intervalMinutes >= 1440) return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  if (intervalMinutes >= 720) return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric" });
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+function formatLatency(ms) { return ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`; }
+
+// Geometry shared by the chart renderer and the hover tooltip.
+const PERFORMANCE_CHART = { left: 34, right: 8, top: 10, bottom: 20, width: 600, height: 140 };
+
 function renderPerformance() {
   const data = state.performance; if (!data) return;
   const selected = $("#performance-host").value;
@@ -288,9 +330,11 @@ function renderPerformance() {
   $("#performance-summary").innerHTML = `${data.liveRequests} request${data.liveRequests === 1 ? "" : "s"} in the last minute across ${label} · <span id="performance-last-checked">Checked ${escapeHtml(formatTime(data.checkedAt))}</span>`;
   const rangeLabel = $("#performance-range").selectedOptions[0]?.textContent || "Last 6 hours";
   $("#performance-trend-title").textContent = `Requests · ${rangeLabel.toLowerCase()}${selected ? ` · ${selected}` : ""}`;
+  $("#performance-slowest-title").textContent = `Slowest requests · ${rangeLabel.toLowerCase()}${selected ? ` · ${selected}` : ""}`;
   const points = data.trend || [];
+  state.performancePoints = points;
   const max = Math.max(1, ...points.map(point => point.count));
-  const left = 34, right = 8, top = 10, bottom = 20, width = 600, height = 140;
+  const { left, right, top, bottom, width, height } = PERFORMANCE_CHART;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   const xAt = index => left + (points.length > 1 ? (index / (points.length - 1)) * plotWidth : plotWidth);
   const yAt = count => top + plotHeight - (count / max) * plotHeight;
@@ -299,16 +343,34 @@ function renderPerformance() {
     const y = (top + plotHeight * (1 - fraction)).toFixed(1);
     return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="var(--line)" stroke-width="1" />`;
   }).join("");
-  const leftPct = (left / width) * 100, topPct = 0, plotHeightPct = (plotHeight / height) * 100, topInsetPct = (top / height) * 100;
+  const leftPct = (left / width) * 100, plotWidthPct = (plotWidth / width) * 100, plotHeightPct = (plotHeight / height) * 100, topInsetPct = (top / height) * 100;
   const axisLabels = gridFractions.map(fraction => {
     const value = Math.round(max * fraction);
     const yPct = topInsetPct + plotHeightPct * (1 - fraction);
     return `<span class="axis-label" style="left:0;width:${(leftPct - 2).toFixed(2)}%;top:${yPct.toFixed(2)}%;text-align:right">${value}</span>`;
   }).join("");
-  const firstPoint = points[0], lastPoint = points[points.length - 1];
-  const timeLabels = points.length ? `<span class="time-label" style="left:${leftPct.toFixed(2)}%">${escapeHtml(formatTime(firstPoint.at))}</span><span class="time-label time-label-end" style="left:${(100 - (right / width) * 100).toFixed(2)}%">${escapeHtml(formatTime(lastPoint.at))}</span>` : "";
+  // Time axis: labels land on real clock boundaries scaled to the selected range, and the
+  // true first and last sample are always labelled so the window's edges stay readable.
+  const hours = Number($("#performance-range").value) || 6;
+  const intervalMinutes = PERFORMANCE_LABEL_MINUTES[hours] || 60;
+  const intervalMs = intervalMinutes * 60000;
+  let timeLabels = "";
+  if (points.length) {
+    const candidates = new Set([0, points.length - 1]);
+    const aligned = [];
+    points.forEach((point, index) => { const time = new Date(point.at).getTime(); if (!Number.isNaN(time) && time % intervalMs === 0) aligned.push(index); });
+    const stride = Math.max(1, Math.ceil(aligned.length / 8));
+    aligned.forEach((index, position) => { if (position % stride === 0) candidates.add(index); });
+    const ordered = [...candidates].sort((a, b) => a - b);
+    timeLabels = ordered.map(index => {
+      const leftEdge = leftPct + (points.length > 1 ? (index / (points.length - 1)) * plotWidthPct : plotWidthPct);
+      const alignment = index === 0 ? "" : index === points.length - 1 ? " time-label-end" : " time-label-mid";
+      return `<span class="time-label${alignment}" style="left:${leftEdge.toFixed(2)}%">${escapeHtml(formatChartTime(points[index].at, intervalMinutes))}</span>`;
+    }).join("");
+  }
   $("#performance-sparkline-labels").innerHTML = points.length ? `${axisLabels}${timeLabels}` : "";
   const coords = points.map((point, index) => [xAt(index), yAt(point.count)]);
+  state.performanceCoords = coords;
   const smoothLine = coords.length < 2 ? "" : coords.reduce((d, point, index) => {
     if (index === 0) return `M${point[0].toFixed(1)},${point[1].toFixed(1)}`;
     const p0 = coords[index - 2 >= 0 ? index - 2 : index - 1];
@@ -322,15 +384,60 @@ function renderPerformance() {
   const baseline = (top + plotHeight).toFixed(1);
   const areaPath = coords.length ? `${smoothLine} L${coords[coords.length - 1][0].toFixed(1)},${baseline} L${coords[0][0].toFixed(1)},${baseline} Z` : "";
   $("#performance-sparkline").setAttribute("viewBox", `0 0 ${width} ${height}`);
-  $("#performance-sparkline").innerHTML = points.length ? `${gridLines}<path d="${areaPath}" fill="var(--green)" opacity="0.12" stroke="none" /><path d="${smoothLine}" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />` : "";
+  $("#performance-sparkline").innerHTML = points.length ? `${gridLines}<path d="${areaPath}" fill="var(--green)" opacity="0.12" stroke="none" /><path d="${smoothLine}" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /><ellipse id="performance-hover-dot" class="hidden" cx="0" cy="0" rx="3" ry="3" fill="var(--green)" stroke="var(--panel)" stroke-width="1.5" />` : "";
   if (!points.length) $("#performance-sparkline-labels").innerHTML = '<span class="axis-label" style="left:0;width:100%;top:45%;text-align:center">No request data for this window yet.</span>';
+  hidePerformanceTooltip();
   const routes = (data.routes || []).filter(route => !selected || route.host === selected);
   state.performanceErrorBreakdowns = {};
+  state.performanceTopPaths = {};
   const countCell = (count, errors, breakdown, host) => { if (!errors) return `${count.toLocaleString()}`; if (!breakdown?.length) return `${count.toLocaleString()} <span class="count-divider">·</span> <span class="http-status bad">${errors.toLocaleString()}</span>`; state.performanceErrorBreakdowns[host] = { total: errors, breakdown }; return `${count.toLocaleString()} <span class="count-divider">·</span> <button type="button" class="http-status bad count-link-button" data-error-host="${escapeHtml(host)}">${errors.toLocaleString()}</button>`; };
-  const formatAvgMs = ms => ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`;
-  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${countCell(route.hourRequests, route.hourErrors)}</td><td>${countCell(route.dayRequests, route.dayErrors, route.errorBreakdown, route.host)}</td><td>${formatAvgMs(route.dayAvgMs)}</td></tr>`).join("") : '<tr><td colspan="4" class="quiet-state">No requests have been logged yet.</td></tr>';
+  const pathsCell = route => { if (!route.topPaths?.length) return "—"; state.performanceTopPaths[route.host] = route.topPaths; return `<button type="button" class="count-link-button neutral" data-paths-host="${escapeHtml(route.host)}">View</button>`; };
+  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${countCell(route.hourRequests, route.hourErrors)}</td><td>${countCell(route.dayRequests, route.dayErrors, route.errorBreakdown, route.host)}</td><td>${formatLatency(route.dayAvgMs)}</td><td>${formatLatency(route.dayP95Ms)}</td><td>${route.dayBytes ? escapeHtml(formatBytes(route.dayBytes)) : "—"}</td><td>${(route.dayVisitors || 0).toLocaleString()}</td><td>${pathsCell(route)}</td></tr>`).join("") : '<tr><td colspan="8" class="quiet-state">No requests have been logged yet.</td></tr>';
   if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });
+  renderSlowestRequests(data.slowest || []);
 }
+
+// --- Performance: slowest individual requests -------------------------------------------
+function renderSlowestRequests(entries) {
+  const list = $("#performance-slowest"); if (!list) return;
+  list.innerHTML = entries.length ? entries.map(entry => `<div class="activity-tile"><span class="slowest-copy"><strong title="${escapeHtml(`${entry.method || ""} ${entry.uri || ""}`)}">${escapeHtml(entry.method || "GET")} ${escapeHtml(entry.uri || "/")}</strong><small>${escapeHtml(entry.host || "—")} · ${entry.status ?? "—"} · ${escapeHtml(formatTime(entry.at))}</small></span><span class="slowest-duration">${escapeHtml(formatLatency(entry.durationMs))}</span></div>`).join("") : '<p class="quiet-state">No timed requests in this window yet.</p>';
+}
+
+// --- Performance: hover tooltip on the request-trend chart -------------------------------
+function hidePerformanceTooltip() {
+  $("#performance-tooltip")?.classList.add("hidden");
+  document.querySelector("#performance-hover-dot")?.classList.add("hidden");
+}
+function showPerformanceTooltip(event) {
+  const svg = $("#performance-sparkline"), tooltip = $("#performance-tooltip"), points = state.performancePoints || [], coords = state.performanceCoords || [];
+  if (!svg || !tooltip || !points.length || !coords.length) return;
+  const rect = svg.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const { left, right, width, height } = PERFORMANCE_CHART;
+  const plotWidth = width - left - right;
+  const viewX = ((event.clientX - rect.left) / rect.width) * width;
+  const fraction = Math.min(1, Math.max(0, (viewX - left) / plotWidth));
+  const index = Math.min(points.length - 1, Math.max(0, Math.round(fraction * (points.length - 1))));
+  const point = points[index], coordinate = coords[index];
+  const pixelX = (coordinate[0] / width) * rect.width;
+  const pixelY = (coordinate[1] / height) * rect.height;
+  tooltip.innerHTML = `<strong>${point.count.toLocaleString()} request${point.count === 1 ? "" : "s"}</strong><span class="tooltip-errors${point.errors ? "" : " none"}">${(point.errors || 0).toLocaleString()} error${point.errors === 1 ? "" : "s"}</span><br>${escapeHtml(formatTime(point.at))}`;
+  tooltip.style.left = `${pixelX}px`;
+  tooltip.style.top = `${pixelY}px`;
+  tooltip.classList.remove("hidden");
+  const dot = document.querySelector("#performance-hover-dot");
+  if (dot) {
+    // preserveAspectRatio="none" stretches the viewBox, so compensate to keep the dot round.
+    dot.setAttribute("cx", coordinate[0].toFixed(1));
+    dot.setAttribute("cy", coordinate[1].toFixed(1));
+    dot.setAttribute("rx", (3.5 * (width / rect.width)).toFixed(2));
+    dot.setAttribute("ry", (3.5 * (height / rect.height)).toFixed(2));
+    dot.classList.remove("hidden");
+  }
+}
+$("#performance-sparkline")?.addEventListener("mousemove", showPerformanceTooltip);
+$("#performance-sparkline")?.addEventListener("mouseleave", hidePerformanceTooltip);
+
 
 
 // --- Administration > Users view ---------------------------------------------------------
@@ -490,7 +597,7 @@ $("#logout").addEventListener("click", async () => { await fetch("/api/logout", 
 //     an attention item's view -------------------------------------------------------------
 $("#check-health").addEventListener("click", async event => { const button = event.currentTarget; button.disabled = true; button.textContent = "Checking…"; try { const result = await api("/api/health/check", { method:"POST" }); state.dashboard = result.dashboard; state.certificates = result.certificates; state.readiness = { routes:result.readiness }; renderCertificates(); toast("Certificate and domain checks completed."); } catch (error) { toast(error.message, "error"); } finally { button.disabled = false; button.textContent = "Run certificate check"; } });
 $("#download-support")?.addEventListener("click", () => { location.href = "/api/support-report"; });
-$("#attention-list").addEventListener("click", event => { const target = event.target.closest("[data-issue-target]")?.dataset.issueTarget; if (target) { state.view = target; render(); loadFeatureView().catch(error => toast(error.message, "error")); } });
+$("#attention-list").addEventListener("click", event => { const target = event.target.closest("[data-issue-target]")?.dataset.issueTarget; if (target) { const [view, adminTab] = target.split("/"); state.view = view; if (view === "administration" && adminTab) state.adminTab = adminTab; render(); loadFeatureView().catch(error => toast(error.message, "error")); } });
 
 // --- Primary navigation (sidebar view switching) -------------------------------------------
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }
@@ -504,8 +611,34 @@ $("#performance-host").addEventListener("change", () => loadFeatureView().catch(
 $("#performance-range").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
 
 // --- Performance: themed error-breakdown popup, replacing the old hover tooltip ------------
-function showErrorBreakdown(host, total, breakdown) { let dialog = document.querySelector("#error-breakdown-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "error-breakdown-dialog"; document.body.append(dialog); } const rows = breakdown.map(item => `<div class="error-breakdown-row"><span>${escapeHtml(item.status)}</span><span>${item.count.toLocaleString()}</span></div>`).join(""); dialog.innerHTML = `<form method="dialog" class="dialog-card compact"><div class="dialog-heading"><div><p class="eyebrow">Performance · Last 24h</p><h2>${escapeHtml(host)}</h2></div></div><p class="muted">${total.toLocaleString()} error response${total === 1 ? "" : "s"} in the last 24 hours, by status code.</p><div class="error-breakdown-list">${rows}</div><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`; dialog.showModal(); }
-$("#performance-rows").addEventListener("click", event => { const button = event.target.closest("[data-error-host]"); if (!button) return; const entry = state.performanceErrorBreakdowns[button.dataset.errorHost]; if (!entry) return; showErrorBreakdown(button.dataset.errorHost, entry.total, entry.breakdown); });
+function showErrorBreakdown(host, total, breakdown) {
+  let dialog = document.querySelector("#error-breakdown-dialog");
+  if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "error-breakdown-dialog"; document.body.append(dialog); }
+  // Client (4xx) and server (5xx) failures mean very different things, so they are grouped
+  // and coloured separately instead of appearing as one flat red list.
+  const client = breakdown.filter(item => Number(item.status) < 500), server = breakdown.filter(item => Number(item.status) >= 500);
+  const rowsFor = (items, kind) => items.map(item => `<div class="error-breakdown-row ${kind}"><span>${escapeHtml(item.status)}</span><span>${item.count.toLocaleString()}</span></div>`).join("");
+  const clientTotal = client.reduce((sum, item) => sum + item.count, 0), serverTotal = server.reduce((sum, item) => sum + item.count, 0);
+  const sections = [
+    client.length ? `<p class="error-breakdown-group">Client errors · 4xx · ${clientTotal.toLocaleString()}</p><div class="error-breakdown-list">${rowsFor(client, "client-error")}</div>` : "",
+    server.length ? `<p class="error-breakdown-group">Server errors · 5xx · ${serverTotal.toLocaleString()}</p><div class="error-breakdown-list">${rowsFor(server, "server-error")}</div>` : ""
+  ].join("");
+  dialog.innerHTML = `<form method="dialog" class="dialog-card compact"><div class="dialog-heading"><div><p class="eyebrow">Performance · Last 24h</p><h2>${escapeHtml(host)}</h2></div></div><p class="muted">${total.toLocaleString()} error response${total === 1 ? "" : "s"} in the last 24 hours, by status code.</p>${sections || '<p class="quiet-state">No status codes recorded.</p>'}<div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`;
+  dialog.showModal();
+}
+function showTopPaths(host, paths) {
+  let dialog = document.querySelector("#top-paths-dialog");
+  if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "top-paths-dialog"; document.body.append(dialog); }
+  const rows = paths.map(item => `<div class="top-paths-row"><span title="${escapeHtml(item.uri)}">${escapeHtml(item.uri)}</span><span>${item.count.toLocaleString()}</span></div>`).join("");
+  dialog.innerHTML = `<form method="dialog" class="dialog-card compact"><div class="dialog-heading"><div><p class="eyebrow">Performance · Last 24h</p><h2>${escapeHtml(host)}</h2></div></div><p class="muted">The most requested paths on this domain in the last 24 hours.</p><div class="top-paths-list">${rows || '<div class="top-paths-row"><span>No requests recorded.</span><span>0</span></div>'}</div><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`;
+  dialog.showModal();
+}
+$("#performance-rows").addEventListener("click", event => {
+  const errorButton = event.target.closest("[data-error-host]");
+  if (errorButton) { const entry = state.performanceErrorBreakdowns[errorButton.dataset.errorHost]; if (entry) showErrorBreakdown(errorButton.dataset.errorHost, entry.total, entry.breakdown); return; }
+  const pathsButton = event.target.closest("[data-paths-host]");
+  if (pathsButton) { const paths = state.performanceTopPaths?.[pathsButton.dataset.pathsHost]; if (paths) showTopPaths(pathsButton.dataset.pathsHost, paths); }
+});
 $("#log-status").addEventListener("change", renderLogs);
 $("#event-severity").addEventListener("change", renderLogs);
 $("#event-category").addEventListener("change", renderLogs);
@@ -568,6 +701,7 @@ $("#site-grid").addEventListener("click", async event => {
   if (action === "delete") { state.pendingDelete = { kind, id: card.dataset.id }; $("#confirm-title").textContent = kind === "proxy" ? "Delete this proxy host?" : "Delete this hosted site?"; $("#confirm-copy").textContent = kind === "proxy" ? "Its domain route will be removed from the gateway." : "Its route and uploaded files will be permanently removed."; $("#confirm-dialog").showModal(); }
   if (action === "replace") { state.pendingReplace = card.dataset.id; $("#replace-files").click(); }
   if (action === "icon") openIconPicker(kind, card.dataset.id);
+  if (action === "caddy-config") openCaddyConfig(kind === "proxy" ? "proxies" : "sites", card.dataset.id);
 });
 
 // --- Redirect card actions delegated from the site grid (menu open/close, edit/
@@ -576,7 +710,34 @@ document.querySelector("#redirect-list")?.addEventListener("click", event => {
   const card = event.target.closest(".redirect-card"); if (!card) return;
   if (event.target.closest(".menu-button")) { const opening = !card.classList.contains("menu-open"); closeMenus(); card.classList.toggle("menu-open", opening); card.querySelector(".menu-button")?.setAttribute("aria-expanded", String(opening)); return; }
   const action = event.target.closest("[data-redirect-action]")?.dataset.redirectAction; if (action === "icon") { closeMenus(); openIconPicker("redirect", card.dataset.redirectId); }
+  if (action === "caddy-config") { closeMenus(); openCaddyConfig("redirects", card.dataset.redirectId); }
 });
+
+// --- "View Caddy config" popout --------------------------------------------------------------
+// Two overlapping rectangles, inline so it inherits currentColor from .icon-button.
+const COPY_ICON_SVG = '<svg class="copy-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.4" y="1.4" width="9.2" height="9.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4"></rect><rect x="1.4" y="5.4" width="9.2" height="9.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4"></rect></svg>';
+function caddyConfigDialog() {
+  let dialog = document.querySelector("#caddy-config-dialog");
+  if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "caddy-config-dialog"; document.body.append(dialog); }
+  return dialog;
+}
+async function openCaddyConfig(kind, id) {
+  const dialog = caddyConfigDialog();
+  dialog.innerHTML = '<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">Gateway configuration</p><h2>Loading…</h2></div></div><p class="muted">Reading the deployed configuration for this route.</p><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>';
+  if (!dialog.open) dialog.showModal();
+  try {
+    const result = await api(`/api/${kind}/${encodeURIComponent(id)}/caddy-config`);
+    dialog.innerHTML = `<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">Gateway configuration</p><h2>${escapeHtml(result.name)}</h2></div><button type="button" class="icon-button" id="copy-caddy-config" aria-label="Copy configuration" title="Copy configuration">${COPY_ICON_SVG}</button></div><p class="muted">This is the exact block Site Gateway writes into the Caddyfile for this route, annotated with what each directive does.</p><pre class="caddy-config-pre">${escapeHtml(result.config)}</pre><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`;
+    dialog.querySelector("#copy-caddy-config").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(result.config); toast("Configuration copied."); }
+      catch { toast("Your browser blocked clipboard access.", "error"); }
+    });
+  } catch (error) {
+    dialog.innerHTML = `<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">Gateway configuration</p><h2>Not available</h2></div></div><p class="muted">${escapeHtml(error.message)}</p><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`;
+  }
+}
+window.openCaddyConfig = openCaddyConfig;
+
 
 // --- Delete confirmation dialog and replace-files handler ------------------------------------
 $("#confirm-dialog").addEventListener("close", async () => { if ($("#confirm-dialog").returnValue === "confirm" && state.pendingDelete) { const base = state.pendingDelete.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.pendingDelete.id}`, { method: "DELETE" }); await refresh(); toast("Entry deleted and gateway updated."); } state.pendingDelete = null; });

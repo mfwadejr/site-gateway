@@ -68,6 +68,11 @@ export async function openStorage(dataDir, backupsDir) {
     CREATE INDEX IF NOT EXISTS activity_events_instance_created ON activity_events(instance_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS access_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), at TEXT, host TEXT, method TEXT, uri TEXT, status INTEGER, size INTEGER, duration_ms INTEGER, remote_ip TEXT, source TEXT, UNIQUE(instance_id,source));
     CREATE INDEX IF NOT EXISTS access_events_instance_at ON access_events(instance_id,at DESC);
+    CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY, instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE, name TEXT NOT NULL, token_hash TEXT NOT NULL, prefix TEXT NOT NULL, owner_user_id TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'full', session_version TEXT, created_at TEXT NOT NULL, last_used_at TEXT, expires_at TEXT, revoked_at TEXT);
+    CREATE INDEX IF NOT EXISTS api_tokens_hash ON api_tokens(token_hash);
+    CREATE INDEX IF NOT EXISTS api_tokens_instance ON api_tokens(instance_id);
+    CREATE TABLE IF NOT EXISTS backup_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE, type TEXT NOT NULL, filename TEXT, backup_type TEXT, size_bytes INTEGER, actor_user_id TEXT, created_at TEXT NOT NULL, safety_backup_filename TEXT, status TEXT NOT NULL DEFAULT 'success', error_message TEXT);
+    CREATE INDEX IF NOT EXISTS backup_events_instance_created ON backup_events(instance_id,created_at DESC);
   `);
   try { db.exec("ALTER TABLE activity_events ADD COLUMN category TEXT NOT NULL DEFAULT 'activity'"); } catch { /* Column already exists. */ }
   const timestamp = now();
@@ -115,12 +120,16 @@ export async function openStorage(dataDir, backupsDir) {
         SUM(CASE WHEN at>=? THEN 1 ELSE 0 END) AS hourRequests,
         SUM(CASE WHEN at>=? AND status>=400 THEN 1 ELSE 0 END) AS hourErrors,
         AVG(CASE WHEN at>=? THEN duration_ms END) AS hourAvgMs,
+        SUM(CASE WHEN at>=? THEN COALESCE(size,0) ELSE 0 END) AS hourBytes,
+        COUNT(DISTINCT CASE WHEN at>=? THEN remote_ip END) AS hourVisitors,
         COUNT(*) AS dayRequests,
         SUM(CASE WHEN status>=400 THEN 1 ELSE 0 END) AS dayErrors,
-        AVG(duration_ms) AS dayAvgMs
+        AVG(duration_ms) AS dayAvgMs,
+        SUM(COALESCE(size,0)) AS dayBytes,
+        COUNT(DISTINCT remote_ip) AS dayVisitors
       FROM access_events WHERE instance_id=? AND at>=? AND host IS NOT NULL AND host!=''
       GROUP BY host ORDER BY dayRequests DESC
-    `).all(hourCutoff, hourCutoff, hourCutoff, instanceId, dayCutoff);
+    `).all(hourCutoff, hourCutoff, hourCutoff, hourCutoff, hourCutoff, instanceId, dayCutoff);
   }
   function performanceErrorBreakdown(instanceId = LOCAL_INSTANCE_ID) {
     const dayCutoff = new Date(Date.now() - 86400000).toISOString();
@@ -134,17 +143,50 @@ export async function openStorage(dataDir, backupsDir) {
     const bucketMs = Math.max(1, Number(bucketMinutes) || 15) * 60000;
     const windowMs = Math.max(1, Number(hours) || 6) * 3600000;
     const cutoff = new Date(Date.now() - windowMs).toISOString();
-    const rows = db.prepare(`SELECT at FROM access_events WHERE instance_id=? AND at>=? AND (?='' OR host=?)`).all(instanceId, cutoff, host, host);
+    const rows = db.prepare(`SELECT at,status FROM access_events WHERE instance_id=? AND at>=? AND (?='' OR host=?)`).all(instanceId, cutoff, host, host);
     const buckets = new Map();
-    for (const row of rows) { const t = new Date(row.at).getTime(); if (Number.isNaN(t)) continue; const bucketStart = Math.floor(t / bucketMs) * bucketMs; buckets.set(bucketStart, (buckets.get(bucketStart) || 0) + 1); }
+    for (const row of rows) { const t = new Date(row.at).getTime(); if (Number.isNaN(t)) continue; const bucketStart = Math.floor(t / bucketMs) * bucketMs; const entry = buckets.get(bucketStart) || { count: 0, errors: 0 }; entry.count += 1; if (Number(row.status) >= 400) entry.errors += 1; buckets.set(bucketStart, entry); }
     const startBucket = Math.floor((Date.now() - windowMs) / bucketMs) * bucketMs, endBucket = Math.floor(Date.now() / bucketMs) * bucketMs;
     const points = [];
-    for (let bucket = startBucket; bucket <= endBucket; bucket += bucketMs) points.push({ at: new Date(bucket).toISOString(), count: buckets.get(bucket) || 0 });
+    for (let bucket = startBucket; bucket <= endBucket; bucket += bucketMs) { const entry = buckets.get(bucket); points.push({ at: new Date(bucket).toISOString(), count: entry?.count || 0, errors: entry?.errors || 0 }); }
     return points;
   }
   function pruneEvents(policy = {}, instanceId = LOCAL_INSTANCE_ID) { const cutoff = days => new Date(Date.now() - Math.max(7, Number(days) || 30) * 86400000).toISOString(); return transaction(() => { const counts = {}; const jobs = [["access", "access_events", "at", policy.accessDays, ""], ["activity", "activity_events", "created_at", policy.activityDays, "category='activity'"], ["certificate", "activity_events", "created_at", policy.certificateDays, "category='certificate'"], ["security", "activity_events", "created_at", policy.securityDays, "category='security'"], ["audit", "audit_events", "created_at", policy.auditDays, ""]]; for (const [name, table, column, days, filter] of jobs) { const result = db.prepare(`DELETE FROM ${table} WHERE instance_id=? AND ${column} < ?${filter ? ` AND ${filter}` : ""}`).run(instanceId, cutoff(days)); counts[name] = Number(result.changes || 0); } return counts; }); }
   function previewPruneEvents(policy = {}, instanceId = LOCAL_INSTANCE_ID) { const cutoff = days => new Date(Date.now() - Math.max(7, Number(days) || 30) * 86400000).toISOString(); const counts = {}; const jobs = [["access", "access_events", "at", policy.accessDays, ""], ["activity", "activity_events", "created_at", policy.activityDays, "category='activity'"], ["certificate", "activity_events", "created_at", policy.certificateDays, "category='certificate'"], ["security", "activity_events", "created_at", policy.securityDays, "category='security'"], ["audit", "audit_events", "created_at", policy.auditDays, ""]]; for (const [name, table, column, days, filter] of jobs) counts[name] = Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE instance_id=? AND ${column} < ?${filter ? ` AND ${filter}` : ""}`).get(instanceId, cutoff(days)).count || 0); return counts; }
   function listAudit(filters = {}, instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT id,actor_id,action,status,details,created_at FROM audit_events WHERE instance_id=? ORDER BY id DESC LIMIT 500").all(instanceId); return rows.filter(row => (!filters.user || row.actor_id === filters.user) && (!filters.action || row.action.toLowerCase().includes(filters.action.toLowerCase())) && (!filters.status || row.status === filters.status)).map(row => ({ ...row, details: row.details ? JSON.parse(row.details) : null })); }
+  // 95th-percentile latency per host. SQLite has no percentile aggregate, so the
+  // durations come back pre-sorted per host and the index is picked in JavaScript.
+  function performancePercentiles(percentile = 0.95, instanceId = LOCAL_INSTANCE_ID) {
+    const hourCutoff = new Date(Date.now() - 3600000).toISOString(), dayCutoff = new Date(Date.now() - 86400000).toISOString();
+    const rows = db.prepare("SELECT host,at,duration_ms AS durationMs FROM access_events WHERE instance_id=? AND at>=? AND duration_ms IS NOT NULL AND host IS NOT NULL AND host!='' ORDER BY host, duration_ms").all(instanceId, dayCutoff);
+    const pick = values => { if (!values.length) return null; const index = Math.min(values.length - 1, Math.max(0, Math.ceil(percentile * values.length) - 1)); return Math.round(values[index]); };
+    const byHost = new Map();
+    for (const row of rows) { if (!byHost.has(row.host)) byHost.set(row.host, { day: [], hour: [] }); const entry = byHost.get(row.host); entry.day.push(row.durationMs); if (row.at >= hourCutoff) entry.hour.push(row.durationMs); }
+    return Object.fromEntries([...byHost].map(([host, entry]) => [host, { hourP95: pick(entry.hour), dayP95: pick(entry.day) }]));
+  }
+  function performanceTopPaths(limit = 10, instanceId = LOCAL_INSTANCE_ID) {
+    const dayCutoff = new Date(Date.now() - 86400000).toISOString();
+    const cap = Math.max(1, Math.min(Number(limit) || 10, 50));
+    const rows = db.prepare("SELECT host,uri,COUNT(*) AS count FROM access_events WHERE instance_id=? AND at>=? AND host IS NOT NULL AND host!='' GROUP BY host,uri ORDER BY host, count DESC").all(instanceId, dayCutoff);
+    const byHost = new Map();
+    for (const row of rows) { const list = byHost.get(row.host) || []; if (list.length < cap) list.push({ uri: row.uri || "/", count: row.count }); byHost.set(row.host, list); }
+    return Object.fromEntries(byHost);
+  }
+  function performanceSlowest(host = "", hours = 6, limit = 20, instanceId = LOCAL_INSTANCE_ID) {
+    const cutoff = new Date(Date.now() - Math.max(1, Number(hours) || 6) * 3600000).toISOString();
+    return db.prepare("SELECT host,uri,method,status,duration_ms AS durationMs,at FROM access_events WHERE instance_id=? AND at>=? AND (?='' OR host=?) AND duration_ms IS NOT NULL ORDER BY duration_ms DESC LIMIT ?").all(instanceId, cutoff, host, host, Math.max(1, Math.min(Number(limit) || 20, 50)));
+  }
+  // --- API tokens. Dedicated table (not the generic JSON-collection pattern) because
+  // every authenticated API request looks a token up by its SHA-256 hash.
+  function listApiTokens(instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT id,name,prefix,owner_user_id AS ownerUserId,scope,created_at AS createdAt,last_used_at AS lastUsedAt,expires_at AS expiresAt,revoked_at AS revokedAt FROM api_tokens WHERE instance_id=? ORDER BY created_at DESC").all(instanceId); }
+  function createApiToken(row, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO api_tokens(id,instance_id,name,token_hash,prefix,owner_user_id,scope,session_version,created_at,last_used_at,expires_at,revoked_at) VALUES(?,?,?,?,?,?,?,?,?,NULL,?,NULL)").run(row.id, instanceId, String(row.name), String(row.tokenHash), String(row.prefix), String(row.ownerUserId), row.scope === "read-only" ? "read-only" : "full", row.sessionVersion || null, now(), row.expiresAt || null); return listApiTokens(instanceId).find(item => item.id === row.id) || null; }
+  function findApiTokenByHash(tokenHash, instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT id,name,prefix,owner_user_id AS ownerUserId,scope,session_version AS sessionVersion,created_at AS createdAt,last_used_at AS lastUsedAt,expires_at AS expiresAt,revoked_at AS revokedAt FROM api_tokens WHERE instance_id=? AND token_hash=?").get(instanceId, String(tokenHash)) || null; }
+  function revokeApiToken(id, instanceId = LOCAL_INSTANCE_ID) { return Number(db.prepare("UPDATE api_tokens SET revoked_at=? WHERE instance_id=? AND id=? AND revoked_at IS NULL").run(now(), instanceId, id).changes || 0) > 0; }
+  function touchApiToken(id, instanceId = LOCAL_INSTANCE_ID) { db.prepare("UPDATE api_tokens SET last_used_at=? WHERE instance_id=? AND id=?").run(now(), instanceId, id); }
+  // --- Backup history. Independent of what is on disk, so deleted backups and failed
+  // attempts stay visible in the timeline.
+  function recordBackupEvent(event, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO backup_events(instance_id,type,filename,backup_type,size_bytes,actor_user_id,created_at,safety_backup_filename,status,error_message) VALUES(?,?,?,?,?,?,?,?,?,?)").run(instanceId, String(event.type), event.filename || null, event.backupType || null, event.sizeBytes ?? null, event.actorUserId || null, event.createdAt || now(), event.safetyBackupFilename || null, event.status === "failed" ? "failed" : "success", event.errorMessage ? String(event.errorMessage).slice(0, 500) : null); }
+  function listBackupEvents(limit = 500, instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT id,type,filename,backup_type AS backupType,size_bytes AS sizeBytes,actor_user_id AS actorUserId,created_at AS createdAt,safety_backup_filename AS safetyBackupFilename,status,error_message AS errorMessage FROM backup_events WHERE instance_id=? ORDER BY id DESC LIMIT ?").all(instanceId, Math.max(1, Math.min(Number(limit) || 500, 500))); }
   function backupTo(filename) { try { fs.rmSync(filename, { force: true }); db.exec(`VACUUM INTO '${String(filename).replaceAll("'", "''")}'`); } catch (error) { throw new Error(`Could not create a consistent SQLite backup: ${error.message}`); } }
 
   if (isNew) {
@@ -170,5 +212,5 @@ export async function openStorage(dataDir, backupsDir) {
   }
   function humanizeGatewayErrors(instanceId = LOCAL_INSTANCE_ID) { const friendly = "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; const activity = db.prepare("SELECT id FROM activity_events WHERE instance_id=? AND message LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const updateActivity = db.prepare("UPDATE activity_events SET message=? WHERE id=?"); for (const row of activity) updateActivity.run(friendly, row.id); const audit = db.prepare("SELECT id FROM audit_events WHERE instance_id=? AND action LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const updateAudit = db.prepare("UPDATE audit_events SET action=? WHERE id=?"); for (const row of audit) updateAudit.run(friendly, row.id); return activity.length + audit.length; }
   const result = integrity(); if (result.length !== 1 || result[0] !== "ok") { db.close(); throw new Error(`SQLite integrity check failed: ${result.join(", ")}`); }
-  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, performanceLiveCount, performanceRoutes, performanceErrorBreakdown, performanceTrend, close: () => db.close() };
+  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, performanceLiveCount, performanceRoutes, performanceErrorBreakdown, performanceTrend, performancePercentiles, performanceTopPaths, performanceSlowest, listApiTokens, createApiToken, findApiTokenByHash, revokeApiToken, touchApiToken, recordBackupEvent, listBackupEvents, close: () => db.close() };
 }

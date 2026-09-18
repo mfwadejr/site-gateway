@@ -64,6 +64,8 @@ const recentActivity = [];
 const upstreamHealth = new Map();
 const certificateStatusCache = new Map();
 const loginAttempts = new Map();
+const rateLimitBuckets = new Map();
+let dockerSocketMounted = false;
 let currentAuditActor = null;
 const probeFailures = { gateway: 0, http: 0, https: 0 };
 let iconCatalog = null;
@@ -144,6 +146,99 @@ function sessionUser(req) {
   const user = users.find(item => item.id === userId && item.status === "active");
   if (!user || !expires || !sessionVersion || Number(expires) <= Date.now() || sessionVersion !== user.sessionVersion || !safeEqual(signature || "", sign(`${userId}.${expires}.${sessionVersion}`))) return null;
   return user;
+}
+
+// Small fixed-window in-memory rate limiter shared by the sign-in routes and the
+// bearer-token authentication path. Map of key -> { count, windowStart }; no dependency.
+function rateLimitExceeded(key, limit = 10, windowMs = 60000) {
+  const nowMs = Date.now();
+  const bucket = rateLimitBuckets.get(key);
+  if (!bucket || nowMs - bucket.windowStart >= windowMs) { rateLimitBuckets.set(key, { count: 1, windowStart: nowMs }); return false; }
+  bucket.count += 1;
+  if (rateLimitBuckets.size > 5000) for (const [entryKey, entry] of rateLimitBuckets) if (nowMs - entry.windowStart >= windowMs) rateLimitBuckets.delete(entryKey);
+  return bucket.count > limit;
+}
+function requestKey(req) { return req.ip || req.socket?.remoteAddress || "unknown"; }
+
+// Rotating a user's sessionVersion invalidates every session cookie they hold AND every API
+// token they issued, because tokens store the version that was current when they were created.
+// Callers that rotate the CURRENT user's version re-issue their cookie so they stay signed in.
+function rotateSessionVersion(user) {
+  user.sessionVersion = crypto.randomBytes(16).toString("hex");
+  user.updatedAt = new Date().toISOString();
+}
+
+// --- REST API tokens ---------------------------------------------------------------------
+// Only the SHA-256 hash of a token is ever stored; the raw value is shown once at creation.
+function hashApiToken(rawToken) { return crypto.createHash("sha256").update(String(rawToken)).digest("hex"); }
+
+// Resolves an `Authorization: Bearer <token>` header to its owning user. Tokens carry the
+// owner's sessionVersion from the moment they were issued, so a password reset, an MFA
+// change, or a deactivation invalidates every token that user issued -- exactly like a
+// session cookie.
+function bearerTokenUser(req) {
+  const header = String(req.headers.authorization || "");
+  if (!/^Bearer\s+/i.test(header)) return null;
+  const raw = header.replace(/^Bearer\s+/i, "").trim();
+  if (!raw) return null;
+  let record = null;
+  try { record = storage.findApiTokenByHash(hashApiToken(raw)); } catch { return null; }
+  if (!record || record.revokedAt) return null;
+  if (record.expiresAt && new Date(record.expiresAt).getTime() <= Date.now()) return null;
+  const owner = users.find(item => item.id === record.ownerUserId);
+  if (!owner || owner.status !== "active") return null;
+  if (record.sessionVersion && record.sessionVersion !== owner.sessionVersion) return null;
+  return { user: owner, token: record };
+}
+
+// --- Docker integration (optional, off by default) ---------------------------------------
+// Talks to the Docker Engine API over the mounted UNIX socket using Node's built-in http
+// module -- no client library, and nothing happens at all unless the socket is mounted AND
+// an administrator has explicitly turned the integration on.
+const DOCKER_SOCKET_PATH = "/var/run/docker.sock";
+function detectDockerSocket() {
+  try { if (!fs.existsSync(DOCKER_SOCKET_PATH)) return false; fs.accessSync(DOCKER_SOCKET_PATH, fs.constants.R_OK); return true; }
+  catch { return false; }
+}
+function dockerRequest(requestPath) {
+  return new Promise((resolve, reject) => {
+    const request = http.request({ socketPath: DOCKER_SOCKET_PATH, path: requestPath, method: "GET", timeout: 5000 }, response => {
+      let data = "";
+      response.on("data", chunk => { data += chunk; });
+      response.on("end", () => {
+        if (response.statusCode >= 400) return reject(Object.assign(new Error(`Docker replied with status ${response.statusCode}.`), { status: 502 }));
+        try { resolve(JSON.parse(data || "null")); } catch (error) { reject(new Error(`Could not read Docker's response: ${error.message}`)); }
+      });
+    });
+    request.on("error", error => reject(Object.assign(new Error(`Could not reach the Docker socket: ${error.message}`), { status: 502 })));
+    request.on("timeout", () => request.destroy(new Error("The Docker socket did not respond in time.")));
+    request.end();
+  });
+}
+// Lists running containers, annotated with whether they share a Docker network with Site
+// Gateway's own container. Unreachable containers are returned too (flagged, with a reason)
+// so the picker can dim them rather than hide them.
+async function dockerContainerOptions() {
+  const ownId = String(process.env.HOSTNAME || "").trim();
+  const own = ownId ? await dockerRequest(`/containers/${encodeURIComponent(ownId)}/json`).catch(() => null) : null;
+  const ownNetworks = new Set(Object.keys(own?.NetworkSettings?.Networks || {}));
+  const running = await dockerRequest(`/containers/json?filters=${encodeURIComponent(JSON.stringify({ status: ["running"] }))}`) || [];
+  return running.filter(container => !own?.Id || container.Id !== own.Id).map(container => {
+    const networks = Object.keys(container.NetworkSettings?.Networks || {});
+    const shared = networks.filter(name => ownNetworks.has(name));
+    const reachable = ownNetworks.size > 0 && shared.length > 0;
+    return {
+      id: String(container.Id || "").slice(0, 12),
+      name: (container.Names || []).map(value => String(value).replace(/^\//, "")).filter(Boolean)[0] || String(container.Id || "").slice(0, 12),
+      image: container.Image || "",
+      state: container.State || "running",
+      networks,
+      sharedNetworks: shared,
+      ports: [...new Set((container.Ports || []).map(port => Number(port.PrivatePort)).filter(Boolean))].sort((a, b) => a - b),
+      reachable,
+      reason: reachable ? null : ownNetworks.size ? "Not on a Docker network shared with Site Gateway." : "Site Gateway could not identify its own container, so shared networks are unknown."
+    };
+  });
 }
 
 const saveSites = async () => storage.saveCollection("sites", sites);
@@ -414,36 +509,117 @@ async function writeDefaultSitePage() {
 
 // renderCaddyfile -- builds the full Caddy JSON/Caddyfile config from current state
 // (sites, proxies, redirects, streams, access lists, default site settings).
+function caddyLoggingDirectives() {
+  return ["  log {", `    output file ${accessLogPath} {`, "      roll_size 10mb", "      roll_keep 5", "      roll_keep_for 168h", "      roll_uncompressed", "    }", "    format json", "  }"];
+}
+
+// One builder per route kind, each returning the exact Caddyfile lines that route
+// contributes. renderCaddyfile()'s loops and the "View Caddy config" endpoint both call
+// these, so the popout can never drift from the configuration Caddy actually runs.
+function renderHostedSiteBlock(site, logging = caddyLoggingDirectives()) {
+  return [`${caddySiteAddress(site)} {`, ...logging, ...commonHostDirectives(site), `  root * ${path.join(sitesDir, site.id)}`, "  file_server", "}"];
+}
+function renderProxyBlock(proxy, logging = caddyLoggingDirectives()) {
+  const lines = [`${caddySiteAddress(proxy)} {`, ...logging, ...commonHostDirectives(proxy)];
+  for (const location of proxy.locations || []) {
+    lines.push(`  ${location.stripPrefix ? "handle_path" : "handle"} ${location.path} {`, ...proxyBlock(location.target, location, "    "), "  }");
+  }
+  if ((proxy.locations || []).length) lines.push("  handle {", ...proxyBlock(proxy.target, proxy, "    "), "  }");
+  else lines.push(...proxyBlock(proxy.target, proxy));
+  if (proxy.customConfig) lines.push("  # Administrator-provided custom configuration", ...String(proxy.customConfig).split("\n").map(line => `  ${line}`));
+  lines.push("}");
+  return lines;
+}
+function renderRedirectBlock(redirect, logging = caddyLoggingDirectives()) {
+  const target = `${redirect.target}${redirect.preservePath ? "{uri}" : ""}`;
+  return [`${caddySiteAddress(redirect)} {`, ...logging, ...commonHostDirectives(redirect), `  redir ${caddyQuote(target)} ${redirect.code || 302}`, "}"];
+}
+
 function renderCaddyfile() {
   const email = String(process.env.ACME_EMAIL || "").trim();
   const lines = ["{", "  admin localhost:2019", "  persist_config off", `  storage file_system ${managedCertificatesDir}`];
   if (email) lines.push(`  email ${email}`);
-  const logging = ["  log {", `    output file ${accessLogPath} {`, "      roll_size 10mb", "      roll_keep 5", "      roll_keep_for 168h", "      roll_uncompressed", "    }", "    format json", "  }"];
+  const logging = caddyLoggingDirectives();
   lines.push("}", "", ":80 {", ...logging);
   const defaultSite = settings.defaultSite || {};
   if (defaultSite.mode === "abort") lines.push("  abort");
   else if (defaultSite.mode === "redirect" && defaultSite.redirectUrl) lines.push(`  redir ${caddyQuote(`${defaultSite.redirectUrl}${defaultSite.preservePath ? "{uri}" : ""}`)} ${[301, 302, 307, 308].includes(Number(defaultSite.redirectCode)) ? Number(defaultSite.redirectCode) : 302}`);
   else lines.push(`  root * ${defaultSiteDir}`, "  rewrite * /index.html", `  file_server {`, `    status ${defaultSite.mode === "welcome" ? 200 : 404}`, "  }");
   lines.push("}");
-  for (const site of sites.filter(item => item.enabled && normalizeDomains(item.domain, item.domains).length)) {
-    lines.push("", `${caddySiteAddress(site)} {`, ...logging, ...commonHostDirectives(site), `  root * ${path.join(sitesDir, site.id)}`, "  file_server");
-    lines.push("}");
-  }
-  for (const proxy of proxies.filter(item => item.enabled && item.domain)) {
-    lines.push("", `${caddySiteAddress(proxy)} {`, ...logging, ...commonHostDirectives(proxy));
-    for (const location of proxy.locations || []) {
-      lines.push(`  ${location.stripPrefix ? "handle_path" : "handle"} ${location.path} {`, ...proxyBlock(location.target, location, "    "), "  }");
-    }
-    if ((proxy.locations || []).length) lines.push("  handle {", ...proxyBlock(proxy.target, proxy, "    "), "  }");
-    else lines.push(...proxyBlock(proxy.target, proxy));
-    if (proxy.customConfig) lines.push("  # Administrator-provided custom configuration", ...String(proxy.customConfig).split("\n").map(line => `  ${line}`));
-    lines.push("}");
-  }
-  for (const redirect of redirects.filter(item => item.enabled && item.domain)) {
-    const target = `${redirect.target}${redirect.preservePath ? "{uri}" : ""}`;
-    lines.push("", `${caddySiteAddress(redirect)} {`, ...logging, ...commonHostDirectives(redirect), `  redir ${caddyQuote(target)} ${redirect.code || 302}`, "}");
-  }
+  for (const site of sites.filter(item => item.enabled && normalizeDomains(item.domain, item.domains).length)) lines.push("", ...renderHostedSiteBlock(site, logging));
+  for (const proxy of proxies.filter(item => item.enabled && item.domain)) lines.push("", ...renderProxyBlock(proxy, logging));
+  for (const redirect of redirects.filter(item => item.enabled && item.domain)) lines.push("", ...renderRedirectBlock(redirect, logging));
   return `${lines.join("\n")}\n`;
+}
+
+
+// --- "View Caddy config" pretty renderer -------------------------------------------------
+// Re-uses the block builders above and annotates each directive with a plain-language
+// comment, so the popout explains the real configuration rather than a paraphrase of it.
+const CADDY_DIRECTIVE_NOTES = [
+  [/^\s*log \{/, "Write this host's requests to the access log Site Gateway reads"],
+  [/^\s*reverse_proxy /, "Reverse proxy to the configured upstream"],
+  [/^\s*lb_policy /, "How requests are spread across the configured upstreams"],
+  [/^\s*transport http \{/, "Connection options used when talking to the upstream"],
+  [/^\s*tls_insecure_skip_verify/, "Accept the upstream's certificate without verifying it"],
+  [/^\s*tls_server_name /, "Certificate name expected on the upstream"],
+  [/^\s*response_header_timeout /, "How long to wait for the upstream's response headers"],
+  [/^\s*header_up /, "Header added to the request before it reaches the upstream"],
+  [/^\s*tls internal/, "Enforce HTTPS using Caddy's own internal certificate authority"],
+  [/^\s*tls "/, "Enforce HTTPS using the certificate and private key you uploaded"],
+  [/^\s*header Strict-Transport-Security/, "Tell browsers to always use HTTPS for this host"],
+  [/^\s*header /, "Response header added to every reply from this host"],
+  [/^\s*encode /, "Compress responses that benefit from it"],
+  [/^\s*root \* /, "Folder this site's files are served from"],
+  [/^\s*file_server/, "Serve the files in that folder directly"],
+  [/^\s*redir /, "Send visitors to the redirect destination"],
+  [/^\s*handle_path /, "Match this path prefix and strip it before forwarding"],
+  [/^\s*handle \{/, "Everything not matched above is handled here"],
+  [/^\s*handle /, "Match this path prefix and forward it unchanged"],
+  [/^\s*abort/, "Close the connection without replying"],
+  [/^\s*respond .* 403/, "Reject requests matching the common-exploit ruleset"],
+  [/^\s*forward_auth /, "Require an Access List sign-in before allowing the request"],
+  [/^\s*path_regexp /, "Pattern of known exploit-probe paths"],
+  [/^\s*@/, "Named matcher used by the directive below"]
+];
+// Container-specific absolute paths, flagged so the config is readable outside this container.
+const CADDY_PATH_NOTES = [
+  [/^\s*root \* /, "container path - this folder lives inside the Site Gateway container"],
+  [/^\s*output file /, "container path - the access log file inside the Site Gateway container"],
+  [/^\s*tls "\//, "container paths - the certificate and key files stored inside the Site Gateway container"]
+];
+function annotateCaddyLines(lines) {
+  const output = [];
+  for (const line of lines) {
+    if (!line.trim()) { output.push(""); continue; }
+    const indent = " ".repeat(line.length - line.trimStart().length);
+    const note = CADDY_DIRECTIVE_NOTES.find(([pattern]) => pattern.test(line))?.[1];
+    const pathNote = CADDY_PATH_NOTES.find(([pattern]) => pattern.test(line))?.[1];
+    if (note) {
+      const previous = output[output.length - 1];
+      if (previous !== undefined && previous.trim() && !/\{$/.test(previous)) output.push("");
+      output.push(`${indent}# ${note}`);
+    }
+    output.push(pathNote ? `${line}  # ${pathNote}` : line);
+  }
+  return output;
+}
+function prettyCaddyConfig(kind, item) {
+  const builder = kind === "sites" ? renderHostedSiteBlock : kind === "proxies" ? renderProxyBlock : renderRedirectBlock;
+  const heading = kind === "sites" ? "Hosted site" : kind === "proxies" ? "Proxy host" : "Redirect host";
+  const tlsNote = item.tls === "http" ? "# Served over plain HTTP - no certificate is requested for this host."
+    : item.tls === "internal" ? "# Enforce HTTPS with Caddy's internal certificate authority."
+    : item.tls === "custom" ? "# Enforce HTTPS with the certificate and private key you uploaded."
+    : "# Enforce HTTPS with an automatically-issued certificate.";
+  return [
+    `# ${heading} - ${item.name || item.domain || item.id}`,
+    `# Generated by Site Gateway v${appVersion}. This is the exact block this route`,
+    "# contributes to the deployed Caddyfile, with explanatory comments added.",
+    tlsNote,
+    "",
+    ...annotateCaddyLines(builder(item)),
+    ""
+  ].join("\n");
 }
 
 
@@ -792,7 +968,7 @@ async function dashboardSnapshot() {
   for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention." });
   for (const proxy of proxyHosts.filter(item => item.enabled && item.upstream?.status === "unhealthy")) attention.push({ kind: "upstream", name: proxy.name, message: `Upstream is unavailable${proxy.upstream.error ? ` · ${proxy.upstream.error}` : ""}.` });
   for (const certificate of certificates.certificates.filter(item => ["warning", "critical", "expired", "mismatch"].includes(item.status))) attention.push({ kind: "certificate", target: "certificates", name: certificate.domain, message: certificate.status === "expired" ? "Certificate has expired." : certificate.status === "mismatch" ? "The uploaded certificate does not cover this domain." : `Certificate expires in ${certificate.daysRemaining} day${certificate.daysRemaining === 1 ? "" : "s"}.` });
-  if (configDrift.drift) attention.push({ kind: "drift", name: "Configuration drift", message: "Caddy\u2019s live configuration no longer matches the saved configuration.", target: "administration" });
+  if (configDrift.drift) attention.push({ kind: "drift", name: "Configuration drift", message: "Caddy\u2019s live configuration no longer matches the saved configuration.", target: "administration/defaults" });
   const disk = await fsp.statfs(dataDir).catch(() => null);
   const databaseIntegrity = storage.integrity();
   return {
@@ -1012,7 +1188,7 @@ async function openBackup(filename, password = "") {
   return { zip: new AdmZip(buffer), encrypted };
 }
 
-async function createBackup(type = "configuration", includeLogs = false, prefix = "site-gateway-backup", password = "") {
+async function createBackupInternal(type = "configuration", includeLogs = false, prefix = "site-gateway-backup", password = "") {
   const safeType = type === "complete" ? "complete" : "configuration";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `${prefix}-${stamp}.sgbackup`;
@@ -1034,6 +1210,22 @@ async function createBackup(type = "configuration", includeLogs = false, prefix 
   await fsp.writeFile(destination, await protectBackup(zip.toBuffer(), password));
   recordActivity(`${safeType === "complete" ? "Complete" : "Configuration"} backup created.`);
   return { filename, path: destination, ...manifest, size: (await fsp.stat(destination)).size };
+}
+
+// Wraps createBackupInternal so every attempt -- successful or not -- is written to the
+// backup_events history table, which is independent of what currently exists on disk.
+async function createBackup(type = "configuration", includeLogs = false, prefix = "site-gateway-backup", password = "") {
+  const safeType = type === "complete" ? "complete" : "configuration";
+  const backupType = prefix === "pre-restore" ? "safety" : safeType;
+  try {
+    const result = await createBackupInternal(type, includeLogs, prefix, password);
+    try { storage.recordBackupEvent({ type: "created", filename: result.filename, backupType, sizeBytes: result.size, actorUserId: currentAuditActor, status: "success" }); } catch (error) { console.warn("Could not record backup history event:", error.message); }
+    return result;
+  } catch (error) {
+    try { storage.recordBackupEvent({ type: "created", filename: null, backupType, actorUserId: currentAuditActor, status: "failed", errorMessage: error.message }); } catch { /* History is best effort. */ }
+    recordActivity(`${backupType === "safety" ? "Pre-restore safety" : safeType === "complete" ? "Complete" : "Configuration"} backup failed: ${error.message}`, "error");
+    throw error;
+  }
 }
 
 async function listBackups() {
@@ -1088,7 +1280,10 @@ async function restoreBackup(filename, password = "", createSafetyBackup = true)
     for (const site of sites.filter(item => item.enabled)) await startSite(site);
     for (const stream of streams.filter(item => item.enabled !== false)) { try { await startStream(stream); } catch (error) { console.error(`Could not start streaming host “${stream.name}”:`, error.message); } }
     await syncCaddy(); recordActivity(`Backup ${filename} restored.`);
+    try { storage.recordBackupEvent({ type: "restored", filename, backupType: manifest.type || "unknown", actorUserId: currentAuditActor, safetyBackupFilename: safetyBackup?.filename || null, status: "success" }); } catch (error) { console.warn("Could not record backup history event:", error.message); }
   } catch (error) {
+    recordActivity(`Restore of ${filename} failed: ${error.message}`, "error");
+    try { storage.recordBackupEvent({ type: "restored", filename, backupType: manifest.type || "unknown", actorUserId: currentAuditActor, safetyBackupFilename: safetyBackup?.filename || null, status: "failed", errorMessage: error.message }); } catch { /* History is best effort. */ }
     if (safetyBackup) {
       try { await restoreBackup(safetyBackup.filename, "", false); recordActivity(`Restore of ${filename} failed; the pre-restore state was recovered.`, "error"); }
       catch (rollbackError) { error.message = `${error.message} Automatic rollback also failed: ${rollbackError.message}`; }
@@ -1118,6 +1313,9 @@ for (let attempt = 0; attempt < 10; attempt++) {
     else await new Promise(resolve => setTimeout(resolve, 500));
   }
 }
+
+dockerSocketMounted = detectDockerSocket();
+if (!dockerSocketMounted) console.log("Docker socket not detected at /var/run/docker.sock - container selection stays unavailable.");
 
 const app = express();
 const upload = multer({ dest: uploadDir, limits: { fileSize: 250 * 1024 * 1024, files: 1 } });
@@ -1173,6 +1371,7 @@ function pendingMfaUser(req) {
 app.post("/api/login", async (req, res, next) => {
   try {
     const key = req.ip || req.socket.remoteAddress || "unknown";
+    if (rateLimitExceeded(`login:${key}`, 10, 60000)) { recordActivity(`Security: sign-in request rate limit reached for ${key}.`, "error"); return res.status(429).json({ error: "Too many sign-in requests. Try again in a minute." }); }
     const attempt = checkLoginRateLimit(key);
     if (attempt.count >= 8) { recordActivity(`Security: sign-in rate limit reached for ${key}.`, "error"); return res.status(429).json({ error: "Too many sign-in attempts. Try again in 15 minutes." }); }
     const username = String(req.body.username || "").trim().toLowerCase();
@@ -1244,6 +1443,7 @@ app.get("/_site-gateway/login", (req, res) => {
 });
 app.post("/_site-gateway/login", async (req, res, next) => {
   try {
+    if (rateLimitExceeded(`access-login:${requestKey(req)}`, 10, 60000)) return res.status(429).type("text").send("Too many sign-in requests. Try again in a minute.");
     const listId = String(req.body.list || ""), list = accessLists.find(item => item.id === listId && item.enabled !== false), username = String(req.body.username || "").trim(); const credential = list?.credentials?.find(item => item.username === username) || ((list && accessUserAllowed(list, username)) ? users.find(user => user.username === username && user.status === "active") : null);
     const safeReturn = String(req.body.return || "/").startsWith("/") && !String(req.body.return).startsWith("//") ? String(req.body.return) : "/";
     if (!credential?.password || !await passwordMatches(req.body.password || "", credential.password)) return res.redirect(303, `/_site-gateway/login?list=${encodeURIComponent(listId)}&return=${encodeURIComponent(safeReturn)}&error=1`);
@@ -1254,6 +1454,19 @@ app.post("/_site-gateway/login", async (req, res, next) => {
 
 // --- First-run admin setup ---------------------------------------------------------------------------------
 app.use("/api", (req, res, next) => {
+  // A bearer token authenticates as its owner and inherits that owner's role for every
+  // role check further down. Cookie sessions remain the fallback.
+  if (/^Bearer\s+/i.test(String(req.headers.authorization || ""))) {
+    if (rateLimitExceeded(`bearer:${requestKey(req)}`, 10, 60000)) return res.status(429).json({ error: "Too many API requests. Try again in a minute." });
+    const match = bearerTokenUser(req);
+    if (!match) return res.status(401).json({ error: "That API token is not valid, has expired, or has been revoked." });
+    if (match.token.scope === "read-only" && req.method !== "GET") return res.status(403).json({ error: "This API token is read-only." });
+    if (!match.token.lastUsedAt || Date.now() - new Date(match.token.lastUsedAt).getTime() > 60000) {
+      try { storage.touchApiToken(match.token.id); } catch { /* Last-used tracking is best effort. */ }
+    }
+    req.user = match.user; req.apiToken = match.token;
+    return next();
+  }
   const user = sessionUser(req);
   if (!user) return res.status(401).json({ error: "Please sign in." });
   req.user = user;
@@ -1291,8 +1504,8 @@ app.post("/api/account/password", async (req, res, next) => {
     if (!await passwordMatches(currentPassword, req.user.password)) return res.status(400).json({ error: "Your current password is incorrect." });
     if (newPassword.length < 8) return res.status(400).json({ error: "New password must contain at least 8 characters." });
     req.user.password = await passwordRecord(newPassword);
-    req.user.updatedAt = new Date().toISOString();
-    await saveUsers(); recordActivity(`User “${req.user.username}” changed their password.`);
+    rotateSessionVersion(req.user);
+    await saveUsers(); recordActivity(`User “${req.user.username}” changed their password. Other sessions and API tokens were signed out.`);
     issueSessionCookie(res, req.user);
     res.json({ ok: true });
   } catch (error) { next(error); }
@@ -1326,8 +1539,9 @@ app.post("/api/account/mfa/disable", async (req, res, next) => {
   try {
     if (!await passwordMatches(req.body.password || "", req.user.password)) return res.status(400).json({ error: "Your current password is incorrect." });
     req.user.mfaEnabled = false; req.user.mfaSecret = null; req.user.mfaPendingSecret = null; req.user.mfaRecoveryCodes = [];
-    req.user.updatedAt = new Date().toISOString();
-    await saveUsers(); recordActivity(`User “${req.user.username}” disabled two-factor authentication.`, "warning");
+    rotateSessionVersion(req.user);
+    await saveUsers(); recordActivity(`User “${req.user.username}” disabled two-factor authentication. Other sessions and API tokens were signed out.`, "warning");
+    issueSessionCookie(res, req.user);
     res.json({ ok: true });
   } catch (error) { next(error); }
 });
@@ -1344,7 +1558,7 @@ app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
 });
 
 // --- Config, Users, Audit log, Groups, Access List <-> Group assignment --------------------------------------
-app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) } }));
+app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) }, docker: { socketMounted: dockerSocketMounted, enabled: dockerSocketMounted && settings.dockerIntegration?.enabled === true } }));
 app.post("/api/gateway/resync", async (req, res, next) => {
   if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
   try {
@@ -1356,6 +1570,41 @@ app.post("/api/gateway/resync", async (req, res, next) => {
 });
 app.get("/api/users", (req, res) => req.user.role === "administrator" ? res.json(users.map(publicUser)) : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/audit", (req, res) => req.user.role === "administrator" ? res.json(storage.listAudit({ user: req.query.user, action: req.query.action, status: req.query.status }).map(item => ({ ...item, actor: users.find(user => user.id === item.actor_id)?.username || "System" }))) : res.status(403).json({ error: "Administrator access is required." }));
+// --- REST API access tokens: list / issue / revoke -----------------------------------------
+app.get("/api/tokens", (req, res, next) => {
+  try {
+    if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+    res.json(storage.listApiTokens().map(token => ({ id: token.id, name: token.name, prefix: token.prefix, scope: token.scope, ownerUserId: token.ownerUserId, ownerUsername: users.find(item => item.id === token.ownerUserId)?.username || "unknown", createdAt: token.createdAt, lastUsedAt: token.lastUsedAt, expiresAt: token.expiresAt, revokedAt: token.revokedAt, revoked: Boolean(token.revokedAt) })));
+  } catch (error) { next(error); }
+});
+app.post("/api/tokens", async (req, res, next) => {
+  try {
+    if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+    if (req.apiToken) return res.status(403).json({ error: "New API tokens can only be issued from a signed-in session." });
+    if (String(req.body.username || "").trim().toLowerCase() !== String(req.user.username || "").toLowerCase() || !await passwordMatches(String(req.body.password || ""), req.user.password)) return res.status(422).json({ error: "Administrator username or password is incorrect." });
+    const name = String(req.body.name || "").trim();
+    if (!name || name.length > 60) return res.status(400).json({ error: "Enter a name of 60 characters or fewer for this token." });
+    const scope = req.body.scope === "read-only" ? "read-only" : "full";
+    const requestedDays = Number(req.body.expiresInDays);
+    const expiresAt = Number.isFinite(requestedDays) && requestedDays > 0 ? new Date(Date.now() + Math.min(requestedDays, 3650) * 86400000).toISOString() : null;
+    if (!req.user.sessionVersion) { req.user.sessionVersion = crypto.randomBytes(16).toString("hex"); req.user.updatedAt = new Date().toISOString(); await saveUsers(); }
+    const rawToken = `sgt_${crypto.randomBytes(32).toString("base64url")}`;
+    const record = storage.createApiToken({ id: crypto.randomUUID(), name, tokenHash: hashApiToken(rawToken), prefix: rawToken.slice(0, 8), ownerUserId: req.user.id, scope, sessionVersion: req.user.sessionVersion, expiresAt });
+    recordActivity(`Security: API token \u201c${name}\u201d issued for \u201c${req.user.username}\u201d.`);
+    res.status(201).json({ ...record, ownerUsername: req.user.username, revoked: false, token: rawToken });
+  } catch (error) { next(error); }
+});
+app.delete("/api/tokens/:id", (req, res, next) => {
+  try {
+    if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+    const existing = storage.listApiTokens().find(token => token.id === req.params.id);
+    if (!existing) return res.status(404).json({ error: "API token not found." });
+    if (!storage.revokeApiToken(req.params.id)) return res.status(409).json({ error: "That API token has already been revoked." });
+    recordActivity(`Security: API token \u201c${existing.name}\u201d revoked.`);
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+
 app.post("/api/users", async (req, res, next) => {
   try {
     const username = String(req.body.username || "").trim().toLowerCase();
@@ -1390,12 +1639,17 @@ app.patch("/api/users/:id", async (req, res, next) => {
       if (!displayName || displayName.length > 80) return res.status(400).json({ error: "Display name is required and must be 80 characters or fewer." });
       user.displayName = displayName;
     }
+    let invalidateSessions = nextStatus !== "active";
     if (req.body.password !== undefined) {
       const password = String(req.body.password);
       if (password.length < 8) return res.status(400).json({ error: "Password must contain at least 8 characters." });
       user.password = await passwordRecord(password);
+      invalidateSessions = true;
     }
-    user.updatedAt = new Date().toISOString(); await saveUsers(); recordActivity(`User “${user.username}” updated · ${user.role === "administrator" ? "Administrator" : user.role === "viewer" ? "Viewer" : "Standard User"} · ${user.status}.`);
+    // A password reset or a deactivation must also drop this user's API tokens.
+    if (invalidateSessions) rotateSessionVersion(user);
+    user.updatedAt = new Date().toISOString(); await saveUsers();
+    if (invalidateSessions && user.id === req.user.id) issueSessionCookie(res, user); recordActivity(`User “${user.username}” updated · ${user.role === "administrator" ? "Administrator" : user.role === "viewer" ? "Viewer" : "Standard User"} · ${user.status}.`);
     res.json(publicUser(user));
   } catch (error) { next(error); }
 });
@@ -1419,9 +1673,10 @@ app.post("/api/users/:id/mfa/disable", async (req, res, next) => {
     if (!user) return res.status(404).json({ error: "User not found." });
     if (!user.mfaEnabled) return res.status(400).json({ error: "Two-factor authentication isn\u2019t enabled for this user." });
     user.mfaEnabled = false; user.mfaSecret = null; user.mfaPendingSecret = null; user.mfaRecoveryCodes = [];
-    user.updatedAt = new Date().toISOString();
+    rotateSessionVersion(user);
     await saveUsers();
-    recordActivity(`Administrator “${req.user.username}” disabled two-factor authentication for “${user.username}”.`, "warning");
+    if (user.id === req.user.id) issueSessionCookie(res, user);
+    recordActivity(`Administrator “${req.user.username}” disabled two-factor authentication for “${user.username}”. That user’s sessions and API tokens were signed out.`, "warning");
     res.json({ ok: true });
   } catch (error) { next(error); }
 });
@@ -1467,6 +1722,16 @@ app.get("/api/support-report", async (req, res, next) => {
 });
 
 // --- Upstream health, Logs, and Performance (request throughput/trend) endpoints --------------------------------
+// --- Docker: list running containers for the target picker -----------------------------------
+app.get("/api/docker/containers", async (req, res, next) => {
+  try {
+    if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+    if (!dockerSocketMounted) return res.status(409).json({ error: "Docker socket not detected \u2014 mount /var/run/docker.sock into this container to enable container selection." });
+    if (settings.dockerIntegration?.enabled !== true) return res.status(409).json({ error: "Docker integration is turned off. Enable it in Administration \u2192 Gateway defaults." });
+    res.json({ checkedAt: new Date().toISOString(), containers: await dockerContainerOptions() });
+  } catch (error) { next(error); }
+});
+
 app.get("/api/upstreams", (req, res) => res.json(proxies.map(publicProxy)));
 app.post("/api/upstreams/check", async (req, res, next) => {
   try { res.json(await checkAllProxies()); }
@@ -1486,17 +1751,34 @@ app.get("/api/performance", (req, res, next) => {
     const bucketMinutes = hours > 24 ? 60 : 15;
     const breakdownByHost = new Map();
     for (const row of storage.performanceErrorBreakdown()) { if (!breakdownByHost.has(row.host)) breakdownByHost.set(row.host, []); breakdownByHost.get(row.host).push({ status: row.status, count: row.count }); }
+    const percentiles = storage.performancePercentiles(0.95);
+    const topPaths = storage.performanceTopPaths(10);
     res.json({
       checkedAt: new Date().toISOString(),
       liveRequests: storage.performanceLiveCount(60),
-      routes: storage.performanceRoutes().map(row => ({ host: row.host, hourRequests: row.hourRequests || 0, hourErrors: row.hourErrors || 0, hourAvgMs: row.hourAvgMs != null ? Math.round(row.hourAvgMs) : null, dayRequests: row.dayRequests || 0, dayErrors: row.dayErrors || 0, dayAvgMs: row.dayAvgMs != null ? Math.round(row.dayAvgMs) : null, errorBreakdown: (breakdownByHost.get(row.host) || []).slice(0, 3) })),
+      routes: storage.performanceRoutes().map(row => ({ host: row.host, hourRequests: row.hourRequests || 0, hourErrors: row.hourErrors || 0, hourAvgMs: row.hourAvgMs != null ? Math.round(row.hourAvgMs) : null, hourBytes: row.hourBytes || 0, hourVisitors: row.hourVisitors || 0, dayRequests: row.dayRequests || 0, dayErrors: row.dayErrors || 0, dayAvgMs: row.dayAvgMs != null ? Math.round(row.dayAvgMs) : null, dayBytes: row.dayBytes || 0, dayVisitors: row.dayVisitors || 0, hourP95Ms: percentiles[row.host]?.hourP95 ?? null, dayP95Ms: percentiles[row.host]?.dayP95 ?? null, topPaths: topPaths[row.host] || [], errorBreakdown: breakdownByHost.get(row.host) || [] })),
       trend: storage.performanceTrend(host, hours, bucketMinutes),
+      slowest: storage.performanceSlowest(host, hours, 20),
       hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort()
     });
   } catch (error) { next(error); }
 });
 
 // --- Icon search and per-entity icon upload/URL/removal -----------------------------------------------------------
+// --- "View Caddy config": the annotated Caddyfile block for one route -------------------------
+// Streaming hosts are deliberately excluded: they are raw TCP/UDP forwards handled by
+// startStream() through net/dgram, and never appear in the Caddyfile at all.
+app.get("/api/:kind/:id/caddy-config", (req, res, next) => {
+  try {
+    const kind = String(req.params.kind);
+    if (!["sites", "proxies", "redirects"].includes(kind)) return res.status(400).json({ error: "A Caddy configuration view is only available for hosted sites, proxy hosts, and redirect hosts. Streaming hosts forward raw TCP/UDP traffic and are not routed through Caddy." });
+    const collection = kind === "sites" ? sites : kind === "proxies" ? proxies : redirects;
+    const item = collection.find(value => value.id === req.params.id);
+    if (!item) return res.status(404).json({ error: "That route no longer exists." });
+    res.json({ kind, id: item.id, name: item.name || item.domain || item.id, config: prettyCaddyConfig(kind, item) });
+  } catch (error) { next(error); }
+});
+
 app.get("/api/icons/search", async (req, res, next) => {
   try {
     const query = String(req.query.q || "").trim().toLowerCase().slice(0, 80);
@@ -1929,6 +2211,7 @@ app.patch("/api/settings", async (req, res, next) => {
       const value = req.body.defaultSite; const mode = ["welcome","themed404","abort","redirect","custom"].includes(value.mode) ? value.mode : "themed404";
       settings.defaultSite = { mode, redirectUrl: String(value.redirectUrl || "").trim(), redirectCode: [301,302,307,308].includes(Number(value.redirectCode)) ? Number(value.redirectCode) : 302, preservePath: value.preservePath !== false, title: String(value.title || "").slice(0, 100), message: String(value.message || "").slice(0, 500), customHtml: String(value.customHtml || "").slice(0, 250000) };
     }
+    if (req.body.dockerIntegration) settings.dockerIntegration = { enabled: req.body.dockerIntegration.enabled === true && dockerSocketMounted };
     if (req.body.backups) settings.backups = { ...settings.backups, ...req.body.backups, hour: Math.min(Math.max(Number(req.body.backups.hour) || 0, 0), 23), retention: Math.min(Math.max(Number(req.body.backups.retention) || 7, 1), 100) };
     if (req.body.certificateHealth) {
       const warningDays = Math.min(Math.max(Number(req.body.certificateHealth.warningDays) || 30, 8), 120);
@@ -1952,6 +2235,7 @@ app.post("/api/factory-reset", async (req, res, next) => { try { if (String(req.
 // --- Backups: list / create / import / download / restore / delete -----------------------------------------------------
 app.use("/api/backups", (req, res, next) => req.user.role === "administrator" ? next() : res.status(403).json({ error: "Administrator access is required." }));
 app.get("/api/backups", async (req, res, next) => { try { res.json(await listBackups()); } catch (error) { next(error); } });
+app.get("/api/backups/history", (req, res, next) => { try { res.json(storage.listBackupEvents(500)); } catch (error) { next(error); } });
 app.post("/api/backups", async (req, res, next) => {
   try { const backup = await createBackup(req.body.type, Boolean(req.body.includeLogs), "site-gateway-backup", String(req.body.password || "")); res.status(201).json(backup); } catch (error) { next(error); }
 });
@@ -1961,7 +2245,9 @@ app.post("/api/backups/import", upload.single("backup"), async (req, res, next) 
     const { zip } = await openBackup(req.file.path, String(req.body.password || "")); const manifest = JSON.parse(zip.readAsText("manifest.json") || "null");
     if (!manifest || manifest.product !== "Site Gateway" || ![1,2].includes(manifest.format)) throw Object.assign(new Error("This is not a supported Site Gateway backup."), { status: 400 });
     const filename = `imported-${new Date().toISOString().replace(/[:.]/g, "-")}.sgbackup`; await fsp.rename(req.file.path, path.join(backupsDir, filename));
-    recordActivity(`Backup imported from this computer.`); res.status(201).json({ filename, manifest });
+    recordActivity(`Backup imported from this computer.`);
+    try { storage.recordBackupEvent({ type: "imported", filename, backupType: manifest.type || "unknown", sizeBytes: (await fsp.stat(path.join(backupsDir, filename))).size, actorUserId: req.user.id, status: "success" }); } catch (error) { console.warn("Could not record backup history event:", error.message); }
+    res.status(201).json({ filename, manifest });
   } catch (error) { if (req.file) await fsp.rm(req.file.path, { force: true }); next(error); }
 });
 app.get("/api/backups/:filename/download", async (req, res, next) => {
@@ -1971,7 +2257,15 @@ app.post("/api/backups/:filename/restore", async (req, res, next) => {
   try { res.json({ ok: true, manifest: await restoreBackup(path.basename(req.params.filename), String(req.body.password || "")) }); } catch (error) { next(error); }
 });
 app.delete("/api/backups/:filename", async (req, res, next) => {
-  try { const filename = path.basename(req.params.filename); if (!filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Invalid backup." }); await fsp.rm(path.join(backupsDir, filename)); recordActivity(`Backup ${filename} deleted.`); res.status(204).end(); } catch (error) { next(error); }
+  try {
+    const filename = path.basename(req.params.filename);
+    if (!filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Invalid backup." });
+    const existing = (await listBackups()).find(item => item.filename === filename);
+    await fsp.rm(path.join(backupsDir, filename));
+    recordActivity(`Backup ${filename} deleted.`);
+    try { storage.recordBackupEvent({ type: "deleted", filename, backupType: existing?.type || (filename.startsWith("pre-restore") ? "safety" : "unknown"), sizeBytes: existing?.size ?? null, actorUserId: req.user.id, status: "success" }); } catch (error) { console.warn("Could not record backup history event:", error.message); }
+    res.status(204).end();
+  } catch (error) { next(error); }
 });
 
 function humanizeGatewayActivityError(message) { const text = String(message || "Unexpected gateway error"); if (/upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(text)) return "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; if (/upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(text)) return "Gateway configuration rejected: HTTPS upstream requires HTTPS transport settings. Change the upstream URL or transport setting."; if (/duplicate.*address|already.*site address/i.test(text)) return "Gateway configuration rejected: This hostname or address is already used by another host. Choose a unique hostname and port."; if (/dial tcp|no such host|lookup .* no such host|upstream.*(invalid|malformed)/i.test(text)) return "Gateway configuration rejected: The upstream address could not be reached or is invalid. Check the hostname, IP address, and port."; if (/invalid hostname|host name.*invalid|malformed.*host/i.test(text)) return "Gateway configuration rejected: The hostname is not valid. Use a valid domain name without a protocol or path."; if (/unrecognized directive|unknown directive|parsing caddyfile tokens/i.test(text)) return "Gateway configuration rejected: The gateway configuration contains an unsupported or malformed directive. Check the selected host settings."; if (/certificate|tls.*(config|handshake)|no certificate/i.test(text)) return "Gateway configuration rejected: The TLS certificate configuration is invalid or unavailable. Check the certificate, key, and HTTPS settings."; return text.replace(/^Gateway configuration was rejected:\s*/i, "Gateway configuration rejected: ").replace(/\s+Details:\s+[\s\S]*$/i, ""); }

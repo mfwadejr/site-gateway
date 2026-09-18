@@ -39,7 +39,7 @@ function renderRedirects() {
   // The completed response is the only point at which this view should be replaced.
   if (!state.loaded) return;
   empty.classList.toggle("hidden", !state.loaded || state.redirects.length > 0);
-  list.innerHTML = state.redirects.map(item => `<article class="site-card redirect-card" data-redirect-id="${item.id}" data-kind="redirect"><div class="card-top"><div class="site-icon">${featureIcon(item,"RD")}</div><div class="menu-wrap"><button class="icon-button menu-button" aria-label="Redirect options" aria-expanded="false">•••</button><div class="menu"><button data-redirect-action="edit">Edit redirect host</button><button data-redirect-action="icon">Change icon</button><button data-redirect-action="toggle">${item.enabled ? "Disable" : "Enable"}</button><button data-redirect-action="delete" class="danger-text">Delete redirect host</button></div></div></div><h2>${extendedEscape(item.name)}</h2><p class="address">${extendedEscape(item.domain)}</p><p class="gateway-address">→ ${extendedEscape(item.target)}${item.preservePath ? " · preserves path" : ""}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${item.enabled ? "running" : "disabled"}"></span>${item.enabled ? "Running" : "Disabled"}</span><div class="card-actions"><span class="chip">HTTP ${item.code}</span></div></div></article>`).join("");
+  list.innerHTML = state.redirects.map(item => `<article class="site-card redirect-card" data-redirect-id="${item.id}" data-kind="redirect"><div class="card-top"><div class="site-icon">${featureIcon(item,"RD")}</div><div class="menu-wrap"><button class="icon-button menu-button" aria-label="Redirect options" aria-expanded="false">•••</button><div class="menu"><button data-redirect-action="edit">Edit redirect host</button><button data-redirect-action="icon">Change icon</button><button data-redirect-action="caddy-config">View Caddy config</button><button data-redirect-action="toggle">${item.enabled ? "Disable" : "Enable"}</button><button data-redirect-action="delete" class="danger-text">Delete redirect host</button></div></div></div><h2>${extendedEscape(item.name)}</h2><p class="address">${extendedEscape(item.domain)}</p><p class="gateway-address">→ ${extendedEscape(item.target)}${item.preservePath ? " · preserves path" : ""}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${item.enabled ? "running" : "disabled"}"></span>${item.enabled ? "Running" : "Disabled"}</span><div class="card-actions"><span class="chip">HTTP ${item.code}</span></div></div></article>`).join("");
 }
 
 
@@ -193,7 +193,7 @@ window.renderCredentialEditor = renderCredentialEditor;
 // Redirect card options menu actions: edit / change icon / delete.
 document.querySelector("#redirect-list").addEventListener("click", async event => {
   const button = event.target.closest("[data-redirect-action]"), card = button?.closest("[data-redirect-id]"); if (!button || !card) return; const item = state.redirects.find(value => value.id === card.dataset.redirectId); if (!item) return;
-  try { if (button.dataset.redirectAction === "edit") { const form = document.querySelector("#redirect-form"); form.reset(); form.dataset.editing = item.id; for (const key of ["name","domain","target","code","tls"]) form.elements[key].value = item[key] || ""; form.elements.preservePath.checked = item.preservePath !== false; document.querySelector("#redirect-dialog").showModal(); return; } if (button.dataset.redirectAction === "delete") { if (!confirm(`Delete redirect “${item.name}”?`)) return; await api(`/api/redirects/${item.id}`, { method:"DELETE" }); } else await api(`/api/redirects/${item.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ enabled:!item.enabled }) }); await refresh(); toast("Redirect Host updated."); } catch (error) { toast(error.message); }
+  try { if (button.dataset.redirectAction === "edit") { const form = document.querySelector("#redirect-form"); form.reset(); form.dataset.editing = item.id; for (const key of ["name","domain","target","code","tls"]) form.elements[key].value = item[key] || ""; form.elements.preservePath.checked = item.preservePath !== false; document.querySelector("#redirect-dialog").showModal(); return; } if (button.dataset.redirectAction === "delete") { if (!confirm(`Delete redirect “${item.name}”?`)) return; await api(`/api/redirects/${item.id}`, { method:"DELETE" }); } else if (button.dataset.redirectAction === "toggle") await api(`/api/redirects/${item.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ enabled:!item.enabled }) }); else return; await refresh(); toast("Redirect Host updated."); } catch (error) { toast(error.message); }
 });
 
 
@@ -275,7 +275,7 @@ document.addEventListener("click", event => { if (event.target.closest(".create-
 function decorateAccessToggles() { document.querySelectorAll("#access-list [data-access-id]").forEach(card => { const item = state.accessLists.find(value => value.id === card.dataset.accessId); const footer = card.querySelector(".card-footer"); if (!footer || !item) return; card.querySelectorAll(".menu [data-access-action=toggle]").forEach(button => button.remove()); if (footer.querySelector("[data-access-action=toggle]")) return; let actions = footer.querySelector(".card-actions"); if (!actions) { actions = document.createElement("div"); actions.className = "card-actions"; footer.append(actions); } const toggle = document.createElement("button"); toggle.className = "toggle " + (item.enabled !== false ? "on" : ""); toggle.dataset.accessAction = "toggle"; toggle.setAttribute("aria-label", (item.enabled !== false ? "Disable" : "Enable") + " Access List"); toggle.innerHTML = "<span></span>"; actions.append(toggle); }); }
 function decorateGroupCards() { document.querySelectorAll('[data-admin-panel="groups"] .group-card').forEach(card => { const group = state.groups.find(value => value.id === card.querySelector("[data-group-action]")?.dataset.groupId); if (!group) return; const icon = card.querySelector(".site-icon"); if (icon && icon.textContent.trim() === "GR") icon.innerHTML = featureIcon(group, "GR"); const menu = card.querySelector(".menu"); if (menu && !menu.querySelector("[data-group-action=icon]")) { const button = document.createElement("button"); button.dataset.groupAction = "icon"; button.dataset.groupId = group.id; button.textContent = "Change icon"; menu.prepend(button); } }); }
 document.addEventListener("click", event => { const button = event.target.closest("[data-group-action=icon]"); if (!button) return; event.preventDefault(); event.stopImmediatePropagation(); openIconPicker("groups", button.dataset.groupId); }, true);
-function normalizeAdminTabOrder() { const tabs = document.querySelector(".admin-tabs"); if (!tabs) return; const order = ["users","groups","defaults","audit","backups","retention","danger"]; order.forEach((name, index) => { const button = tabs.querySelector(`[data-admin-tab="${name}"]`); if (button) { if (name === "retention") button.textContent = "Logs & Retention"; tabs.append(button); } }); }
+function normalizeAdminTabOrder() { const tabs = document.querySelector(".admin-tabs"); if (!tabs) return; const order = ["users","groups","defaults","audit","backups","retention","api","danger"]; order.forEach((name, index) => { const button = tabs.querySelector(`[data-admin-tab="${name}"]`); if (button) { if (name === "retention") button.textContent = "Logs & Retention"; tabs.append(button); } }); }
 document.addEventListener("click", event => { if (event.target.closest(".admin-tabs")) setTimeout(normalizeAdminTabOrder, 0); });
 
 // --- Backup encryption password field: placeholder/visibility polish -------------
@@ -345,3 +345,214 @@ document.addEventListener("click", async event => {
     renderConfigDriftCallout();
   } catch (error) { toast(error.message); } finally { button.disabled = false; }
 });
+
+
+// ============================================================================================
+// v0.15.0 additions: API access tokens, backup history, and the Docker container picker.
+// ============================================================================================
+
+// Two overlapping rectangles, inline so it inherits currentColor from .icon-button.
+const featureCopyIcon = '<svg class="copy-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.4" y="1.4" width="9.2" height="9.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4"></rect><rect x="1.4" y="5.4" width="9.2" height="9.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4"></rect></svg>';
+function featureDialog(id) {
+  let dialog = document.querySelector(`#${id}`);
+  if (!dialog) { dialog = document.createElement("dialog"); dialog.id = id; document.body.append(dialog); }
+  return dialog;
+}
+
+
+// --- Administration > API Access ------------------------------------------------------------
+// Follows the renderAuditPanel()/renderRetentionPanel() pattern: the tab and its panel are
+// created once, then the table is re-rendered from /api/tokens on demand.
+function apiTokenStatus(token) {
+  if (token.revoked) return { dot: "disabled", label: "Revoked" };
+  if (token.expiresAt && new Date(token.expiresAt).getTime() <= Date.now()) return { dot: "error", label: "Expired" };
+  return { dot: "running", label: "Active" };
+}
+async function loadApiTokens() {
+  const list = document.querySelector("#api-token-list"); if (!list) return;
+  try {
+    const tokens = await api("/api/tokens");
+    list.innerHTML = tokens.length ? tokens.map(token => {
+      const status = apiTokenStatus(token);
+      return `<article class="data-row api-token-row ${token.revoked ? "revoked" : ""}" data-token-id="${extendedEscape(token.id)}"><span class="status-dot ${status.dot}"></span><div><strong>${extendedEscape(token.name)}</strong><small>${extendedEscape(status.label)} · ${extendedEscape(token.ownerUsername || "unknown")}</small></div><div><span class="chip api-token-chip">${extendedEscape(token.prefix)}…</span><small>${token.scope === "read-only" ? "Read-only" : "Full access"}</small></div><div><strong>${extendedEscape(formatTime(token.createdAt))}</strong><small>${token.lastUsedAt ? `Last used ${extendedEscape(formatTime(token.lastUsedAt))}` : "Never used"}${token.expiresAt ? ` · expires ${extendedEscape(formatTime(token.expiresAt))}` : ""}</small></div><div class="row-actions">${token.revoked ? "" : '<button class="button secondary danger-text" data-token-action="revoke">Revoke</button>'}</div></article>`;
+    }).join("") : '<p class="quiet-state padded">No API tokens have been issued yet.</p>';
+  } catch (error) { list.innerHTML = `<p class="quiet-state padded">${extendedEscape(error.message)}</p>`; }
+}
+function renderApiTokensPanel() {
+  if (state.user?.role !== "administrator") return;
+  const tabs = document.querySelector(".admin-tabs"), users = document.querySelector('[data-admin-panel="users"]');
+  if (!tabs || !users) return;
+  let tab = tabs.querySelector('[data-admin-tab="api"]');
+  if (!tab) { tab = document.createElement("button"); tab.dataset.adminTab = "api"; tab.textContent = "API Access"; tabs.append(tab); }
+  let panel = document.querySelector('[data-admin-panel="api"]');
+  if (!panel) { panel = document.createElement("section"); panel.dataset.adminPanel = "api"; panel.className = "settings-panel hidden"; users.parentElement.append(panel); }
+  if (panel.dataset.ready) return;
+  panel.dataset.ready = "1";
+  panel.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">Programmatic access</p><h2>API access tokens</h2><p class="muted">Issue bearer tokens for scripts and integrations. A token acts as the administrator who issued it, and is shown in full only once. Changing that administrator’s password, or disabling their account, revokes every token they issued.</p></div><div class="row-actions"><button id="create-api-token" class="button primary" type="button">Create token</button></div></div><div id="api-token-list" class="data-list"><p class="quiet-state padded">Open this tab to load API tokens.</p></div>';
+  tab.addEventListener("click", async () => {
+    document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item === tab));
+    document.querySelectorAll("[data-admin-panel]").forEach(item => item.classList.toggle("hidden", item !== panel));
+    await loadApiTokens();
+  });
+}
+// Shows a freshly issued token exactly once. No "x" close button -- Close only.
+function showIssuedApiToken(result) {
+  const dialog = featureDialog("api-token-created-dialog");
+  dialog.innerHTML = `<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">API access</p><h2>Copy your token now</h2></div><button type="button" class="icon-button" id="copy-api-token" aria-label="Copy token" title="Copy token">${featureCopyIcon}</button></div><p class="muted">This is the only time Site Gateway will show this token. Store it somewhere safe — only its hash is kept.</p><code class="api-token-secret">${extendedEscape(result.token)}</code><div class="dialog-actions"><button value="cancel" class="button primary">Close</button></div></form>`;
+  dialog.querySelector("#copy-api-token").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(result.token); toast("API token copied."); }
+    catch { toast("Your browser blocked clipboard access.", "error"); }
+  });
+  dialog.showModal();
+}
+document.addEventListener("click", async event => {
+  if (!event.target.closest("#create-api-token")) return;
+  const dialog = featureDialog("create-api-token-dialog");
+  dialog.innerHTML = '<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">API access</p><h2>Create an API token</h2></div></div><p class="muted">Re-enter your administrator credentials to confirm. The token inherits your role.</p><label>Token name<input name="name" maxlength="60" required placeholder="Home Assistant integration"></label><label>Scope<select name="scope"><option value="full">Full access — read and change configuration</option><option value="read-only">Read-only — GET requests only</option></select></label><label>Expires after <span class="optional">Optional</span><input name="expiresInDays" type="number" min="1" max="3650" placeholder="Leave empty for no expiry"><small>Number of days. Leave empty for a token that never expires.</small></label><label>Administrator username<input name="username" autocomplete="username" required></label><label>Administrator password<input name="password" type="password" autocomplete="current-password" required></label><p class="error" id="api-token-error"></p><div class="dialog-actions"><button value="cancel" formnovalidate class="button secondary">Cancel</button><button value="confirm" class="button primary">Create token</button></div></form>';
+  dialog.showModal();
+  const outcome = await new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true }));
+  if (outcome !== "confirm") return;
+  const form = new FormData(dialog.querySelector("form"));
+  const expiresInDays = Number(form.get("expiresInDays"));
+  try {
+    const result = await api("/api/tokens", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: form.get("name"), scope: form.get("scope"), expiresInDays: Number.isFinite(expiresInDays) && expiresInDays > 0 ? expiresInDays : null, username: form.get("username"), password: form.get("password") }) });
+    await loadApiTokens();
+    showIssuedApiToken(result);
+  } catch (error) { toast(error.message, "error"); }
+});
+document.addEventListener("click", async event => {
+  const button = event.target.closest('[data-token-action="revoke"]'); if (!button) return;
+  const row = button.closest("[data-token-id]"); if (!row) return;
+  try { await api(`/api/tokens/${encodeURIComponent(row.dataset.tokenId)}`, { method: "DELETE" }); await loadApiTokens(); toast("API token revoked."); }
+  catch (error) { toast(error.message, "error"); }
+});
+
+
+// --- Administration > Backup & restore: history timeline --------------------------------------
+// Deliberately never renders a raw .sgbackup filename: every entry is described by what it
+// was and when it happened. Filenames stay in the data for the restore/download actions above.
+function backupHistoryLabel(event) {
+  const kind = event.backupType === "complete" ? "Complete backup" : event.backupType === "configuration" ? "Configuration backup" : event.backupType === "safety" ? "Safety backup (pre-restore)" : "Backup";
+  const when = formatTime(event.createdAt);
+  const lower = `${kind.charAt(0).toLowerCase()}${kind.slice(1)}`;
+  if (event.type === "restored") return `Restored from ${lower} — ${when}`;
+  if (event.type === "deleted") return `Deleted ${lower} — ${when}`;
+  if (event.type === "imported") return `Imported ${lower} — ${when}`;
+  return `${kind} — ${when}`;
+}
+async function renderBackupHistory() {
+  const panel = document.querySelector('[data-admin-panel="backups"]'); if (!panel || state.user?.role !== "administrator") return;
+  let section = panel.querySelector(".backup-history-section");
+  if (!section) {
+    section = document.createElement("div");
+    section.className = "dashboard-panel backup-history-section";
+    section.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">History</p><h2>Backup history</h2><p class="muted">Every backup, restore, import, and deletion — including failed attempts — recorded independently of what is currently stored on disk.</p></div></div><div id="backup-history-list" class="backup-history-list"><p class="quiet-state">Loading backup history…</p></div>';
+    panel.append(section);
+  }
+  const list = section.querySelector("#backup-history-list");
+  if (panel.classList.contains("hidden")) return;
+  try {
+    const events = await api("/api/backups/history");
+    list.innerHTML = events.length ? events.map(item => {
+      const failed = item.status === "failed";
+      const detail = failed ? `Failed — ${item.errorMessage || "no further detail recorded"}` : [item.sizeBytes ? formatBytes(item.sizeBytes) : "", item.safetyBackupFilename ? "A safety backup was taken first" : ""].filter(Boolean).join(" · ") || "Completed";
+      return `<div class="activity-tile"><span class="activity-mark ${failed ? "bad" : ""}">${failed ? "!" : "✓"}</span><span class="backup-history-copy"><strong>${extendedEscape(backupHistoryLabel(item))}</strong><small class="${failed ? "failed" : ""}" title="${extendedEscape(formatTime(item.createdAt))}">${extendedEscape(detail)}</small></span></div>`;
+    }).join("") : '<p class="quiet-state">No backup activity recorded yet.</p>';
+  } catch (error) { list.innerHTML = `<p class="quiet-state">${extendedEscape(error.message)}</p>`; }
+}
+
+
+// --- Docker container picker ------------------------------------------------------------------
+// The Administration toggle is disabled whenever the socket is not mounted, regardless of the
+// saved value, so the integration can never be switched on without its prerequisite.
+function renderDockerPanel() {
+  if (state.user?.role !== "administrator") return;
+  const panel = document.querySelector('[data-admin-panel="defaults"]'); if (!panel) return;
+  const socketMounted = state.config?.docker?.socketMounted === true;
+  const enabled = socketMounted && (state.settings?.dockerIntegration?.enabled === true || state.config?.docker?.enabled === true);
+  let section = panel.querySelector(".docker-integration-section");
+  if (!section) {
+    section = document.createElement("div");
+    section.className = "dashboard-panel docker-integration-section";
+    section.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">Integrations</p><h2>Docker container selection</h2></div></div><p class="muted" id="docker-integration-help"></p><label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
+    panel.append(section);
+    section.querySelector("#docker-integration-toggle").addEventListener("change", async event => {
+      const checkbox = event.currentTarget;
+      checkbox.disabled = true;
+      try { state.settings = await api("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dockerIntegration: { enabled: checkbox.checked } }) }); toast(checkbox.checked ? "Container selection enabled." : "Container selection disabled."); }
+      catch (error) { checkbox.checked = !checkbox.checked; toast(error.message, "error"); }
+      finally { checkbox.disabled = false; renderDockerPanel(); decorateContainerPickers(); }
+    });
+  }
+  const toggle = section.querySelector("#docker-integration-toggle");
+  toggle.checked = enabled;
+  toggle.disabled = !socketMounted;
+  section.querySelector("#docker-integration-help").textContent = socketMounted
+    ? "Site Gateway reads the Docker socket read-only to list running containers, and only offers containers that share a Docker network with it."
+    : "Docker socket not detected — mount /var/run/docker.sock into this container to enable container selection.";
+  section.querySelector(".check-control").classList.toggle("is-disabled", !socketMounted);
+}
+// Adds the "Pick from running containers" button beside every target field, and keeps its
+// visibility in step with the integration's current state.
+function decorateContainerPickers() {
+  const available = state.config?.docker?.socketMounted === true && (state.settings?.dockerIntegration?.enabled === true || state.config?.docker?.enabled === true);
+  for (const selector of ["#proxy-form [name=target]", "#settings-form [name=target]", "#stream-form [name=target]"]) {
+    const input = document.querySelector(selector); if (!input) continue;
+    let wrap = input.closest(".target-with-picker");
+    if (!wrap) {
+      wrap = document.createElement("span");
+      wrap.className = "target-with-picker";
+      input.replaceWith(wrap);
+      wrap.append(input);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button secondary container-picker-trigger";
+      button.textContent = "Pick container";
+      wrap.append(button);
+    }
+    wrap.querySelector(".container-picker-trigger").classList.toggle("hidden", !available);
+  }
+}
+document.addEventListener("click", async event => {
+  const trigger = event.target.closest(".container-picker-trigger"); if (!trigger) return;
+  event.preventDefault();
+  const input = trigger.closest(".target-with-picker")?.querySelector("input"); if (!input) return;
+  const dialog = featureDialog("container-picker-dialog");
+  dialog.innerHTML = '<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">Docker</p><h2>Running containers</h2></div></div><p class="muted">Loading containers…</p><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button></div></form>';
+  dialog.showModal();
+  let containers = [];
+  try { containers = (await api("/api/docker/containers")).containers || []; }
+  catch (error) {
+    dialog.innerHTML = `<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">Docker</p><h2>Containers unavailable</h2></div></div><p class="muted">${extendedEscape(error.message)}</p><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`;
+    return;
+  }
+  const choices = containers.map(container => {
+    const ports = container.ports?.length ? container.ports.join(", ") : "no published container ports";
+    const detail = container.reachable ? `${container.image} · ports ${ports}` : `${container.image} · ${container.reason}`;
+    return `<button type="button" class="container-choice ${container.reachable ? "" : "unreachable"}" ${container.reachable ? `data-container-name="${extendedEscape(container.name)}" data-container-port="${container.ports?.[0] || ""}"` : "disabled"}><strong>${extendedEscape(container.name)}</strong><small>${extendedEscape(detail)}</small></button>`;
+  }).join("");
+  dialog.innerHTML = `<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">Docker</p><h2>Running containers</h2></div></div><p class="muted">Containers that do not share a Docker network with Site Gateway are dimmed — Site Gateway could not reach them by name. You can always type a target by hand instead.</p><div class="container-picker-list">${choices || '<p class="quiet-state">No running containers were reported.</p>'}</div><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button></div></form>`;
+  dialog.querySelector(".container-picker-list")?.addEventListener("click", pickEvent => {
+    const choice = pickEvent.target.closest("[data-container-name]"); if (!choice) return;
+    const name = choice.dataset.containerName, port = choice.dataset.containerPort || "80";
+    // Docker's embedded DNS resolves the container name on a shared network, so use the
+    // name rather than an IP address, which changes whenever the container restarts.
+    input.value = input.type === "url" ? `http://${name}:${port}` : `${name}:${port}`;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    dialog.close();
+    toast(`Target set to ${name}:${port}.`);
+  });
+});
+
+
+// --- Wire the new panels into the shared refresh entry point ----------------------------------
+const baseRenderExtendedViews = window.renderExtendedViews;
+window.renderExtendedViews = function () {
+  baseRenderExtendedViews();
+  renderApiTokensPanel();
+  renderDockerPanel();
+  decorateContainerPickers();
+  renderBackupHistory();
+  normalizeAdminTabOrder();
+  hideRestrictedControls();
+};

@@ -7,7 +7,7 @@
   <title>Site Gateway</title>
   <meta name="description" content="Host sites, proxy services, and manage HTTPS from one simple dashboard.">
   <link rel="icon" type="image/png" href="/site-gateway-icon-approved.png">
-  <link rel="stylesheet" href="/styles.css?v=0.14.0">
+  <link rel="stylesheet" href="/styles.css?v=0.15.0">
 </head>
 
 <!-- ================================================================
@@ -107,14 +107,14 @@
       <section id="dashboard-view" class="dashboard-view" aria-label="Gateway dashboard">
         <div class="metric-grid">
           <button class="metric-card accent-green" data-target="hosted"><span class="metric-icon">↗</span><span class="metric-label">Hosted sites</span><strong id="dash-hosted-total">0</strong><span id="dash-hosted-detail">None configured</span></button>
-          <button class="metric-card accent-blue" data-target="proxies"><span class="metric-icon">⇌</span><span class="metric-label">Proxy hosts</span><strong id="dash-proxy-total">0</strong><span id="dash-proxy-detail">None configured</span></button>
-          <button class="metric-card accent-blue" data-target="certificates"><span class="metric-icon">▣</span><span class="metric-label">Certificates</span><strong id="dash-tls-total">0</strong><span id="dash-tls-detail">No TLS domains</span></button>
+          <button class="metric-card accent-green" data-target="proxies"><span class="metric-icon">⇌</span><span class="metric-label">Proxy hosts</span><strong id="dash-proxy-total">0</strong><span id="dash-proxy-detail">None configured</span></button>
+          <button class="metric-card accent-green" data-target="certificates"><span class="metric-icon">▣</span><span class="metric-label">Certificates</span><strong id="dash-tls-total">0</strong><span id="dash-tls-detail">No TLS domains</span></button>
         </div>
         <div class="metric-strip">
-          <button class="metric-chip accent-amber" data-target="redirects"><span class="chip-icon">↪</span><span class="chip-copy"><span class="metric-label">Redirect hosts</span><strong id="dash-redirect-total">0</strong></span></button>
-          <button class="metric-chip accent-purple" data-target="streaming"><span class="chip-icon">⇄</span><span class="chip-copy"><span class="metric-label">Streaming hosts</span><strong id="dash-stream-total">0</strong></span></button>
+          <button class="metric-chip accent-green" data-target="redirects"><span class="chip-icon">↪</span><span class="chip-copy"><span class="metric-label">Redirect hosts</span><strong id="dash-redirect-total">0</strong></span></button>
+          <button class="metric-chip accent-green" data-target="streaming"><span class="chip-icon">⇄</span><span class="chip-copy"><span class="metric-label">Streaming hosts</span><strong id="dash-stream-total">0</strong></span></button>
           <div class="metric-chip" id="dash-attention-chip"><span class="chip-icon" id="dash-attention-icon">◈</span><span class="chip-copy"><span class="metric-label">Needs attention</span><strong id="dash-attention-total">0</strong><small id="dash-attention-detail">No current issues</small></span></div>
-          <button class="metric-chip accent-blue" data-target="performance"><span class="chip-icon">∿</span><span class="chip-copy"><span class="metric-label">Throughput</span><strong id="dash-throughput-total">0</strong><small id="dash-throughput-detail">requests / min</small></span></button>
+          <button class="metric-chip accent-green" data-target="performance"><span class="chip-icon">∿</span><span class="chip-copy"><span class="metric-label">Throughput</span><strong id="dash-throughput-total">0</strong><small id="dash-throughput-detail">requests / min</small></span></button>
         </div>
         <div class="dashboard-columns">
           <section class="dashboard-panel health-panel status-healthy" id="health-panel">
@@ -183,15 +183,22 @@
           <div class="panel-heading"><div><p class="eyebrow">Trend</p><h2 id="performance-trend-title">Requests · last 6 hours</h2></div></div>
           <div class="log-filters"><label>Domain<select id="performance-host"><option value="">All domains</option></select></label><label>Range<select id="performance-range"><option value="1">Last hour</option><option value="3">Last 3 hours</option><option value="6" selected>Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option><option value="72">Last 3 days</option><option value="168">Last 7 days</option></select></label></div>
           <p id="performance-summary" class="muted feature-note">No requests recorded yet. <span id="performance-last-checked">Not checked yet.</span></p>
+          <p class="chart-axis-unit">Requests</p>
           <div class="performance-sparkline-wrap">
             <svg id="performance-sparkline" class="performance-sparkline" viewBox="0 0 600 140" preserveAspectRatio="none" aria-label="Request volume trend"></svg>
+            <div id="performance-tooltip" class="performance-tooltip hidden" aria-hidden="true"></div>
             <div id="performance-sparkline-labels" class="performance-sparkline-labels"></div>
           </div>
         </section>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Per-route</p><h2>Throughput by domain</h2></div></div>
-          <p class="muted feature-note">Requests, error rate, and average response time for each configured domain.</p>
-          <div class="table-wrap performance-table-wrap"><table class="performance-table"><thead><tr><th>Domain</th><th>Last hour</th><th>Last 24h</th><th>Avg. response</th></tr></thead><tbody id="performance-rows"></tbody></table></div>
+          <p class="muted feature-note">Requests, error rate, latency, bandwidth, and unique visitors for each configured domain, over the last 24 hours.</p>
+          <div class="table-wrap performance-table-wrap"><table class="performance-table"><thead><tr><th>Domain</th><th>Last hour</th><th>Last 24h</th><th>Avg. response</th><th>p95 response</th><th>Data transferred</th><th>Unique visitors</th><th>Top paths</th></tr></thead><tbody id="performance-rows"></tbody></table></div>
+        </section>
+        <section class="dashboard-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Outliers</p><h2 id="performance-slowest-title">Slowest requests</h2></div></div>
+          <p class="muted feature-note">The individual requests that took longest in the selected window and domain filter.</p>
+          <div id="performance-slowest" class="slowest-list"></div>
         </section>
       </section>
 
@@ -430,6 +437,6 @@
   <div id="toast" class="toast" role="status"></div>
   <div id="update-banner" class="update-banner hidden" role="status"><span>A new version of Site Gateway is available.</span><div class="update-banner-actions"><button id="update-banner-refresh" class="button primary">Refresh</button><button id="update-banner-dismiss" class="text-button">Dismiss</button></div></div>
   <!-- App scripts: core (app.js) then extended views/admin (features.js) -->
-  <script src="/app.js?v=0.14.0" defer></script><script src="/features.js?v=0.14.0" defer></script>
+  <script src="/app.js?v=0.15.0" defer></script><script src="/features.js?v=0.15.0" defer></script>
 </body>
 </html>
