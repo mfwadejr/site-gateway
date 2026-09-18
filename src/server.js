@@ -1013,7 +1013,14 @@ async function dashboardSnapshot() {
       publicIp: publicIpState.address,
       publicIpCheckedAt: publicIpState.checkedAt,
       publicIpError: publicIpState.error,
-      jobs: [{ name: "Upstream checks", enabled: true, schedule: "60s" }, { name: "Scheduled backups", enabled: Boolean(settings.backups?.enabled), schedule: settings.backups?.enabled ? settings.backups.frequency : "off" }, { name: "Log pruning", enabled: Boolean(settings.logsRetention?.pruningEnabled), schedule: settings.logsRetention?.pruningEnabled ? "15m" : "off" }, { name: "Access-log import", enabled: true, schedule: "30s" }, { name: "Public IP check", enabled: true, schedule: "60m" }, { name: "Configuration drift check", enabled: true, schedule: "10m" }]
+      jobs: [
+        { name: "Upstream checks", enabled: true, schedule: "60s", lastRunAt: null },
+        { name: "Scheduled backups", enabled: Boolean(settings.backups?.enabled), schedule: settings.backups?.enabled ? settings.backups.frequency : "off", lastRunAt: settings.backups?.lastRunAt || null, lastStatus: settings.backups?.lastStatus || null },
+        { name: "Log pruning", enabled: Boolean(settings.logsRetention?.pruningEnabled), schedule: settings.logsRetention?.pruningEnabled ? "15m" : "off", lastRunAt: settings.logsRetention?.lastRunAt || null },
+        { name: "Access-log import", enabled: true, schedule: "30s", lastRunAt: null },
+        { name: "Public IP check", enabled: true, schedule: "60m", lastRunAt: publicIpState.checkedAt || null },
+        { name: "Configuration drift check", enabled: true, schedule: "10m", lastRunAt: configDrift.checkedAt || null },
+      ]
     },
     activity: recentActivity
   };

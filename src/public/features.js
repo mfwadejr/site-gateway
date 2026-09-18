@@ -541,7 +541,7 @@ function renderSystemPanel() {
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Integrations</h2></div></div><div id="system-env-status" class="health-grid"></div><div class="system-integrations"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Security status</h2></div></div><div id="system-security" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Sync</h2></div><button type="button" id="system-resync" class="button secondary">Resync now</button></div><p id="system-sync-status" class="muted"></p></div>',
-      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div id="system-jobs" class="dashboard-jobs-list"></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div id="system-jobs" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Storage</p><h2>Disk usage</h2></div></div><div id="system-storage" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Build</p><h2>Version</h2></div></div><div id="system-version" class="muted"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Reload & restart</h2></div></div><p class="muted">Reloading re-applies the current configuration to Caddy with no downtime. Restarting stops and restarts the whole application \u2014 only available when a restart policy is set on the container.</p><div class="row-actions"><button type="button" id="system-reload" class="button secondary">Reload gateway config</button><button type="button" id="system-restart" class="button secondary danger-text" disabled>Restart application</button></div><p id="system-restart-status" class="muted"></p></div>',
@@ -574,7 +574,11 @@ async function renderSystemStatus(panel) {
     version = document.querySelector("#system-version"), jobs = document.querySelector("#system-jobs"),
     syncStatus = document.querySelector("#system-sync-status"), restartButton = document.querySelector("#system-restart"),
     restartStatus = document.querySelector("#system-restart-status");
-  if (jobs) jobs.innerHTML = (state.dashboard?.system?.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${extendedEscape(job.name)}</strong><small>${job.enabled ? `Active \u00b7 ${extendedEscape(job.schedule)}` : "Disabled"}</small></span></div>`).join("") || '<p class="quiet-state">No scheduled jobs reported.</p>';
+  if (jobs) jobs.innerHTML = (state.dashboard?.system?.jobs || []).map(job => {
+    const status = job.enabled ? `Active \u00b7 ${extendedEscape(job.schedule)}` : "Disabled";
+    const lastRun = job.lastRunAt ? `Last run ${extendedEscape(formatTime(job.lastRunAt))}${job.lastStatus && job.lastStatus !== "ok" ? ` \u00b7 ${extendedEscape(job.lastStatus)}` : ""}` : "No run recorded yet";
+    return `<div class="health-tile"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>${extendedEscape(job.name)}</strong><small>${status} \u00b7 ${lastRun}</small></span></div>`;
+  }).join("") || '<p class="quiet-state">No scheduled jobs reported.</p>';
   const envStatus = document.querySelector("#system-env-status");
   if (envStatus) {
     const encryptionAvailable = Boolean(state.config?.backup?.encryptionAvailable);

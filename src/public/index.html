@@ -8,7 +8,7 @@
   <title>Site Gateway</title>
   <meta name="description" content="Host sites, proxy services, and manage HTTPS from one simple dashboard.">
   <link rel="icon" type="image/png" href="/site-gateway-icon-approved.png">
-  <link rel="stylesheet" href="/styles.css?v=0.16.6">
+  <link rel="stylesheet" href="/styles.css?v=0.16.7">
 </head>
 
 <!-- ================================================================
@@ -208,9 +208,9 @@
            Audit log, and Logs & Retention, is inserted dynamically by features.js's
            renderSystemPanel(). -->
       <section id="users-view" class="feature-view hidden">
-        <div class="admin-tabs"><button class="tab-active" data-admin-tab="users">Users</button><button data-admin-tab="groups">Groups</button><button data-admin-tab="defaults">Gateway defaults</button><button data-admin-tab="audit">Audit log</button><button data-admin-tab="backups">Backup & restore</button><button data-admin-tab="retention">Logs & Retention</button><button data-admin-tab="danger" class="danger-tab">Danger Zone</button></div>
+        <div class="admin-tabs"><button data-admin-tab="system">System</button><button class="tab-active" data-admin-tab="users">Users</button><button data-admin-tab="groups">Groups</button><button data-admin-tab="defaults">Gateway defaults</button><button data-admin-tab="audit">Audit log</button><button data-admin-tab="backups">Backup & restore</button><button data-admin-tab="retention">Logs & Retention</button><button data-admin-tab="api">API Access</button><button data-admin-tab="danger" class="danger-tab">Danger Zone</button></div>
         <!-- Users tab -->
-        <section data-admin-panel="users">
+        <section data-admin-panel="system" class="hidden settings-panel"></section><section data-admin-panel="api" class="hidden settings-panel"></section><section data-admin-panel="users">
         <div id="user-summary" class="summary user-summary" aria-label="User summary"></div>
         <div id="user-list" class="user-grid"><p class="quiet-state">Loading users…</p></div>
         </section>
@@ -439,6 +439,6 @@
   <div id="toast" class="toast" role="status"></div>
   <div id="update-banner" class="update-banner hidden" role="status"><span>A new version of Site Gateway is available.</span><div class="update-banner-actions"><button id="update-banner-refresh" class="button primary">Refresh</button><button id="update-banner-dismiss" class="text-button">Dismiss</button></div></div>
   <!-- App scripts: core (app.js) then extended views/admin (features.js) -->
-  <script src="/app.js?v=0.16.6" defer></script><script src="/features.js?v=0.16.6" defer></script><script src="/select-enhance.js?v=0.16.6" defer></script>
+  <script src="/app.js?v=0.16.7" defer></script><script src="/features.js?v=0.16.7" defer></script><script src="/select-enhance.js?v=0.16.7" defer></script>
 </body>
 </html>
