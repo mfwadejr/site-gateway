@@ -282,6 +282,7 @@ header{align-items:flex-end}
 .row-highlight{background:rgba(var(--green-rgb),.08)}
 .user-head-actions{display:flex;align-items:center;gap:10px}
 [data-admin-panel="backups"]>.dashboard-panel{margin-top:var(--space-5)}
+[data-admin-panel="system"]>.dashboard-panel+.dashboard-panel{margin-top:18px}
 .user-role-select{appearance:none!important;-webkit-appearance:none!important;height:44px;min-height:44px;width:100%;box-sizing:border-box;padding:0 42px 0 var(--space-3);line-height:42px;border:1px solid var(--line);border-radius:var(--radius-sm);background-color:var(--panel);color:var(--text);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23f4f7fb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:16px}
 @media(max-width:760px){.data-row{grid-template-columns:auto 1fr}.data-row>div:nth-of-type(n+2){grid-column:2}.feature-summary{gap:var(--space-2)}.feature-summary>div{padding:13px}.log-toolbar{align-items:stretch;flex-direction:column}.log-toolbar label{min-width:0}}
 /* Corrective layout pass: keep controls, indicators, and card footers visually consistent. */

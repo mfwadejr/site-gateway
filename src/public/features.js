@@ -568,7 +568,7 @@ function renderSystemPanel() {
 }
 async function renderSystemStatus(panel) {
   panel = panel || document.querySelector('[data-admin-panel="system"]');
-  if (!panel || panel.classList.contains("hidden")) return;
+  if (!panel) return;
   const security = document.querySelector("#system-security"), storage = document.querySelector("#system-storage"),
     version = document.querySelector("#system-version"), jobs = document.querySelector("#system-jobs"),
     syncStatus = document.querySelector("#system-sync-status"), restartButton = document.querySelector("#system-restart"),
