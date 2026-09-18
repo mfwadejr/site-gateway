@@ -193,7 +193,8 @@ function renderDashboard() {
   $("#dash-attention-chip").classList.toggle("accent-green", data.attention.length === 0);
   $("#dash-attention-icon").textContent = data.attention.length > 0 ? "!" : "✓";
   $("#dash-throughput-total").textContent = data.throughput?.liveRequests ?? 0;
-  const hasErrors = data.attention.length > 0, isChecking = [data.gateway, data.services.http, data.services.https].some(service => service.status === "checking"), hasNothingRunning = !data.hosted.running && !data.proxies.running;
+  const panelStreaming = data.streamingPorts || { total: 0, listening: 0 }, panelUpstreams = data.upstreams || { total: 0, healthy: 0, unhealthy: 0 };
+  const hasErrors = data.gateway.status === "error" || data.services.http.status === "error" || data.services.https.status === "error" || !data.services.storage.healthy || (panelStreaming.total > 0 && panelStreaming.listening !== panelStreaming.total) || (panelUpstreams.total > 0 && panelUpstreams.unhealthy > 0), isChecking = [data.gateway, data.services.http, data.services.https].some(service => service.status === "checking"), hasNothingRunning = !data.hosted.running && !data.proxies.running;
   const overall = $("#overall-health");
   overall.className = `health-badge ${hasErrors ? "error" : isChecking || hasNothingRunning ? "warning" : "healthy"}`;
   overall.textContent = hasErrors ? "Needs attention" : isChecking ? "Checking" : hasNothingRunning ? "Idle" : "Healthy";
@@ -226,7 +227,10 @@ function renderDashboard() {
   $("#system-public-ip-detail").textContent = data.system.publicIpError ? `Check failed · ${data.system.publicIpError}` : data.system.publicIpCheckedAt ? `Checked ${formatTime(data.system.publicIpCheckedAt)}` : "Not yet checked";
   $("#attention-panel").classList.toggle("is-clear", data.attention.length === 0);
   $("#dashboard-lower-columns").classList.toggle("attention-clear", data.attention.length === 0);
-  $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => `<${item.target ? "button" : "div"} class="attention-tile ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`).join("") : '<div class="all-clear"><span class="status-dot running"></span><span>Everything looks good — no issues to review.</span></div>';
+  $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => item.kind === "drift"
+    ? `<div class="attention-tile drift-tile"><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span><button type="button" class="button secondary" data-drift-resync>Resync now</button></div>`
+    : `<${item.target ? "button" : "div"} class="attention-tile ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`
+  ).join("") : '<div class="all-clear"><span class="status-dot running"></span><span>Everything looks good — no issues to review.</span></div>';
   $("#activity-list").innerHTML = data.activity.length ? data.activity.slice(0, 5).map(item => `<div class="activity-tile"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" || item.status === "warning" ? "!" : "✓"}</span><span class="activity-copy"><strong>${escapeHtml(item.message)}</strong><small title="${escapeHtml(formatTime(item.at))}">${escapeHtml(formatRelativeTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No recent activity.</p>';
 }
 
@@ -630,7 +634,7 @@ function showTopPaths(host, paths) {
   let dialog = document.querySelector("#top-paths-dialog");
   if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "top-paths-dialog"; document.body.append(dialog); }
   const rows = paths.map(item => `<div class="top-paths-row"><span title="${escapeHtml(item.uri)}">${escapeHtml(item.uri)}</span><span>${item.count.toLocaleString()}</span></div>`).join("");
-  dialog.innerHTML = `<form method="dialog" class="dialog-card compact"><div class="dialog-heading"><div><p class="eyebrow">Performance · Last 24h</p><h2>${escapeHtml(host)}</h2></div></div><p class="muted">The most requested paths on this domain in the last 24 hours.</p><div class="top-paths-list">${rows || '<div class="top-paths-row"><span>No requests recorded.</span><span>0</span></div>'}</div><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`;
+  dialog.innerHTML = `<form method="dialog" class="dialog-card compact"><div class="dialog-heading"><div><p class="eyebrow">Performance · Last 24h</p><h2>${escapeHtml(host)}</h2></div></div><p class="muted">The top 10 most requested paths on this domain in the last 24 hours.</p><div class="top-paths-list">${rows || '<div class="top-paths-row"><span>No requests recorded.</span><span>0</span></div>'}</div><div class="dialog-actions"><button value="cancel" class="button secondary">Close</button></div></form>`;
   dialog.showModal();
 }
 $("#performance-rows").addEventListener("click", event => {

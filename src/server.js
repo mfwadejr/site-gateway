@@ -672,7 +672,15 @@ function caddyAdminRequest(options, body) {
     request.end();
   });
 }
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 async function checkConfigDrift() {
+  const wasDrifting = configDrift.drift;
   try {
     const caddyfileContent = await fsp.readFile(caddyfilePath, "utf8").catch(() => null);
     if (!caddyfileContent) return;
@@ -684,8 +692,16 @@ async function checkConfigDrift() {
     const adaptedParsed = JSON.parse(adapted.body);
     const adaptedConfig = adaptedParsed && adaptedParsed.config !== undefined ? adaptedParsed.config : adaptedParsed;
     const liveConfig = JSON.parse(live.body);
-    const drift = JSON.stringify(adaptedConfig) !== JSON.stringify(liveConfig);
+    // Compare with sorted-key serialization, not raw JSON.stringify: Caddy\u2019s freshly-adapted
+    // config and its live running config can serialize object keys in a different order even when
+    // they\u2019re semantically identical, which previously registered as a false-positive drift.
+    const drift = stableStringify(adaptedConfig) !== stableStringify(liveConfig);
     configDrift = { checkedAt: new Date().toISOString(), drift, detail: drift ? "Caddy\u2019s live configuration no longer matches the saved configuration." : null };
+    // Log only the false->true transition (not every 10-minute check while it persists or is clear),
+    // so Gateway Events shows exactly when drift was (re-)detected \u2014 useful for confirming whether
+    // a report of drift reappearing "right after resync" actually lines up with a real check, or with
+    // this job\u2019s normal 10-minute cadence instead.
+    if (drift && !wasDrifting) recordActivity("Configuration drift detected: Caddy\u2019s live configuration no longer matches the saved configuration.", "warning");
   } catch (error) {
     // Caddy admin API unreachable, or transient error: don\u2019t flag drift on a check we couldn\u2019t complete.
     configDrift = { ...configDrift, checkedAt: new Date().toISOString() };
@@ -964,9 +980,9 @@ async function dashboardSnapshot() {
   if (httpProbe.status === "error") attention.push({ kind: "http", name: "HTTP · Port 80", message: "Port 80 is not accepting connections inside the container." });
   if (httpsProbe.status === "error") attention.push({ kind: "https", name: "HTTPS · Port 443", message: "TLS domains are enabled but port 443 is not accepting connections." });
   if (!storageWritable) attention.push({ kind: "storage", name: "Persistent storage", message: "The data directory is not readable and writable." });
-  for (const site of hosted.filter(item => item.status === "error")) attention.push({ kind: "hosted", name: site.name, message: `Hosted site is not responding on port ${site.port}.` });
-  for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention." });
-  for (const proxy of proxyHosts.filter(item => item.enabled && item.upstream?.status === "unhealthy")) attention.push({ kind: "upstream", name: proxy.name, message: `Upstream is unavailable${proxy.upstream.error ? ` · ${proxy.upstream.error}` : ""}.` });
+  for (const site of hosted.filter(item => item.status === "error")) attention.push({ kind: "hosted", name: site.name, message: `Hosted site is not responding on port ${site.port}.`, target: "hosted" });
+  for (const proxy of proxyHosts.filter(item => item.status === "error")) attention.push({ kind: "proxy", name: proxy.name, message: "Proxy route needs attention.", target: "proxies" });
+  for (const proxy of proxyHosts.filter(item => item.enabled && item.upstream?.status === "unhealthy")) attention.push({ kind: "upstream", name: proxy.name, message: `Upstream is unavailable${proxy.upstream.error ? ` · ${proxy.upstream.error}` : ""}.`, target: "proxies" });
   for (const certificate of certificates.certificates.filter(item => ["warning", "critical", "expired", "mismatch"].includes(item.status))) attention.push({ kind: "certificate", target: "certificates", name: certificate.domain, message: certificate.status === "expired" ? "Certificate has expired." : certificate.status === "mismatch" ? "The uploaded certificate does not cover this domain." : `Certificate expires in ${certificate.daysRemaining} day${certificate.daysRemaining === 1 ? "" : "s"}.` });
   if (configDrift.drift) attention.push({ kind: "drift", name: "Configuration drift", message: "Caddy\u2019s live configuration no longer matches the saved configuration.", target: "administration/defaults" });
   const disk = await fsp.statfs(dataDir).catch(() => null);
