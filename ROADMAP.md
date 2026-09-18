@@ -49,6 +49,8 @@
 - `app.js`/`features.js`/`select-enhance.js` are now served with `Cache-Control: no-cache`, so browsers always revalidate instead of potentially serving a stale cached copy despite the version query string.
 - Native `<select>` popups across the app are now replaced with a custom-drawn dark-themed listbox (the underlying native select is kept for form/value/event compatibility) — the `color-scheme` CSS hint shipped in `v0.15.1` turned out not to reliably theme native dropdown popups across real browsers/engines.
 
+`v0.16.1` is a fix for a gap in `v0.16.0`'s own System tab: the Environment & Integrations section never actually rendered a `BACKUP_PASSWORD` status row (only the Docker socket status was there), despite the backend already exposing that data via `/api/config`. Fixed.
+
 ## Product direction
 
 Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, clear health reporting, and guided setup instead of exposing raw server configuration. **Caddy** remains the managed gateway — Site Gateway stores a small route model and generates/validates Caddy configuration rather than reimplementing certificate and proxy behavior itself.

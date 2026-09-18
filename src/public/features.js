@@ -537,7 +537,7 @@ function renderSystemPanel() {
     panel.dataset.ready = "1";
     panel.innerHTML = [
       '<div class="panel-heading"><div><h2>System</h2><p class="muted">What\u2019s configured, what\u2019s running, and what this deployment can do. Nothing here is customizable except the Docker toggle below and the action buttons \u2014 everything else is status.</p></div></div>',
-      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Integrations</h2></div></div><div class="system-integrations"></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Integrations</h2></div></div><div id="system-env-status" class="health-grid"></div><div class="system-integrations"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Security status</h2></div></div><div id="system-security" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Sync</h2></div><button type="button" id="system-resync" class="button secondary">Resync now</button></div><p id="system-sync-status" class="muted"></p></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div id="system-jobs" class="dashboard-jobs-list"></div></div>',
@@ -574,6 +574,11 @@ async function renderSystemStatus(panel) {
     syncStatus = document.querySelector("#system-sync-status"), restartButton = document.querySelector("#system-restart"),
     restartStatus = document.querySelector("#system-restart-status");
   if (jobs) jobs.innerHTML = (state.dashboard?.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${extendedEscape(job.name)}</strong><small>${job.enabled ? `Active \u00b7 ${extendedEscape(job.schedule)}` : "Disabled"}</small></span></div>`).join("") || '<p class="quiet-state">No scheduled jobs reported.</p>';
+  const envStatus = document.querySelector("#system-env-status");
+  if (envStatus) {
+    const encryptionAvailable = Boolean(state.config?.backup?.encryptionAvailable);
+    envStatus.innerHTML = `<div class="health-tile"><span class="status-dot ${encryptionAvailable ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>BACKUP_PASSWORD</strong><small>${encryptionAvailable ? "Configured \u2014 scheduled backups can be encrypted." : "Not set \u2014 configure it in the container\u2019s environment to enable encrypted scheduled backups."}</small></span></div>`;
+  }
   if (syncStatus) { const drift = (state.dashboard?.attention || []).some(item => item.kind === "drift"); syncStatus.textContent = drift ? "Configuration drift detected \u2014 the running gateway no longer matches the last known-good configuration." : `Gateway configuration is in sync. Last reload: ${state.dashboard?.gateway?.lastReload ? formatTime(state.dashboard.gateway.lastReload) : "unknown"}.`; syncStatus.className = drift ? "muted status-warning" : "muted"; }
   if (version) version.innerHTML = `Site Gateway v${extendedEscape(state.config?.version || "unknown")}<br>Data directory: <code>${extendedEscape(state.config?.storage?.databasePath ? state.config.storage.databasePath.replace(/\/database\/.*/, "") : "/data")}</code> &middot; Admin port: <code>${extendedEscape(String(state.config?.adminPort ?? ""))}</code> &middot; Site ports: <code>${extendedEscape(String(state.config?.minPort ?? ""))}\u2013${extendedEscape(String(state.config?.maxPort ?? ""))}</code>`;
   try {
