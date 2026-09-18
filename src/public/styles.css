@@ -775,7 +775,9 @@ label.check-control:has(input[name="upstreamTlsInsecure"]) small{position:absolu
 
 .docker-integration-section{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
 .docker-integration-heading{font-weight:600;margin:0 0 var(--space-2)}
+.docker-integration-section .health-tile{margin-bottom:var(--space-3)}
 .docker-integration-section .check-control{margin-top:var(--space-3)}
+#system-restart-status{margin-top:var(--space-3)}
 
 /* Custom-drawn select (Task #20): native <select> popups can't be reliably themed dark across
    browsers, so this replaces the popup only -- the native select stays for value/form/event

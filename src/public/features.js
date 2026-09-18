@@ -453,7 +453,7 @@ function renderDockerPanel() {
   if (!section) {
     section = document.createElement("div");
     section.className = "docker-integration-section";
-    section.innerHTML = '<p class="docker-integration-heading">Docker container selection</p><p class="muted" id="docker-integration-help"></p><label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
+    section.innerHTML = '<p class="docker-integration-heading">Docker container selection</p><div class="health-tile" id="docker-integration-status"><span class="status-dot"></span><span class="health-tile-copy"><strong>Docker socket</strong><small id="docker-integration-help"></small></span></div><label class="check-control"><input id="docker-integration-toggle" type="checkbox"><span>Let Proxy and Streaming hosts pick a running container as their target</span></label>';
     panel.append(section);
     section.querySelector("#docker-integration-toggle").addEventListener("change", async event => {
       const checkbox = event.currentTarget;
@@ -466,6 +466,7 @@ function renderDockerPanel() {
   const toggle = section.querySelector("#docker-integration-toggle");
   toggle.checked = enabled;
   toggle.disabled = !socketMounted;
+  section.querySelector("#docker-integration-status .status-dot").className = `status-dot ${socketMounted ? "running" : "idle"}`;
   section.querySelector("#docker-integration-help").textContent = socketMounted
     ? "Site Gateway reads the Docker socket read-only to list running containers, and only offers containers that share a Docker network with it."
     : "Docker socket not detected — mount /var/run/docker.sock into this container to enable container selection.";
