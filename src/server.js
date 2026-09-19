@@ -199,7 +199,18 @@ async function systemHealthSnapshot() {
     cpu,
     memory,
     swap,
-    disk: disk ? { totalBytes: disk.blocks * disk.bsize, freeBytes: disk.bfree * disk.bsize, availableBytes: disk.bavail * disk.bsize, usedBytes: disk.blocks * disk.bsize - disk.bfree * disk.bsize, percent: ((disk.blocks - disk.bfree) / disk.blocks) * 100 } : null,
+    disk: disk ? (() => {
+      const totalBytes = disk.blocks * disk.bsize, freeBytes = disk.bfree * disk.bsize, availableBytes = disk.bavail * disk.bsize, usedBytes = totalBytes - freeBytes;
+      // DATA_DIR_LIMIT_GB lets an operator tell the hero panel what's actually assigned to this
+      // deployment (e.g. a dedicated share/zvol sized smaller than the whole host volume), since
+      // Docker has no real per-container disk-space quota to read the way it does for CPU/memory.
+      // Purely a display denominator -- it doesn't enforce anything -- so usage over 100% is a
+      // real, meaningful warning rather than a bug: it means actual usage has exceeded what was assigned.
+      const assignedLimitGb = numberEnv("DATA_DIR_LIMIT_GB", null);
+      const assignedLimitBytes = assignedLimitGb && assignedLimitGb > 0 ? assignedLimitGb * 1024 ** 3 : null;
+      const denominatorBytes = assignedLimitBytes || totalBytes;
+      return { totalBytes, freeBytes, availableBytes, usedBytes, assignedLimitBytes, percent: (usedBytes / denominatorBytes) * 100 };
+    })() : null,
     network: networkRate,
     throughput: { liveRequests: storage.performanceLiveCount(60) },
   };

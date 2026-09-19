@@ -600,7 +600,11 @@ function renderSystemHealthHero(health) {
   else if (health.swap && health.swap.limitBytes) setHeroStat("swap", { value: `${health.swap.percent.toFixed(1)}%`, percent: health.swap.percent, tone: tone(health.swap.percent), detail: `${formatBytes(health.swap.usedBytes)} / ${formatBytes(health.swap.limitBytes)}` });
   else if (health.swap) setHeroStat("swap", { value: formatBytes(health.swap.usedBytes), percent: 0, detail: "Unlimited \u2014 shares host swap" });
   else setHeroStat("swap", { value: "\u2014", detail: "cgroup swap stats unavailable" });
-  if (health.disk) setHeroStat("disk", { value: `${health.disk.percent.toFixed(1)}%`, percent: health.disk.percent, tone: tone(health.disk.percent), detail: `${formatBytes(health.disk.usedBytes)} used \u00b7 ${formatBytes(health.disk.availableBytes)} free` });
+  if (health.disk) {
+    const overAssigned = health.disk.assignedLimitBytes && health.disk.percent > 100;
+    const diskDetail = health.disk.assignedLimitBytes ? `${formatBytes(health.disk.usedBytes)} used of ${formatBytes(health.disk.assignedLimitBytes)} assigned` : `${formatBytes(health.disk.usedBytes)} used \u00b7 ${formatBytes(health.disk.availableBytes)} free`;
+    setHeroStat("disk", { value: `${health.disk.percent.toFixed(1)}%`, percent: Math.min(100, health.disk.percent), tone: overAssigned ? "critical" : tone(health.disk.percent), detail: diskDetail });
+  }
   else setHeroStat("disk", { value: "\u2014", detail: "Disk stats unavailable" });
   if (health.network) setHeroStat("network", { value: formatRate(health.network.rxBytesPerSec + health.network.txBytesPerSec), percent: 0, detail: `\u2193 ${formatRate(health.network.rxBytesPerSec)} \u00b7 \u2191 ${formatRate(health.network.txBytesPerSec)}` });
   else setHeroStat("network", { value: "\u2014", detail: "Sampling\u2026" });
@@ -664,6 +668,16 @@ function renderSystemPanel() {
       }
       catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = "Restart application"; }
     });
+    // Keep the hero panel's live numbers current while the System tab is actually visible --
+    // a lightweight direct poll of /api/system/health, not a full refresh() (which also
+    // refetches sites/proxies/certificates/etc.), so it stays cheap even on a fast interval.
+    // Stops itself from doing any work (skips the fetch) once the tab isn't in view, mirroring
+    // the guard the Dashboard's own health timer already uses for the same reason.
+    if (!state.systemHealthTimer) state.systemHealthTimer = setInterval(() => {
+      const systemPanel = document.querySelector('[data-admin-panel="system"]');
+      if (state.view !== "administration" || !systemPanel || systemPanel.classList.contains("hidden")) return;
+      api("/api/system/health").then(renderSystemHealthHero).catch(() => {});
+    }, 7000);
   }
   renderSystemStatus(panel);
 }

@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.16.30-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.16.31-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -94,6 +94,7 @@ Automatic HTTPS requires valid public DNS and inbound access to port 80 or 443. 
 | `ADMIN_PORT` | `8080` | Dashboard port inside the container |
 | `SITE_PORT_MIN` / `SITE_PORT_MAX` | `9000` / `9099` | Direct-LAN port range Hosted Sites can bind to |
 | `DATA_DIR` | `/data` | Persistent state location |
+| `DATA_DIR_LIMIT_GB` | empty | Optional display-only allowance for the System tab's Disk stat (e.g. a smaller dedicated share); usage/free space still come from the real volume |
 | `BACKUP_PASSWORD` | empty | Encryption password used only when encrypted scheduled backups are enabled |
 | `PUID` / `PGID` | `1000` / `1000` | User/group the container writes files as (Unraid: `99`/`100`) |
 | `ACME_EMAIL` | empty | Optional certificate account email |
