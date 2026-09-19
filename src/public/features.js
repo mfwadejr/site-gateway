@@ -572,7 +572,10 @@ document.addEventListener("click", async event => {
 
 
 // Formats a byte rate as e.g. "1.2 MB/s"; reuses formatBytes and just appends the rate suffix.
-function formatRate(bytesPerSecond) { return `${formatBytes(bytesPerSecond)}/s`; }
+// formatBytes() only rounds once a value crosses into KB -- below that it echoes the raw
+// number verbatim, which is fine for the file sizes it’s normally fed (always whole integers)
+// but not for a computed rate, so round to a whole byte first.
+function formatRate(bytesPerSecond) { return `${formatBytes(Math.round(bytesPerSecond))}/s`; }
 function setHeroStat(key, { value, percent, detail, tone } = {}) {
   const valueEl = document.querySelector(`#system-hero-${key}-value`), fillEl = document.querySelector(`#system-hero-${key}-fill`), detailEl = document.querySelector(`#system-hero-${key}-detail`);
   if (valueEl) valueEl.textContent = value ?? "\u2014";
