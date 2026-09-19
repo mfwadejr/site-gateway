@@ -556,7 +556,15 @@ async function refreshDashboard() {
 // /api/system/health, the same call and the same renderHeroPanel() the Administration > System
 // tab's hero uses, so the two can never show different numbers for the same live stat again.
 async function refreshDashboardHero() {
-  try { const health = await api("/api/system/health"); window.renderHeroPanel?.("dashboard-hero", health, { includeThroughput: false }); }
+  try {
+    const health = await api("/api/system/health");
+    window.renderHeroPanel?.("dashboard-hero", health, { includeThroughput: false });
+    // /api/system/health already computes throughput.liveRequests (the hero just doesn't display
+    // it here, since the Dashboard shows it in its own chip instead -- see includeThroughput above).
+    // Reuse that number to keep the chip on the same 7s cadence as the hero, instead of leaving it
+    // on the separate 30s refreshDashboard() timer, which was the actual bug being reported here.
+    const throughputTotal = $("#dash-throughput-total"); if (throughputTotal && health.throughput) throughputTotal.textContent = health.throughput.liveRequests ?? 0;
+  }
   catch { /* Hero keeps its last-known values if a poll fails -- same behavior as the System tab's own hero. */ }
 }
 
