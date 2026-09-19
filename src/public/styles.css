@@ -964,7 +964,8 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .api-token-card{min-height:0}
 .api-token-card.revoked{opacity:.6}
 .api-token-card .address{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.api-token-hide-revoked{margin:0 0 0 auto;padding:6px 12px;font-size:.85rem;flex-shrink:0;white-space:nowrap}
+.api-token-hide-revoked{margin:0 0 0 auto;padding:0;border:0;background:transparent;font-size:.85rem;flex-shrink:0;white-space:nowrap}
+.api-token-hide-revoked span{line-height:normal}
 .api-token-secret{display:block;margin-top:var(--space-3);padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(var(--bg-rgb),.4);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--font-size-sm);line-height:1.6;word-break:break-all}
 
 /* Backup history timeline */
