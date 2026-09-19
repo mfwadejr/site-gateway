@@ -607,7 +607,21 @@ function renderSystemPanel() {
       const button = event.currentTarget;
       if (!await themedConfirm("Restart Site Gateway?", "The application will stop and restart. This takes a few seconds and briefly interrupts hosted sites and the dashboard.", "Restart")) return;
       button.disabled = true; button.textContent = "Restarting\u2026";
-      try { await api("/api/system/restart", { method: "POST" }); toast("Restarting \u2014 this dashboard will be unavailable briefly."); }
+      const restartStatus = document.querySelector("#system-restart-status");
+      try {
+        await api("/api/system/restart", { method: "POST" });
+        toast("Restarting \u2014 this dashboard will be unavailable briefly.");
+        button.textContent = "Waiting for Site Gateway\u2026";
+        if (restartStatus) restartStatus.textContent = "Reconnecting once Site Gateway comes back online\u2026";
+        for (let attempt = 0; attempt < 30; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          try {
+            const response = await fetch("/api/session", { cache: "no-store" });
+            if (response.ok) { location.reload(); return; }
+          } catch { /* Still restarting -- the dashboard is briefly unreachable while the container comes back up. */ }
+        }
+        location.reload();
+      }
       catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = "Restart application"; }
     });
   }
