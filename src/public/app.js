@@ -578,9 +578,11 @@ async function boot() {
   if (!state.updateCheckTimer) state.updateCheckTimer = setInterval(() => { if (!$("#dashboard").classList.contains("hidden")) checkForUpdate().catch(() => {}); }, 60000);
   // Dashboard hero panel: one immediate load so it isn't sitting on dashes until the first
   // 7-second tick, then the same lightweight poll-while-visible pattern as the System tab's
-  // hero uses, gated on the Dashboard actually being the visible view.
-  if (state.view === "overview" && canAdmin()) refreshDashboardHero().catch(() => {});
-  if (!state.dashboardHeroTimer) state.dashboardHeroTimer = setInterval(() => { if (state.view === "overview" && canAdmin() && !$("#dashboard").classList.contains("hidden")) refreshDashboardHero().catch(() => {}); }, 7000);
+  // hero uses, gated on the Dashboard actually being the visible view. Available to every
+  // signed-in user, not just administrators -- /api/system/health is read-only and shows
+  // nothing a standard user couldn't already infer from the Dashboard running slow or fast.
+  if (state.view === "overview") refreshDashboardHero().catch(() => {});
+  if (!state.dashboardHeroTimer) state.dashboardHeroTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboardHero().catch(() => {}); }, 7000);
 }
 
 async function checkForUpdate() {

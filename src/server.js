@@ -1713,8 +1713,12 @@ app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) }, docker: { socketMounted: dockerSocketMounted, enabled: dockerSocketMounted && settings.dockerIntegration?.enabled === true } }));
 
 // --- System tab: storage usage, restart-policy check, and self-restart -----------------------------------
+// Read-only, non-destructive live resource stats (CPU/memory/swap/disk/network/throughput) --
+// shown on the Dashboard for every signed-in user, same as the rest of the Dashboard's health
+// panel, and additionally on the Administration > System tab's hero for administrators. Unlike
+// most /api/system/* routes this intentionally isn't administrator-gated, since there's nothing
+// here a standard user couldn't already infer from the Dashboard being slow or fast.
 app.get("/api/system/health", async (req, res, next) => {
-  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
   try { res.json(await systemHealthSnapshot()); } catch (error) { next(error); }
 });
 app.get("/api/system/storage", async (req, res, next) => {
