@@ -960,10 +960,10 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .container-choice.unreachable:hover{border-color:var(--line)}
 
 /* API access tokens */
-.api-token-row{grid-template-columns:auto minmax(150px,1.3fr) minmax(110px,.9fr) minmax(130px,1fr) minmax(150px,1fr)}
-.api-token-row.revoked{opacity:.6}
+.api-token-card{min-height:0}
+.api-token-card.revoked{opacity:.6}
+.api-token-card .address{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .api-token-secret{display:block;margin-top:var(--space-3);padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(var(--bg-rgb),.4);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--font-size-sm);line-height:1.6;word-break:break-all}
-.api-token-chip{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--font-size-sm)}
 
 /* Backup history timeline */
 .backup-history-list{display:flex;flex-direction:column;gap:var(--space-2);margin-top:var(--space-4);max-height:min(46vh,520px);overflow:auto}

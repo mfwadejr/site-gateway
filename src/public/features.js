@@ -354,11 +354,17 @@ function apiTokenStatus(token) {
 }
 async function loadApiTokens() {
   const list = document.querySelector("#api-token-list"); if (!list) return;
+  const summary = document.querySelector("#api-token-summary");
   try {
     const tokens = await api("/api/tokens");
+    if (summary) {
+      const counts = { active: 0, revoked: 0, full: 0, readOnly: 0 };
+      for (const token of tokens) { if (token.revoked) counts.revoked += 1; else counts.active += 1; if (token.scope === "read-only") counts.readOnly += 1; else counts.full += 1; }
+      summary.innerHTML = [["Active", counts.active, "#62e6a7"], ["Revoked", counts.revoked, "#ff7185"], ["Full access", counts.full, "#6ea8ff"], ["Read-only", counts.readOnly, "#b58cff"]].map(([label, count, color]) => `<div><span class="status-dot" style="${count ? `background:${color}` : ""}"></span><strong>${count}</strong><span>${label}</span></div>`).join("");
+    }
     list.innerHTML = tokens.length ? tokens.map(token => {
       const status = apiTokenStatus(token);
-      return `<article class="data-row api-token-row ${token.revoked ? "revoked" : ""}" data-token-id="${extendedEscape(token.id)}"><span class="status-dot ${status.dot}"></span><div><strong>${extendedEscape(token.name)}</strong><small>${extendedEscape(status.label)} · ${extendedEscape(token.ownerUsername || "unknown")}</small></div><div><span class="chip api-token-chip">${extendedEscape(token.prefix)}…</span><small>${token.scope === "read-only" ? "Read-only" : "Full access"}</small></div><div><strong>${extendedEscape(formatTime(token.createdAt))}</strong><small>${token.lastUsedAt ? `Last used ${extendedEscape(formatTime(token.lastUsedAt))}` : "Never used"}${token.expiresAt ? ` · expires ${extendedEscape(formatTime(token.expiresAt))}` : ""}</small></div><div class="row-actions">${token.revoked ? "" : '<button class="button secondary danger-text" data-token-action="revoke">Revoke</button>'}</div></article>`;
+      return `<article class="site-card api-token-card ${token.revoked ? "revoked" : ""}" data-token-id="${extendedEscape(token.id)}"><div class="card-top"><div class="site-icon">TK</div></div><h2>${extendedEscape(token.name)}</h2><p class="address">${extendedEscape(token.prefix)}… · ${token.scope === "read-only" ? "Read-only" : "Full access"}</p><p class="gateway-address">${extendedEscape(token.ownerUsername || "unknown")} · created ${extendedEscape(formatTime(token.createdAt))}</p><p class="gateway-address">${token.lastUsedAt ? `Last used ${extendedEscape(formatTime(token.lastUsedAt))}` : "Never used"}${token.expiresAt ? ` · expires ${extendedEscape(formatTime(token.expiresAt))}` : ""}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status.dot}"></span>${extendedEscape(status.label)}</span><div class="card-actions">${token.revoked ? "" : '<button class="button secondary danger-text" data-token-action="revoke">Revoke</button>'}</div></div></article>`;
     }).join("") : '<p class="quiet-state padded">No API tokens have been issued yet.</p>';
   } catch (error) { list.innerHTML = `<p class="quiet-state padded">${extendedEscape(error.message)}</p>`; }
 }
@@ -372,7 +378,7 @@ function renderApiTokensPanel() {
   if (!panel) { panel = document.createElement("section"); panel.dataset.adminPanel = "api"; panel.className = "settings-panel hidden"; users.parentElement.append(panel); }
   if (panel.dataset.ready) return;
   panel.dataset.ready = "1";
-  panel.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">Programmatic access</p><h2>API access tokens</h2><p class="muted">Issue bearer tokens for scripts and integrations. A token acts as the administrator who issued it, and is shown in full only once. Changing that administrator’s password, or disabling their account, revokes every token they issued.</p></div><div class="row-actions"><button id="create-api-token" class="button primary" type="button">Create token</button></div></div><div id="api-token-list" class="data-list"><p class="quiet-state padded">Open this tab to load API tokens.</p></div>';
+  panel.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">Programmatic access</p><h2>API access tokens</h2><p class="muted">Issue bearer tokens for scripts and integrations. A token acts as the administrator who issued it, and is shown in full only once. Changing that administrator’s password, or disabling their account, revokes every token they issued.</p></div><div class="row-actions"><button id="create-api-token" class="button primary" type="button">Create token</button></div></div><div id="api-token-summary" class="summary"></div><div id="api-token-list" class="user-grid"><p class="quiet-state padded">Open this tab to load API tokens.</p></div>';
   tab.addEventListener("click", async () => {
     document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item === tab));
     document.querySelectorAll("[data-admin-panel]").forEach(item => item.classList.toggle("hidden", item !== panel));
