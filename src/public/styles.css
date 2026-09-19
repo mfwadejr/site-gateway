@@ -44,8 +44,8 @@ h2{letter-spacing:-.025em}
 .wide{width:100%}
 
 /* Top summary bar & status dot indicator */
-.summary{display:flex;align-items:center;gap:28px;margin:var(--space-7) 0 28px;padding:17px 20px;background:rgba(var(--panel-rgb),.75);border:1px solid var(--line);border-radius:var(--radius-2xl)}
-.summary>div{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:.88rem}
+.summary{display:flex;align-items:center;flex-wrap:wrap;gap:28px;margin:var(--space-7) 0 28px;padding:17px 20px;background:rgba(var(--panel-rgb),.75);border:1px solid var(--line);border-radius:var(--radius-2xl)}
+.summary>div{display:flex;align-items:center;flex-shrink:0;gap:9px;color:var(--muted);font-size:.88rem;white-space:nowrap}
 .summary strong{color:var(--text)}
 .port-note{margin-left:auto}
 .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--status-dot-idle)}
@@ -950,8 +950,8 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .copy-icon{width:16px;height:16px;display:block}
 
 /* Docker container picker */
-.target-with-picker{display:flex;gap:var(--space-2);align-items:center}
-.target-with-picker input{flex:1;min-width:0}
+.target-with-picker{display:flex;gap:var(--space-2);align-items:center;margin-top:7px}
+.target-with-picker input{flex:1;min-width:0;margin-top:0}
 .container-picker-list{display:flex;flex-direction:column;gap:var(--space-2);margin-top:var(--space-4);max-height:46vh;overflow:auto}
 .container-choice{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:var(--space-3) 14px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgba(var(--bg-rgb),.22);color:var(--text);text-align:left;cursor:pointer}
 .container-choice:hover{border-color:var(--border-hover)}
@@ -963,7 +963,7 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .api-token-card{min-height:0}
 .api-token-card.revoked{opacity:.6}
 .api-token-card .address{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.api-token-hide-revoked{margin-left:auto;padding:6px 12px;font-size:.85rem}
+.api-token-hide-revoked{margin-left:auto;padding:6px 12px;font-size:.85rem;flex-shrink:0;white-space:nowrap}
 .api-token-secret{display:block;margin-top:var(--space-3);padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(var(--bg-rgb),.4);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--font-size-sm);line-height:1.6;word-break:break-all}
 
 /* Backup history timeline */

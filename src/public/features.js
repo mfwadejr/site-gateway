@@ -514,7 +514,7 @@ function renderDockerPanel() {
   toggle.disabled = !socketMounted;
   tile.querySelector(".status-dot").className = `status-dot ${socketMounted ? "running" : "idle"}`;
   tile.querySelector("#docker-integration-help").textContent = socketMounted
-    ? "Site Gateway reads the Docker socket read-only to list running containers, and only offers containers that share a Docker network with it."
+    ? "Site Gateway reads the Docker socket read-only to list running containers."
     : "Docker socket not detected — mount /var/run/docker.sock into this container to enable container selection.";
   control.classList.toggle("is-disabled", !socketMounted);
 }
