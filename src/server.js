@@ -189,25 +189,34 @@ sampleNetworkInterfaces();
 // container-scoped (cgroup v2 + this container's network namespace); disk reuses the same
 // statfs-on-the-data-volume approach as /api/system/storage.
 async function systemHealthSnapshot() {
-  const [cpu, memory, swap, disk] = await Promise.all([
+  const assignedLimitGb = numberEnv("DATA_DIR_LIMIT_GB", null);
+  const assignedLimitBytes = assignedLimitGb && assignedLimitGb > 0 ? assignedLimitGb * 1024 ** 3 : null;
+  const [cpu, memory, swap, disk, appUsedBytes] = await Promise.all([
     cgroupCpuPercent(),
     cgroupMemory(),
     cgroupSwap(),
     fsp.statfs(dataDir).catch(() => null),
+    // Only walk /data (the same directorySize() the storage breakdown below already uses) when
+    // an assigned limit is actually configured -- it's the one case that needs it, and the walk
+    // isn't free, so skip it when the panel is just going to show whole-volume stats anyway.
+    assignedLimitBytes !== null ? directorySize(dataDir) : Promise.resolve(null),
   ]);
   return {
     cpu,
     memory,
     swap,
     disk: disk ? (() => {
-      const totalBytes = disk.blocks * disk.bsize, freeBytes = disk.bfree * disk.bsize, availableBytes = disk.bavail * disk.bsize, usedBytes = totalBytes - freeBytes;
+      const totalBytes = disk.blocks * disk.bsize, freeBytes = disk.bfree * disk.bsize, availableBytes = disk.bavail * disk.bsize, volumeUsedBytes = totalBytes - freeBytes;
       // DATA_DIR_LIMIT_GB lets an operator tell the hero panel what's actually assigned to this
       // deployment (e.g. a dedicated share/zvol sized smaller than the whole host volume), since
       // Docker has no real per-container disk-space quota to read the way it does for CPU/memory.
       // Purely a display denominator -- it doesn't enforce anything -- so usage over 100% is a
       // real, meaningful warning rather than a bug: it means actual usage has exceeded what was assigned.
-      const assignedLimitGb = numberEnv("DATA_DIR_LIMIT_GB", null);
-      const assignedLimitBytes = assignedLimitGb && assignedLimitGb > 0 ? assignedLimitGb * 1024 ** 3 : null;
+      // Critically, comparing against an assigned allowance has to use Site Gateway's own actual
+      // footprint (appUsedBytes, a real walk of /data), not the whole filesystem's used space --
+      // statfs reports usage for the entire volume behind /data, which on a shared array or pool
+      // includes everything else living on that mount, not just what this app has written.
+      const usedBytes = assignedLimitBytes !== null ? appUsedBytes : volumeUsedBytes;
       const denominatorBytes = assignedLimitBytes || totalBytes;
       return { totalBytes, freeBytes, availableBytes, usedBytes, assignedLimitBytes, percent: (usedBytes / denominatorBytes) * 100 };
     })() : null,
