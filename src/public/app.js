@@ -215,16 +215,10 @@ function renderDashboard() {
   $("#upstream-health-copy").textContent = !upstreams.total ? "No proxy hosts configured" : `${upstreams.healthy} of ${upstreams.total} healthy`;
   $("#health-checked").innerHTML = `<span class="live-dot" id="health-live-dot"></span>Last checked ${formatTime(data.checkedAt)}`;
   updateDashboardUptime(data.system.uptimeSeconds);
-  $("#system-memory").textContent = formatBytes(data.system.memoryBytes);
-  $("#system-data").textContent = formatBytes(data.system.dataBytes);
-  $("#system-disk").textContent = formatBytes(data.system.diskFreeBytes);
-  $("#system-disk").title = `${formatBytes(data.system.diskFreeBytes)} available of ${formatBytes(data.system.diskTotalBytes)} on the /data volume`;
-  $("#system-app-version").textContent = `v${data.system.appVersion}`;
-  $("#system-caddy-version").textContent = data.system.caddyVersion;
-  $("#system-database").textContent = `${data.system.databaseEngine} · ${data.system.databaseStatus}`;
-  $("#system-database-detail").textContent = `${formatBytes(data.system.databaseBytes)} configuration database`;
-  $("#system-public-ip").textContent = data.system.publicIp || (data.system.publicIpError ? "Unavailable" : "Checking…");
-  $("#system-public-ip-detail").textContent = data.system.publicIpError ? `Check failed · ${data.system.publicIpError}` : data.system.publicIpCheckedAt ? `Checked ${formatTime(data.system.publicIpCheckedAt)}` : "Not yet checked";
+  // Memory/Data/Storage/Version/Database/Public IP moved to the Administration > System tab's
+  // Version panel -- the Dashboard's own Runtime/System panel is now the shared hero component
+  // (see renderHeroPanel/refreshDashboardHero), which reads real container-scoped CPU/memory/
+  // swap/disk/network from /api/system/health instead of this endpoint's coarser numbers.
   $("#attention-panel").classList.toggle("is-clear", data.attention.length === 0);
   $("#dashboard-lower-columns").classList.toggle("attention-clear", data.attention.length === 0);
   $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => item.kind === "drift"
@@ -556,6 +550,15 @@ async function refreshDashboard() {
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
   finally { button.disabled = false; button.classList.remove("spinning"); }
 }
+// Populates the Dashboard's hero panel (CPU/memory/swap/disk/network -- Throughput is skipped
+// here since the Dashboard already has its own live-requests chip, and Uptime is handled by the
+// existing updateDashboardUptime() ticker rather than this endpoint) directly from
+// /api/system/health, the same call and the same renderHeroPanel() the Administration > System
+// tab's hero uses, so the two can never show different numbers for the same live stat again.
+async function refreshDashboardHero() {
+  try { const health = await api("/api/system/health"); window.renderHeroPanel?.("dashboard-hero", health, { includeThroughput: false }); }
+  catch { /* Hero keeps its last-known values if a poll fails -- same behavior as the System tab's own hero. */ }
+}
 
 // --- Boot: session check, initial routing, periodic health/update checks -------------------
 function restoreAdminTab() { if (state.view === "administration") document.querySelector(`[data-admin-tab="${state.adminTab || "users"}"]`)?.click(); }
@@ -573,6 +576,11 @@ async function boot() {
   $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh(); if (state.view !== "overview") await loadFeatureView();
   if (!state.healthTimer) state.healthTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboard().catch(error => toast(error.message, "error")); }, 30000);
   if (!state.updateCheckTimer) state.updateCheckTimer = setInterval(() => { if (!$("#dashboard").classList.contains("hidden")) checkForUpdate().catch(() => {}); }, 60000);
+  // Dashboard hero panel: one immediate load so it isn't sitting on dashes until the first
+  // 7-second tick, then the same lightweight poll-while-visible pattern as the System tab's
+  // hero uses, gated on the Dashboard actually being the visible view.
+  if (state.view === "overview" && canAdmin()) refreshDashboardHero().catch(() => {});
+  if (!state.dashboardHeroTimer) state.dashboardHeroTimer = setInterval(() => { if (state.view === "overview" && canAdmin() && !$("#dashboard").classList.contains("hidden")) refreshDashboardHero().catch(() => {}); }, 7000);
 }
 
 async function checkForUpdate() {
