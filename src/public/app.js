@@ -228,7 +228,7 @@ function renderDashboard() {
   $("#attention-panel").classList.toggle("is-clear", data.attention.length === 0);
   $("#dashboard-lower-columns").classList.toggle("attention-clear", data.attention.length === 0);
   $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => item.kind === "drift"
-    ? `<div class="attention-tile drift-tile"><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span><button type="button" class="button secondary" data-drift-resync>Resync now</button></div>`
+    ? `<div class="attention-tile drift-tile"><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span>${canAdmin() ? '<button type="button" class="button secondary" data-drift-resync>Resync now</button>' : ""}</div>`
     : `<${item.target ? "button" : "div"} class="attention-tile ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`
   ).join("") : '<div class="all-clear"><span class="status-dot running"></span><span>Everything looks good — no issues to review.</span></div>';
   $("#activity-list").innerHTML = data.activity.length ? data.activity.slice(0, 5).map(item => `<div class="activity-tile"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" || item.status === "warning" ? "!" : "✓"}</span><span class="activity-copy"><strong>${escapeHtml(item.message)}</strong><small title="${escapeHtml(formatTime(item.at))}">${escapeHtml(formatRelativeTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No recent activity.</p>';
@@ -502,7 +502,7 @@ function render() {
   $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const activeAdminTab = state.view === "administration" ? document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab : null;
   const adminUsersActive = activeAdminTab === "users", adminGroupsActive = activeAdminTab === "groups", adminApiActive = activeAdminTab === "api";
-  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || adminGroupsActive || adminApiActive || ["streaming","redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates"); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs");
+  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || adminGroupsActive || adminApiActive || ["streaming","redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates" || !canAdmin()); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs");
   if (overview) {
     $("#page-title").textContent = "Dashboard";
     $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
