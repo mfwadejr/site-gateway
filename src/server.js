@@ -105,6 +105,28 @@ async function readCgroupFile(name) {
   try { return (await fsp.readFile(path.join(CGROUP_ROOT, name), "utf8")).trim(); } catch { return null; }
 }
 let lastCpuSample = null; // { usageMicros, atMs } -- usage_usec is cumulative, so CPU% needs a delta between two samples.
+// cpu.max sets a real CFS quota (from Docker's --cpus flag); cpuset.cpus.effective is the pinned
+// core *list* (from --cpuset-cpus / Unraid's CPU pinning), which caps which cores can run but not
+// how much of them can be used -- pinning alone leaves cpu.max at "max". Percent needs a real
+// denominator either way, and which one applies (and thus what the number means) has to be
+// reported back to the UI so the label doesn't lie about what's being measured.
+async function cgroupCpuQuota() {
+  const max = await readCgroupFile("cpu.max");
+  if (max) { const [quota, period] = max.split(/\s+/); if (quota !== "max") { const q = Number(quota), p = Number(period); if (q > 0 && p > 0) return { cpus: q / p, source: "quota" }; } }
+  const pinned = await readCgroupFile("cpuset.cpus.effective");
+  if (pinned) { const count = expandCpuList(pinned); if (count > 0) return { cpus: count, source: "pinned" }; }
+  return { cpus: os.cpus().length || 1, source: "host" };
+}
+// cpuset.cpus.effective is a comma-separated list of cores and ranges, e.g. "0-1,4" -- count how
+// many individual CPUs that covers rather than assuming a single contiguous range.
+function expandCpuList(list) {
+  return list.split(",").reduce((total, part) => {
+    const range = part.trim().match(/^(\d+)(?:-(\d+))?$/);
+    if (!range) return total;
+    const start = Number(range[1]), end = range[2] !== undefined ? Number(range[2]) : start;
+    return total + Math.max(0, end - start + 1);
+  }, 0);
+}
 async function cgroupCpuPercent() {
   const stat = await readCgroupFile("cpu.stat");
   if (!stat) return null;
@@ -116,13 +138,9 @@ async function cgroupCpuPercent() {
   if (!previous) return null; // First call has nothing to diff against -- the next poll will have a real number.
   const elapsedMicros = (atMs - previous.atMs) * 1000;
   if (elapsedMicros <= 0) return null;
-  // cpu.max caps how many CPUs this container may use; percent is relative to that quota (or to
-  // the host's core count when the container has no quota set, i.e. cpu.max reads "max").
-  const max = await readCgroupFile("cpu.max");
-  let quotaCpus = os.cpus().length || 1;
-  if (max) { const [quota, period] = max.split(/\s+/); if (quota !== "max") { const q = Number(quota), p = Number(period); if (q > 0 && p > 0) quotaCpus = q / p; } }
-  const percent = ((usageMicros - previous.usageMicros) / elapsedMicros) / quotaCpus * 100;
-  return Math.max(0, Math.min(100, percent));
+  const quota = await cgroupCpuQuota();
+  const percent = ((usageMicros - previous.usageMicros) / elapsedMicros) / quota.cpus * 100;
+  return { percent: Math.max(0, Math.min(100, percent)), quotaCpus: quota.cpus, quotaSource: quota.source };
 }
 async function cgroupMemory() {
   const current = await readCgroupFile("memory.current");
@@ -171,14 +189,14 @@ sampleNetworkInterfaces();
 // container-scoped (cgroup v2 + this container's network namespace); disk reuses the same
 // statfs-on-the-data-volume approach as /api/system/storage.
 async function systemHealthSnapshot() {
-  const [cpuPercent, memory, swap, disk] = await Promise.all([
+  const [cpu, memory, swap, disk] = await Promise.all([
     cgroupCpuPercent(),
     cgroupMemory(),
     cgroupSwap(),
     fsp.statfs(dataDir).catch(() => null),
   ]);
   return {
-    cpu: cpuPercent === null ? null : { percent: cpuPercent },
+    cpu,
     memory,
     swap,
     disk: disk ? { totalBytes: disk.blocks * disk.bsize, freeBytes: disk.bfree * disk.bsize, availableBytes: disk.bavail * disk.bsize, usedBytes: disk.blocks * disk.bsize - disk.bfree * disk.bsize, percent: ((disk.blocks - disk.bfree) / disk.blocks) * 100 } : null,

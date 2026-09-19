@@ -586,12 +586,19 @@ function renderSystemHealthHero(health) {
   if (!document.querySelector("#system-hero-grid")) return;
   if (!health) { ["cpu", "memory", "swap", "disk", "network", "throughput"].forEach(key => setHeroStat(key, { value: "\u2014", detail: "Unavailable" })); return; }
   const tone = percent => percent >= 90 ? "critical" : percent >= 75 ? "warning" : "";
-  if (health.cpu) setHeroStat("cpu", { value: `${health.cpu.percent.toFixed(1)}%`, percent: health.cpu.percent, tone: tone(health.cpu.percent), detail: "Of this container\u2019s CPU quota" });
+  if (health.cpu) {
+    const quotaLabel = health.cpu.quotaSource === "quota" ? `Of ${health.cpu.quotaCpus} allocated CPU${health.cpu.quotaCpus === 1 ? "" : "s"}` : health.cpu.quotaSource === "pinned" ? `Of ${health.cpu.quotaCpus} pinned core${health.cpu.quotaCpus === 1 ? "" : "s"}` : `Of host\u2019s ${health.cpu.quotaCpus} core${health.cpu.quotaCpus === 1 ? "" : "s"} \u2014 no limit set`;
+    setHeroStat("cpu", { value: `${health.cpu.percent.toFixed(1)}%`, percent: health.cpu.percent, tone: tone(health.cpu.percent), detail: quotaLabel });
+  }
   else setHeroStat("cpu", { value: "\u2014", detail: "cgroup CPU stats unavailable" });
   if (health.memory) setHeroStat("memory", { value: `${health.memory.percent.toFixed(1)}%`, percent: health.memory.percent, tone: tone(health.memory.percent), detail: `${formatBytes(health.memory.usedBytes)} / ${formatBytes(health.memory.limitBytes)}` });
   else setHeroStat("memory", { value: "\u2014", detail: "cgroup memory stats unavailable" });
+  // Swap only gets a real percentage when the container has an actual --memory-swap limit set
+  // (memory.swap.max is a real number). Without one it's unbounded and shares the host's swap,
+  // so a raw "0 B" would read like a hard cap that doesn't exist -- say so instead.
   if (health.swap && health.swap.configured === false) setHeroStat("swap", { value: "Off", percent: 0, detail: "Swap is not configured for this container" });
-  else if (health.swap) setHeroStat("swap", { value: health.swap.percent === null ? formatBytes(health.swap.usedBytes) : `${health.swap.percent.toFixed(1)}%`, percent: health.swap.percent ?? 0, tone: health.swap.percent ? tone(health.swap.percent) : "", detail: health.swap.limitBytes ? `${formatBytes(health.swap.usedBytes)} / ${formatBytes(health.swap.limitBytes)}` : formatBytes(health.swap.usedBytes) });
+  else if (health.swap && health.swap.limitBytes) setHeroStat("swap", { value: `${health.swap.percent.toFixed(1)}%`, percent: health.swap.percent, tone: tone(health.swap.percent), detail: `${formatBytes(health.swap.usedBytes)} / ${formatBytes(health.swap.limitBytes)}` });
+  else if (health.swap) setHeroStat("swap", { value: formatBytes(health.swap.usedBytes), percent: 0, detail: "Unlimited \u2014 shares host swap" });
   else setHeroStat("swap", { value: "\u2014", detail: "cgroup swap stats unavailable" });
   if (health.disk) setHeroStat("disk", { value: `${health.disk.percent.toFixed(1)}%`, percent: health.disk.percent, tone: tone(health.disk.percent), detail: `${formatBytes(health.disk.usedBytes)} used \u00b7 ${formatBytes(health.disk.availableBytes)} free` });
   else setHeroStat("disk", { value: "\u2014", detail: "Disk stats unavailable" });
