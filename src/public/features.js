@@ -604,8 +604,9 @@ function renderSystemPanel() {
       finally { button.disabled = false; button.textContent = original; }
     });
     panel.querySelector("#system-restart").addEventListener("click", async event => {
+      const button = event.currentTarget;
       if (!await themedConfirm("Restart Site Gateway?", "The application will stop and restart. This takes a few seconds and briefly interrupts hosted sites and the dashboard.", "Restart")) return;
-      const button = event.currentTarget; button.disabled = true; button.textContent = "Restarting\u2026";
+      button.disabled = true; button.textContent = "Restarting\u2026";
       try { await api("/api/system/restart", { method: "POST" }); toast("Restarting \u2014 this dashboard will be unavailable briefly."); }
       catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = "Restart application"; }
     });
