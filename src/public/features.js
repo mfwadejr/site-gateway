@@ -378,7 +378,7 @@ function renderApiTokensPanel() {
   if (!panel) { panel = document.createElement("section"); panel.dataset.adminPanel = "api"; panel.className = "settings-panel hidden"; users.parentElement.append(panel); }
   if (panel.dataset.ready) return;
   panel.dataset.ready = "1";
-  panel.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">Programmatic access</p><h2>API access tokens</h2><p class="muted">Issue bearer tokens for scripts and integrations. A token acts as the administrator who issued it, and is shown in full only once. Changing that administrator’s password, or disabling their account, revokes every token they issued.</p></div><div class="row-actions"><button id="create-api-token" class="button primary" type="button">Create token</button></div></div><div id="api-token-summary" class="summary"></div><div id="api-token-list" class="user-grid"><p class="quiet-state padded">Open this tab to load API tokens.</p></div>';
+  panel.innerHTML = '<div id="api-token-summary" class="summary"></div><div id="api-token-list" class="user-grid"><p class="quiet-state padded">Open this tab to load API tokens.</p></div>';
   tab.addEventListener("click", async () => {
     document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item === tab));
     document.querySelectorAll("[data-admin-panel]").forEach(item => item.classList.toggle("hidden", item !== panel));
@@ -395,8 +395,10 @@ function showIssuedApiToken(result) {
   });
   dialog.showModal();
 }
-document.addEventListener("click", async event => {
-  if (!event.target.closest("#create-api-token")) return;
+// Called from the shared global "+ Create" header button (see openCreate() in app.js) when the API
+// Access tab is active -- there is no dedicated "Create token" button in the panel itself anymore,
+// matching how Groups and Users route their create actions through the same shared button.
+async function openCreateApiTokenDialog() {
   const dialog = featureDialog("create-api-token-dialog");
   dialog.innerHTML = '<form method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow">API access</p><h2>Create an API token</h2></div></div><p class="muted">Re-enter your administrator credentials to confirm. The token inherits your role.</p><label>Token name<input name="name" maxlength="60" required placeholder="Home Assistant integration"></label><label>Scope<select name="scope"><option value="full">Full access — read and change configuration</option><option value="read-only">Read-only — GET requests only</option></select></label><label>Expires after <span class="optional">Optional</span><input name="expiresInDays" type="number" min="1" max="3650" placeholder="Leave empty for no expiry"><small>Number of days. Leave empty for a token that never expires.</small></label><label>Administrator username<input name="username" autocomplete="username" required></label><label>Administrator password<input name="password" type="password" autocomplete="current-password" required></label><p class="error" id="api-token-error"></p><div class="dialog-actions"><button value="cancel" formnovalidate class="button secondary">Cancel</button><button value="confirm" class="button primary">Create token</button></div></form>';
   dialog.showModal();
@@ -409,7 +411,7 @@ document.addEventListener("click", async event => {
     await loadApiTokens();
     showIssuedApiToken(result);
   } catch (error) { toast(error.message, "error"); }
-});
+}
 document.addEventListener("click", async event => {
   const button = event.target.closest('[data-token-action="revoke"]'); if (!button) return;
   const row = button.closest("[data-token-id]"); if (!row) return;

@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.16.18-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.16.19-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -44,9 +44,10 @@ It's intentionally narrower than a general-purpose proxy manager. You describe *
 - **Access Lists** — reusable login/network policies combining accounts, groups, and IP/CIDR rules across any host.
 - **Two-factor authentication** — TOTP-based MFA for administrator and user accounts, with recovery codes, plus an administrator-side override to disable a locked-out user's 2FA when they've lost their authenticator and used up their recovery codes.
 - **Users, groups, and roles** — Administrator and Standard User roles, with account lifecycle controls.
+- **API access tokens** — issue scoped (full-access or read-only), optionally expiring bearer tokens for scripts and integrations, revocable at any time.
 - **Backups** — configuration or complete `.sgbackup` archives, downloadable, importable, schedulable, and optionally AES-256-GCM encrypted.
 - **Certificates page** — issuer, expiration, days remaining, and renewal health for every managed and uploaded certificate.
-- **Performance and logs** — request throughput, response times, and rotating access/activity logs per host.
+- **Performance and logs** — per-domain request throughput, response times, and rotating access/activity logs, including a System page with environment/integration status, gateway sync, scheduled jobs, and storage usage.
 - **SQLite-backed persistence** — no external database container; everything lives under one `/data` volume.
 
 Hosted uploads remain static-only (HTML, CSS, JS, images, fonts, downloads). Dynamic applications are connected as Proxy Hosts instead — Site Gateway does not execute uploaded PHP, Node, Python, or database code.
