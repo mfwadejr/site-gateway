@@ -1654,7 +1654,7 @@ app.get("/api/audit", (req, res) => req.user.role === "administrator" ? res.json
 app.get("/api/tokens", (req, res, next) => {
   try {
     if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
-    res.json(storage.listApiTokens().map(token => ({ id: token.id, name: token.name, prefix: token.prefix, scope: token.scope, ownerUserId: token.ownerUserId, ownerUsername: users.find(item => item.id === token.ownerUserId)?.username || "unknown", createdAt: token.createdAt, lastUsedAt: token.lastUsedAt, expiresAt: token.expiresAt, revokedAt: token.revokedAt, revoked: Boolean(token.revokedAt) })));
+    res.json(storage.listApiTokens().map(token => ({ id: token.id, name: token.name, prefix: token.prefix, scope: token.scope, icon: token.icon, iconSlug: token.iconSlug, ownerUserId: token.ownerUserId, ownerUsername: users.find(item => item.id === token.ownerUserId)?.username || "unknown", createdAt: token.createdAt, lastUsedAt: token.lastUsedAt, expiresAt: token.expiresAt, revokedAt: token.revokedAt, revoked: Boolean(token.revokedAt) })));
   } catch (error) { next(error); }
 });
 app.post("/api/tokens", async (req, res, next) => {
@@ -1879,6 +1879,24 @@ function entryLabel(item) {
 }
 app.put("/api/:kind/:id/icon", async (req, res, next) => {
   try {
+    if (req.params.kind === "tokens") {
+      if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+      const existing = storage.listApiTokens().find(token => token.id === req.params.id);
+      if (!existing) return res.status(404).json({ error: "API token not found." });
+      let updated;
+      if (req.body.url !== undefined) {
+        const url = String(req.body.url || "").trim();
+        if (!/^https:\/\//i.test(url) || url.length > 2048) return res.status(400).json({ error: "Icon URL must be a valid HTTPS URL under 2048 characters." });
+        updated = storage.setApiTokenIcon(req.params.id, { icon: url, iconSlug: null });
+        recordActivity(`Icon URL updated for “${entryLabel(existing)}”.`);
+      } else {
+        const slug = String(req.body.slug || "").trim();
+        const icon = slug ? await cacheIcon(slug) : null;
+        updated = storage.setApiTokenIcon(req.params.id, { icon, iconSlug: slug || null });
+        recordActivity(`${slug ? "Icon updated" : "Icon reset"} for “${entryLabel(existing)}”.`);
+      }
+      return res.json({ ...updated, ownerUsername: users.find(item => item.id === updated.ownerUserId)?.username || "unknown", revoked: Boolean(updated.revokedAt) });
+    }
     const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "streams" ? streams : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
     if (!collection) return res.status(404).json({ error: "Entry type not found." });
     const item = collection.find(entry => entry.id === req.params.id);
@@ -1902,6 +1920,19 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
 });
 app.post("/api/:kind/:id/icon", iconUpload.single("icon"), async (req, res, next) => {
   try {
+    if (req.params.kind === "tokens") {
+      if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+      const existing = storage.listApiTokens().find(token => token.id === req.params.id);
+      if (!existing) return res.status(404).json({ error: "API token not found." });
+      if (!req.file) return res.status(400).json({ error: "Choose an icon image." });
+      if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(req.file.mimetype)) return res.status(400).json({ error: "Use PNG, JPEG, WebP, GIF, or SVG." });
+      const extension = req.file.mimetype === "image/svg+xml" ? "svg" : req.file.mimetype.split("/")[1].replace("jpeg", "jpg");
+      const filename = `${req.params.kind}-${existing.id}.${extension}`;
+      await fsp.rename(req.file.path, path.join(iconsDir, filename));
+      const updated = storage.setApiTokenIcon(req.params.id, { icon: `/site-icons/${filename}`, iconSlug: null });
+      recordActivity(`Custom icon uploaded for “${entryLabel(existing)}”.`);
+      return res.json({ ...updated, ownerUsername: users.find(item => item.id === updated.ownerUserId)?.username || "unknown", revoked: Boolean(updated.revokedAt) });
+    }
     const collection = req.params.kind === "sites" ? sites : req.params.kind === "proxies" ? proxies : req.params.kind === "redirects" ? redirects : req.params.kind === "streams" ? streams : req.params.kind === "access-lists" ? accessLists : req.params.kind === "groups" ? groups : req.params.kind === "users" ? users : null;
     if (!collection) return res.status(404).json({ error: "Entry type not found." });
     const item = collection.find(entry => entry.id === req.params.id);

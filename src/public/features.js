@@ -356,18 +356,29 @@ async function loadApiTokens() {
   const list = document.querySelector("#api-token-list"); if (!list) return;
   const summary = document.querySelector("#api-token-summary");
   try {
-    const tokens = await api("/api/tokens");
+    const tokens = state.apiTokens = await api("/api/tokens");
     if (summary) {
+      // Full access / Read-only only count ACTIVE tokens -- a revoked token's scope no longer
+      // means anything operationally, so folding it into these counts would make them disagree
+      // with Active + Revoked, which already account for every token issued.
       const counts = { active: 0, revoked: 0, full: 0, readOnly: 0 };
-      for (const token of tokens) { if (token.revoked) counts.revoked += 1; else counts.active += 1; if (token.scope === "read-only") counts.readOnly += 1; else counts.full += 1; }
-      summary.innerHTML = [["Active", counts.active, "#62e6a7"], ["Revoked", counts.revoked, "#ff7185"], ["Full access", counts.full, "#6ea8ff"], ["Read-only", counts.readOnly, "#b58cff"]].map(([label, count, color]) => `<div><span class="status-dot" style="${count ? `background:${color}` : ""}"></span><strong>${count}</strong><span>${label}</span></div>`).join("");
+      for (const token of tokens) { if (token.revoked) { counts.revoked += 1; continue; } counts.active += 1; if (token.scope === "read-only") counts.readOnly += 1; else counts.full += 1; }
+      summary.innerHTML = [["Active", counts.active, "#62e6a7"], ["Revoked", counts.revoked, "#ff7185"], ["Full access", counts.full, "#6ea8ff"], ["Read-only", counts.readOnly, "#b58cff"]].map(([label, count, color]) => `<div><span class="status-dot" style="${count ? `background:${color}` : ""}"></span><strong>${count}</strong><span>${label}</span></div>`).join("") + `<label class="check-control api-token-hide-revoked"><input type="checkbox" id="api-token-hide-revoked"${state.hideRevokedTokens ? " checked" : ""}><span>Hide revoked</span></label>`;
     }
-    list.innerHTML = tokens.length ? tokens.map(token => {
+    const visibleTokens = state.hideRevokedTokens ? tokens.filter(token => !token.revoked) : tokens;
+    list.innerHTML = visibleTokens.length ? visibleTokens.map(token => {
       const status = apiTokenStatus(token);
-      return `<article class="site-card api-token-card ${token.revoked ? "revoked" : ""}" data-token-id="${extendedEscape(token.id)}"><div class="card-top"><div class="site-icon">TK</div></div><h2>${extendedEscape(token.name)}</h2><p class="address">${extendedEscape(token.prefix)}… · ${token.scope === "read-only" ? "Read-only" : "Full access"}</p><p class="gateway-address">${extendedEscape(token.ownerUsername || "unknown")} · created ${extendedEscape(formatTime(token.createdAt))}</p><p class="gateway-address">${token.lastUsedAt ? `Last used ${extendedEscape(formatTime(token.lastUsedAt))}` : "Never used"}${token.expiresAt ? ` · expires ${extendedEscape(formatTime(token.expiresAt))}` : ""}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status.dot}"></span>${extendedEscape(status.label)}</span><div class="card-actions">${token.revoked ? "" : '<button class="button secondary danger-text" data-token-action="revoke">Revoke</button>'}</div></div></article>`;
-    }).join("") : '<p class="quiet-state padded">No API tokens have been issued yet.</p>';
+      const menu = `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="API token options" aria-expanded="false">•••</button><div class="menu"><button data-token-action="icon">Change icon</button>${token.revoked ? "" : '<button data-token-action="revoke" class="danger-text">Revoke token</button>'}</div></div>`;
+      return `<article class="site-card api-token-card ${token.revoked ? "revoked" : ""}" data-token-id="${extendedEscape(token.id)}"><div class="card-top"><div class="site-icon">${featureIcon(token, "TK")}</div>${menu}</div><h2>${extendedEscape(token.name)}</h2><p class="address">${extendedEscape(token.prefix)}… · ${token.scope === "read-only" ? "Read-only" : "Full access"}</p><p class="gateway-address">${extendedEscape(token.ownerUsername || "unknown")} · created ${extendedEscape(formatTime(token.createdAt))}</p><p class="gateway-address">${token.lastUsedAt ? `Last used ${extendedEscape(formatTime(token.lastUsedAt))}` : "Never used"}${token.expiresAt ? ` · expires ${extendedEscape(formatTime(token.expiresAt))}` : ""}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status.dot}"></span>${extendedEscape(status.label)}</span></div></article>`;
+    }).join("") : `<p class="quiet-state padded">${tokens.length ? "No active tokens — uncheck \u201cHide revoked\u201d to see revoked tokens." : "No API tokens have been issued yet."}</p>`;
   } catch (error) { list.innerHTML = `<p class="quiet-state padded">${extendedEscape(error.message)}</p>`; }
 }
+document.addEventListener("change", event => {
+  const checkbox = event.target.closest("#api-token-hide-revoked"); if (!checkbox) return;
+  state.hideRevokedTokens = checkbox.checked;
+  loadApiTokens();
+});
+window.loadApiTokens = loadApiTokens;
 function renderApiTokensPanel() {
   if (state.user?.role !== "administrator") return;
   const tabs = document.querySelector(".admin-tabs"), users = document.querySelector('[data-admin-panel="users"]');
@@ -412,6 +423,21 @@ async function openCreateApiTokenDialog() {
     showIssuedApiToken(result);
   } catch (error) { toast(error.message, "error"); }
 }
+// Menu-open/close toggle for API token cards, matching the same pattern used for Groups' menu.
+document.addEventListener("click", event => {
+  const button = event.target.closest("#api-token-list .api-token-card .menu-button"); if (!button) return;
+  const card = button.closest(".api-token-card"); const opening = !card.classList.contains("menu-open");
+  document.querySelectorAll("#api-token-list .api-token-card.menu-open").forEach(item => { item.classList.remove("menu-open"); item.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); });
+  card.classList.toggle("menu-open", opening); button.setAttribute("aria-expanded", String(opening));
+  event.preventDefault(); event.stopImmediatePropagation();
+}, true);
+document.addEventListener("click", event => {
+  const button = event.target.closest('#api-token-list [data-token-action="icon"]'); if (!button) return;
+  const row = button.closest("[data-token-id]"); if (!row) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  row.classList.remove("menu-open");
+  openIconPicker("tokens", row.dataset.tokenId);
+}, true);
 document.addEventListener("click", async event => {
   const button = event.target.closest('[data-token-action="revoke"]'); if (!button) return;
   const row = button.closest("[data-token-id]"); if (!row) return;
