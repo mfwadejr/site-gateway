@@ -83,14 +83,14 @@ function recordActivity(message, status = "ok") {
 }
 
 async function directorySize(directory) {
-  let total = 0;
   const entries = await fsp.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
-  for (const entry of entries) {
+  const sizes = await Promise.all(entries.map(async entry => {
     const itemPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) total += await directorySize(itemPath);
-    else if (entry.isFile()) total += (await fsp.stat(itemPath)).size;
-  }
-  return total;
+    if (entry.isDirectory()) return directorySize(itemPath);
+    if (entry.isFile()) return (await fsp.stat(itemPath)).size;
+    return 0;
+  }));
+  return sizes.reduce((sum, size) => sum + size, 0);
 }
 
 function numberEnv(name, fallback) {
@@ -729,13 +729,14 @@ function publicStream(stream) {
 
 // --- Certificate inventory & domain readiness diagnostics --------------------------------------
 async function walkFiles(directory) {
-  const output = [];
-  for (const entry of await fsp.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error))) {
+  const entries = await fsp.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
+  const results = await Promise.all(entries.map(entry => {
     const fullPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) output.push(...await walkFiles(fullPath));
-    else if (entry.isFile()) output.push(fullPath);
-  }
-  return output;
+    if (entry.isDirectory()) return walkFiles(fullPath);
+    if (entry.isFile()) return [fullPath];
+    return [];
+  }));
+  return results.flat();
 }
 
 function certificateNames(certificate) {
@@ -748,15 +749,15 @@ async function certificateInventory() {
   const configured = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))]
     .filter(item => item.enabled && item.domain && item.tls !== "http");
   const configuredDomains = configured.flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
-  const parsed = [];
-  const certificateFiles = [...await walkFiles(certificateDir), ...await walkFiles(customCertificatesDir)];
-  for (const filename of certificateFiles.filter(file => /\.(?:crt|pem)$/i.test(file))) {
+  const [managedCertificateFiles, customCertificateFiles] = await Promise.all([walkFiles(certificateDir), walkFiles(customCertificatesDir)]);
+  const certificateFiles = [...managedCertificateFiles, ...customCertificateFiles];
+  const parsed = (await Promise.all(certificateFiles.filter(file => /\.(?:crt|pem)$/i.test(file)).map(async filename => {
     try {
-      const certificate = new crypto.X509Certificate(await fsp.readFile(filename));
-      const stat = await fsp.stat(filename);
-      parsed.push({ certificate, names: certificateNames(certificate), updatedAt: stat.mtime.toISOString(), filename, source: filename.startsWith(customCertificatesDir) ? "Custom upload" : "Caddy / ACME" });
-    } catch { /* Ignore non-certificate PEM files and unreadable entries. */ }
-  }
+      const [contents, stat] = await Promise.all([fsp.readFile(filename), fsp.stat(filename)]);
+      const certificate = new crypto.X509Certificate(contents);
+      return { certificate, names: certificateNames(certificate), updatedAt: stat.mtime.toISOString(), filename, source: filename.startsWith(customCertificatesDir) ? "Custom upload" : "Caddy / ACME" };
+    } catch { return null; /* Ignore non-certificate PEM files and unreadable entries. */ }
+  }))).filter(Boolean);
   const certificates = configuredDomains.map(item => {
     const found = parsed.find(entry => entry.names.some(name => name === item.domain || (name.startsWith("*.") && item.domain.endsWith(name.slice(1)))));
     if (!found) {
@@ -793,10 +794,9 @@ async function pruneOrphanedCertificates(candidateDomains) {
 }
 
 
-async function domainReadiness() {
+async function domainReadiness(precomputedCertificates) {
   const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.enabled && item.domain).flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
-  const certs = await certificateInventory();
-  const [httpResponding, httpsResponding] = await Promise.all([tcpProbe(80), tcpProbe(443)]);
+  const [certs, httpResponding, httpsResponding] = await Promise.all([precomputedCertificates ? Promise.resolve(precomputedCertificates) : certificateInventory(), tcpProbe(80), tcpProbe(443)]);
   return Promise.all(routes.map(async item => {
     let addresses = [], dnsError = null;
     try { addresses = [...new Set((await dns.lookup(item.domain, { all: true })).map(value => value.address))]; } catch (error) { dnsError = error.code || error.message; }
@@ -954,12 +954,12 @@ async function cacheIcon(slug) {
 
 // --- Dashboard snapshot: aggregates health/status across every subsystem for the
 //     Overview page and the /api/dashboard endpoint --------------------------------------------
-async function dashboardSnapshot() {
+async function dashboardSnapshot(precomputedCertificates) {
   const hosted = sites.map(publicSite);
   const proxyHosts = proxies.map(publicProxy);
   const enabledStreams = streams.filter(item => item.enabled !== false);
   const streamingPorts = { total: enabledStreams.length, listening: enabledStreams.filter(item => activeStreams.has(item.id)).length };
-  const certificates = await certificateInventory();
+  const certificates = precomputedCertificates || await certificateInventory();
   const tlsDomains = [...sites, ...proxies].filter(item => item.enabled && item.domain && item.tls !== "http").length;
   const [storageWritable, gatewayResponding, httpResponding, httpsResponding] = await Promise.all([
     fsp.access(dataDir, fs.constants.R_OK | fs.constants.W_OK).then(() => true).catch(() => false),
@@ -1584,10 +1584,8 @@ app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, ma
 app.get("/api/system/storage", async (req, res, next) => {
   if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
   try {
-    const breakdown = {};
-    for (const [key, dir] of Object.entries({ sites: sitesDir, backups: backupsDir, certificates: certificatesRoot, logs: logsDir, database: path.join(dataDir, "database") })) {
-      breakdown[key] = await directorySize(dir);
-    }
+    const breakdownDirs = { sites: sitesDir, backups: backupsDir, certificates: certificatesRoot, logs: logsDir, database: path.join(dataDir, "database") };
+    const breakdown = Object.fromEntries(await Promise.all(Object.entries(breakdownDirs).map(async ([key, dir]) => [key, await directorySize(dir)])));
     let capacity = null;
     try {
       const stats = await fsp.statfs(dataDir);
@@ -1783,7 +1781,12 @@ app.get("/api/certificates", async (req, res, next) => {
   catch (error) { next(error); }
 });
 app.post("/api/health/check", async (req, res, next) => {
-  try { await checkAllProxies(); res.json({ dashboard: await dashboardSnapshot(), certificates: await certificateInventory(), readiness: await domainReadiness() }); }
+  try {
+    await checkAllProxies();
+    const certificates = await certificateInventory();
+    const [dashboard, readiness] = await Promise.all([dashboardSnapshot(certificates), domainReadiness(certificates)]);
+    res.json({ dashboard, certificates, readiness });
+  }
   catch (error) { next(error); }
 });
 app.get("/api/readiness", async (req, res, next) => { try { res.json({ checkedAt: new Date().toISOString(), routes: await domainReadiness() }); } catch (error) { next(error); } });
@@ -1795,8 +1798,9 @@ app.get("/api/support-report", async (req, res, next) => {
   try {
     if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
     const certificateReport = await certificateInventory();
+    const readiness = await domainReadiness(certificateReport);
     certificateReport.latestError = certificateReport.latestError ? { present:true, at:certificateReport.latestError.at } : null;
-    const report = { product: "Site Gateway", generatedAt: new Date().toISOString(), version: appVersion, caddyVersion, nodeVersion: process.version, storage: { engine: "SQLite", integrity: storage.integrity() }, gateway: { healthy: !gatewayError, lastReload: lastGatewayReload }, routes: { hosted: sites.map(({ id,name,domain,tls,enabled,port }) => ({ id,name,domain,tls,enabled,port })), proxies: proxies.map(({ id,name,domain,tls,enabled,target,healthEnabled,healthExpected }) => ({ id,name,domain,tls,enabled,target,healthEnabled,healthExpected })), redirects: redirects.map(({ id,name,domain,tls,enabled,code }) => ({ id,name,domain,tls,enabled,code })) }, certificates: certificateReport, readiness: await domainReadiness(), recentEvents: recentActivity.slice(0,20).map(item => ({ at:item.at, status:item.status, message:item.status === "error" ? "Operational error recorded; review the protected in-app event log for details." : item.message })) };
+    const report = { product: "Site Gateway", generatedAt: new Date().toISOString(), version: appVersion, caddyVersion, nodeVersion: process.version, storage: { engine: "SQLite", integrity: storage.integrity() }, gateway: { healthy: !gatewayError, lastReload: lastGatewayReload }, routes: { hosted: sites.map(({ id,name,domain,tls,enabled,port }) => ({ id,name,domain,tls,enabled,port })), proxies: proxies.map(({ id,name,domain,tls,enabled,target,healthEnabled,healthExpected }) => ({ id,name,domain,tls,enabled,target,healthEnabled,healthExpected })), redirects: redirects.map(({ id,name,domain,tls,enabled,code }) => ({ id,name,domain,tls,enabled,code })) }, certificates: certificateReport, readiness, recentEvents: recentActivity.slice(0,20).map(item => ({ at:item.at, status:item.status, message:item.status === "error" ? "Operational error recorded; review the protected in-app event log for details." : item.message })) };
     res.setHeader("Content-Disposition", `attachment; filename="site-gateway-support-${new Date().toISOString().slice(0,10)}.json"`); res.type("json").send(JSON.stringify(report, null, 2));
   } catch (error) { next(error); }
 });
