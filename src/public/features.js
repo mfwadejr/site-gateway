@@ -571,6 +571,34 @@ document.addEventListener("click", async event => {
 });
 
 
+// Formats a byte rate as e.g. "1.2 MB/s"; reuses formatBytes and just appends the rate suffix.
+function formatRate(bytesPerSecond) { return `${formatBytes(bytesPerSecond)}/s`; }
+function setHeroStat(key, { value, percent, detail, tone } = {}) {
+  const valueEl = document.querySelector(`#system-hero-${key}-value`), fillEl = document.querySelector(`#system-hero-${key}-fill`), detailEl = document.querySelector(`#system-hero-${key}-detail`);
+  if (valueEl) valueEl.textContent = value ?? "\u2014";
+  if (fillEl) { fillEl.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`; fillEl.className = `system-hero-fill${tone ? ` ${tone}` : ""}`; }
+  if (detailEl) detailEl.textContent = detail || "";
+}
+// Populates the System tab's hero panel (CPU/memory/swap/disk/network/throughput) from
+// /api/system/health. Each stat degrades gracefully to a dash when its source isn't available
+// (e.g. no cgroup v2, no readable network interfaces, swap disabled on the host).
+function renderSystemHealthHero(health) {
+  if (!document.querySelector("#system-hero-grid")) return;
+  if (!health) { ["cpu", "memory", "swap", "disk", "network", "throughput"].forEach(key => setHeroStat(key, { value: "\u2014", detail: "Unavailable" })); return; }
+  const tone = percent => percent >= 90 ? "critical" : percent >= 75 ? "warning" : "";
+  if (health.cpu) setHeroStat("cpu", { value: `${health.cpu.percent.toFixed(1)}%`, percent: health.cpu.percent, tone: tone(health.cpu.percent), detail: "Of this container\u2019s CPU quota" });
+  else setHeroStat("cpu", { value: "\u2014", detail: "cgroup CPU stats unavailable" });
+  if (health.memory) setHeroStat("memory", { value: `${health.memory.percent.toFixed(1)}%`, percent: health.memory.percent, tone: tone(health.memory.percent), detail: `${formatBytes(health.memory.usedBytes)} / ${formatBytes(health.memory.limitBytes)}` });
+  else setHeroStat("memory", { value: "\u2014", detail: "cgroup memory stats unavailable" });
+  if (health.swap && health.swap.configured === false) setHeroStat("swap", { value: "Off", percent: 0, detail: "Swap is not configured for this container" });
+  else if (health.swap) setHeroStat("swap", { value: health.swap.percent === null ? formatBytes(health.swap.usedBytes) : `${health.swap.percent.toFixed(1)}%`, percent: health.swap.percent ?? 0, tone: health.swap.percent ? tone(health.swap.percent) : "", detail: health.swap.limitBytes ? `${formatBytes(health.swap.usedBytes)} / ${formatBytes(health.swap.limitBytes)}` : formatBytes(health.swap.usedBytes) });
+  else setHeroStat("swap", { value: "\u2014", detail: "cgroup swap stats unavailable" });
+  if (health.disk) setHeroStat("disk", { value: `${health.disk.percent.toFixed(1)}%`, percent: health.disk.percent, tone: tone(health.disk.percent), detail: `${formatBytes(health.disk.usedBytes)} used \u00b7 ${formatBytes(health.disk.availableBytes)} free` });
+  else setHeroStat("disk", { value: "\u2014", detail: "Disk stats unavailable" });
+  if (health.network) setHeroStat("network", { value: formatRate(health.network.rxBytesPerSec + health.network.txBytesPerSec), percent: 0, detail: `\u2193 ${formatRate(health.network.rxBytesPerSec)} \u00b7 \u2191 ${formatRate(health.network.txBytesPerSec)}` });
+  else setHeroStat("network", { value: "\u2014", detail: "Sampling\u2026" });
+  setHeroStat("throughput", { value: String(health.throughput?.liveRequests ?? 0), percent: 0, detail: "requests in the last minute" });
+}
 // --- System tab: environment/integration status, storage, scheduled jobs, sync, restart --------
 function renderSystemPanel() {
   if (state.user?.role !== "administrator") return;
@@ -584,6 +612,11 @@ function renderSystemPanel() {
     panel.dataset.ready = "1";
     panel.innerHTML = [
       '<div class="panel-heading"><div><h2>System</h2><p class="muted">What\u2019s configured, what\u2019s running, and what this deployment can do. Nothing here is customizable except the Docker toggle below and the action buttons \u2014 everything else is status.</p></div></div>',
+      '<div class="system-hero"><div class="system-hero-grid" id="system-hero-grid">' +
+        ["cpu:CPU", "memory:Memory", "swap:Swap", "disk:Disk", "network:Network", "throughput:Throughput"].map(entry => { const [key, label] = entry.split(":");
+          return `<div class="system-hero-stat" data-hero-stat="${key}"><span class="system-hero-label">${label}</span><strong class="system-hero-value" id="system-hero-${key}-value">\u2014</strong><div class="system-hero-bar"><div class="system-hero-fill" id="system-hero-${key}-fill"></div></div><small class="system-hero-detail" id="system-hero-${key}-detail"></small></div>`;
+        }).join("") +
+      '</div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Integrations</h2></div></div><div id="system-env-status" class="health-grid"></div><div class="system-integrations"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Security status</h2></div></div><div id="system-security" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div id="system-jobs" class="health-grid"></div></div>',
@@ -647,11 +680,13 @@ async function renderSystemStatus(panel) {
   if (syncStatus) { const drift = (state.dashboard?.attention || []).some(item => item.kind === "drift"); syncStatus.textContent = drift ? "Configuration drift detected \u2014 the running gateway no longer matches the last known-good configuration." : `Gateway configuration is in sync. Last reload: ${state.dashboard?.gateway?.lastReload ? formatTime(state.dashboard.gateway.lastReload) : "unknown"}.`; syncStatus.className = drift ? "muted status-warning" : "muted"; }
   if (version) version.innerHTML = `Site Gateway v${extendedEscape(state.config?.version || "unknown")}<br>Access this dashboard at: <code>${extendedEscape(location.origin)}</code><br>Data directory: <code>${extendedEscape(state.config?.storage?.databasePath ? state.config.storage.databasePath.replace(/\/database\/.*/, "") : "/data")}</code> &middot; Site ports: <code>${extendedEscape(String(state.config?.minPort ?? ""))}\u2013${extendedEscape(String(state.config?.maxPort ?? ""))}</code>`;
   try {
-    const [sec, store, policy] = await Promise.all([
+    const [sec, store, policy, health] = await Promise.all([
       api("/api/system/security"),
       api("/api/system/storage"),
       api("/api/system/restart-policy"),
+      api("/api/system/health").catch(() => null),
     ]);
+    renderSystemHealthHero(health);
     if (security) security.innerHTML = [
       { ok: !sec.adminPasswordIsDefault, label: "ADMIN_PASSWORD", detail: sec.adminPasswordIsDefault ? "Still using the built-in default \u2014 set this before exposing the dashboard." : "Configured." },
       { ok: !sec.sessionSecretIsDefault, label: "SESSION_SECRET", detail: sec.sessionSecretIsDefault ? "Not set \u2014 sessions are keyed off the admin credentials instead of an independent secret." : "Configured." },

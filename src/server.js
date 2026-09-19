@@ -5,6 +5,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
+import os from "node:os";
 import dgram from "node:dgram";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,6 +92,99 @@ async function directorySize(directory) {
     return 0;
   }));
   return sizes.reduce((sum, size) => sum + size, 0);
+}
+
+// --- System health: cgroup v2 CPU/memory/swap sampling + network throughput -------------------
+// All readings are container-scoped (cgroup v2), not host-wide, because Site Gateway usually
+// isn't the only thing running on the host and host-wide numbers would be misleading in a
+// per-container dashboard. Falls back to host-level approximations (with a flag the UI can use
+// to disclaim them) when cgroup v2 files aren't readable -- e.g. cgroup v1 hosts, or a container
+// runtime that doesn't expose them.
+const CGROUP_ROOT = "/sys/fs/cgroup";
+async function readCgroupFile(name) {
+  try { return (await fsp.readFile(path.join(CGROUP_ROOT, name), "utf8")).trim(); } catch { return null; }
+}
+let lastCpuSample = null; // { usageMicros, atMs } -- usage_usec is cumulative, so CPU% needs a delta between two samples.
+async function cgroupCpuPercent() {
+  const stat = await readCgroupFile("cpu.stat");
+  if (!stat) return null;
+  const match = stat.match(/^usage_usec (\d+)/m);
+  if (!match) return null;
+  const usageMicros = Number(match[1]), atMs = Date.now();
+  const previous = lastCpuSample;
+  lastCpuSample = { usageMicros, atMs };
+  if (!previous) return null; // First call has nothing to diff against -- the next poll will have a real number.
+  const elapsedMicros = (atMs - previous.atMs) * 1000;
+  if (elapsedMicros <= 0) return null;
+  // cpu.max caps how many CPUs this container may use; percent is relative to that quota (or to
+  // the host's core count when the container has no quota set, i.e. cpu.max reads "max").
+  const max = await readCgroupFile("cpu.max");
+  let quotaCpus = os.cpus().length || 1;
+  if (max) { const [quota, period] = max.split(/\s+/); if (quota !== "max") { const q = Number(quota), p = Number(period); if (q > 0 && p > 0) quotaCpus = q / p; } }
+  const percent = ((usageMicros - previous.usageMicros) / elapsedMicros) / quotaCpus * 100;
+  return Math.max(0, Math.min(100, percent));
+}
+async function cgroupMemory() {
+  const current = await readCgroupFile("memory.current");
+  if (current === null) return null;
+  const maxRaw = await readCgroupFile("memory.max");
+  const totalBytes = os.totalmem();
+  const limitBytes = maxRaw && maxRaw !== "max" ? Number(maxRaw) : totalBytes;
+  const usedBytes = Number(current);
+  return { usedBytes, limitBytes, percent: limitBytes > 0 ? (usedBytes / limitBytes) * 100 : null };
+}
+async function cgroupSwap() {
+  const current = await readCgroupFile("memory.swap.current");
+  if (current === null) return null;
+  const maxRaw = await readCgroupFile("memory.swap.max");
+  const usedBytes = Number(current);
+  if (maxRaw === "0") return { usedBytes: 0, limitBytes: 0, percent: null, configured: false };
+  const limitBytes = maxRaw && maxRaw !== "max" ? Number(maxRaw) : null;
+  return { usedBytes, limitBytes, percent: limitBytes ? (usedBytes / limitBytes) * 100 : null, configured: true };
+}
+// Network counters are cumulative since the interface came up, so throughput needs a delta
+// between two samples too -- sampled on a fixed interval in the background (rather than on
+// each request) so the rate stays smooth regardless of how often the dashboard polls.
+let lastNetworkSample = null; // { rxBytes, txBytes, atMs }
+let networkRate = null; // { rxBytesPerSec, txBytesPerSec }
+async function sampleNetworkInterfaces() {
+  try {
+    const names = (await fsp.readdir("/sys/class/net")).filter(name => name !== "lo");
+    const totals = await Promise.all(names.map(async name => {
+      const [rx, tx] = await Promise.all([
+        fsp.readFile(`/sys/class/net/${name}/statistics/rx_bytes`, "utf8").catch(() => "0"),
+        fsp.readFile(`/sys/class/net/${name}/statistics/tx_bytes`, "utf8").catch(() => "0"),
+      ]);
+      return { rx: Number(rx.trim()) || 0, tx: Number(tx.trim()) || 0 };
+    }));
+    const rxBytes = totals.reduce((sum, value) => sum + value.rx, 0), txBytes = totals.reduce((sum, value) => sum + value.tx, 0), atMs = Date.now();
+    if (lastNetworkSample) {
+      const elapsedSeconds = (atMs - lastNetworkSample.atMs) / 1000;
+      if (elapsedSeconds > 0) networkRate = { rxBytesPerSec: Math.max(0, (rxBytes - lastNetworkSample.rxBytes) / elapsedSeconds), txBytesPerSec: Math.max(0, (txBytes - lastNetworkSample.txBytes) / elapsedSeconds) };
+    }
+    lastNetworkSample = { rxBytes, txBytes, atMs };
+  } catch { /* No readable network interfaces (e.g. host networking with restricted /sys) -- the hero panel just omits the network stat. */ }
+}
+setInterval(sampleNetworkInterfaces, 5000).unref();
+sampleNetworkInterfaces();
+// One combined snapshot for the System tab's hero panel -- CPU/memory/swap/network are all
+// container-scoped (cgroup v2 + this container's network namespace); disk reuses the same
+// statfs-on-the-data-volume approach as /api/system/storage.
+async function systemHealthSnapshot() {
+  const [cpuPercent, memory, swap, disk] = await Promise.all([
+    cgroupCpuPercent(),
+    cgroupMemory(),
+    cgroupSwap(),
+    fsp.statfs(dataDir).catch(() => null),
+  ]);
+  return {
+    cpu: cpuPercent === null ? null : { percent: cpuPercent },
+    memory,
+    swap,
+    disk: disk ? { totalBytes: disk.blocks * disk.bsize, freeBytes: disk.bfree * disk.bsize, availableBytes: disk.bavail * disk.bsize, usedBytes: disk.blocks * disk.bsize - disk.bfree * disk.bsize, percent: ((disk.blocks - disk.bfree) / disk.blocks) * 100 } : null,
+    network: networkRate,
+    throughput: { liveRequests: storage.performanceLiveCount(60) },
+  };
 }
 
 function numberEnv(name, fallback) {
@@ -1581,6 +1675,10 @@ app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) }, docker: { socketMounted: dockerSocketMounted, enabled: dockerSocketMounted && settings.dockerIntegration?.enabled === true } }));
 
 // --- System tab: storage usage, restart-policy check, and self-restart -----------------------------------
+app.get("/api/system/health", async (req, res, next) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  try { res.json(await systemHealthSnapshot()); } catch (error) { next(error); }
+});
 app.get("/api/system/storage", async (req, res, next) => {
   if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
   try {

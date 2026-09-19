@@ -977,3 +977,19 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .check-control.is-disabled{opacity:.55}
 .check-control.is-disabled span{color:var(--muted)}
 .docker-integration-section,.backup-history-section{margin-top:var(--space-5)}
+
+/* System tab hero: one-stop CPU/memory/swap/disk/network/throughput readout, styled like the
+   decorative .metric-card gradient tiles rather than the plain .health-tile rows below it. */
+.system-hero{margin:0 0 18px;padding:22px;border:1px solid var(--line);border-radius:var(--radius-lg);background:linear-gradient(145deg,rgba(var(--panel2-rgb),.95),rgba(var(--card-shade-rgb),.95));box-shadow:0 14px 40px rgba(var(--black-rgb),.14)}
+.system-hero-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--space-4)}
+.system-hero-stat{min-width:0;display:flex;flex-direction:column;gap:6px}
+.system-hero-label{color:var(--muted);font-size:var(--font-size-sm);font-weight:650;text-transform:uppercase;letter-spacing:.04em}
+.system-hero-value{font-size:1.5rem;font-weight:800;line-height:1.1}
+.system-hero-bar{height:6px;border-radius:var(--radius-full);background:rgba(var(--bg-rgb),.4);overflow:hidden}
+.system-hero-fill{height:100%;border-radius:var(--radius-full);background:var(--green);transition:width .4s ease}
+.system-hero-fill.warning{background:var(--warning)}
+.system-hero-fill.critical{background:var(--danger)}
+.system-hero-stat[data-hero-stat="network"] .system-hero-bar,.system-hero-stat[data-hero-stat="throughput"] .system-hero-bar{display:none}
+.system-hero-detail{color:var(--muted);font-size:var(--font-size-xs);min-height:1.2em}
+@media(max-width:1100px){.system-hero-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:420px){.system-hero-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
