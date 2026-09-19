@@ -336,7 +336,7 @@ header{align-items:flex-end}
 .aside-footer{margin-top:0}
 
 /* Administration tab bar */
-.admin-tabs{display:flex;gap:7px;margin-bottom:22px;padding:5px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);overflow:auto}
+.admin-tabs{display:flex;gap:7px;margin:var(--space-7) 0 22px;padding:5px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--panel);overflow:auto}
 .admin-tabs button{width:auto;white-space:nowrap;padding:9px var(--space-3);border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
 .admin-tabs .tab-active{background:var(--panel2);color:var(--text)}
 
