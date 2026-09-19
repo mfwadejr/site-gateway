@@ -898,7 +898,9 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .performance-table{width:100%;border-collapse:collapse;font-size:var(--font-size-md);table-layout:fixed}
 .performance-table th,.performance-table td{padding:13px 15px;text-align:left;border-top:1px solid var(--line);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .performance-table thead th{border-top:0;color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;white-space:normal}
-.performance-table th:nth-child(1),.performance-table td:nth-child(1){width:22%}
+.performance-table-wrap .performance-table thead th{position:sticky;top:0;background:var(--panel);z-index:1}
+.performance-table th:nth-child(1),.performance-table td:nth-child(1){width:22%;white-space:normal;overflow-wrap:anywhere}
+.unconfigured-chip{margin-left:8px;white-space:nowrap;display:inline-block}
 .performance-table th:nth-child(n+2),.performance-table td:nth-child(n+2){width:11.1%;text-align:center}
 .performance-table .count-divider{color:var(--muted);margin:0 2px}
 .performance-table .count-link-button{border:0;background:none;padding:0;font:inherit;color:var(--danger);cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}

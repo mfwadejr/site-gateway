@@ -8,7 +8,7 @@
 
 // --- Shared DOM shortcut and app state ----------------------------------------
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [] };
+const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], usersLoaded: false, user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [] };
 
 // One-time DOM patches: move the Access List field into the create/settings
 // forms (features.js owns the Access List data, this file owns these forms).
@@ -29,7 +29,7 @@ async function api(url, options = {}) {
 }
 
 // --- Login/dashboard shell, toast, and small formatting helpers ------------------
-function showLogin(message = "") { state.user = null; state.users = []; state.view = "overview"; const form = $("#login-form"); form.reset(); form.elements.username.value = ""; form.elements.password.value = ""; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; $("#mfa-login-form").reset(); $("#mfa-login-form").classList.add("hidden"); $("#login-form").classList.remove("hidden"); $("#mfa-login-error").textContent = ""; setTimeout(() => form.elements.username.focus(), 0); }
+function showLogin(message = "") { state.user = null; state.users = []; state.usersLoaded = false; state.view = "overview"; const form = $("#login-form"); form.reset(); form.elements.username.value = ""; form.elements.password.value = ""; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; $("#mfa-login-form").reset(); $("#mfa-login-form").classList.add("hidden"); $("#login-form").classList.remove("hidden"); $("#mfa-login-error").textContent = ""; setTimeout(() => form.elements.username.focus(), 0); }
 function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); }
 function toast(message, type = "success") { const el = $("#toast"); el.textContent = message; el.classList.toggle("toast-error", type === "error"); el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
@@ -334,7 +334,6 @@ function renderPerformance() {
   $("#performance-summary").innerHTML = `${data.liveRequests} request${data.liveRequests === 1 ? "" : "s"} in the last minute across ${label} · <span id="performance-last-checked">Checked ${escapeHtml(formatTime(data.checkedAt))}</span>`;
   const rangeLabel = $("#performance-range").selectedOptions[0]?.textContent || "Last 6 hours";
   $("#performance-trend-title").textContent = `Requests · ${rangeLabel.toLowerCase()}${selected ? ` · ${selected}` : ""}`;
-  $("#performance-slowest-title").textContent = `Slowest requests · ${rangeLabel.toLowerCase()}${selected ? ` · ${selected}` : ""}`;
   const points = data.trend || [];
   state.performancePoints = points;
   const max = Math.max(1, ...points.map(point => point.count));
@@ -394,17 +393,14 @@ function renderPerformance() {
   const routes = (data.routes || []).filter(route => !selected || route.host === selected);
   state.performanceErrorBreakdowns = {};
   state.performanceTopPaths = {};
-  const countCell = (count, errors, breakdown, host) => { if (!errors) return `${count.toLocaleString()}`; if (!breakdown?.length) return `${count.toLocaleString()} <span class="count-divider">·</span> <span class="http-status bad">${errors.toLocaleString()}</span>`; state.performanceErrorBreakdowns[host] = { total: errors, breakdown }; return `${count.toLocaleString()} <span class="count-divider">·</span> <button type="button" class="http-status bad count-link-button" data-error-host="${escapeHtml(host)}">${errors.toLocaleString()}</button>`; };
+  const countCell = count => `${count.toLocaleString()}`;
   const pathsCell = route => { if (!route.topPaths?.length) return "—"; state.performanceTopPaths[route.host] = route.topPaths; return `<button type="button" class="count-link-button neutral" data-paths-host="${escapeHtml(route.host)}">View</button>`; };
-  $("#performance-rows").innerHTML = routes.length ? routes.map(route => `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}</td><td>${countCell(route.hourRequests, route.hourErrors)}</td><td>${countCell(route.dayRequests, route.dayErrors, route.errorBreakdown, route.host)}</td><td>${formatLatency(route.dayAvgMs)}</td><td>${formatLatency(route.dayP95Ms)}</td><td>${route.dayBytes ? escapeHtml(formatBytes(route.dayBytes)) : "—"}</td><td>${(route.dayVisitors || 0).toLocaleString()}</td><td>${pathsCell(route)}</td></tr>`).join("") : '<tr><td colspan="8" class="quiet-state">No requests have been logged yet.</td></tr>';
+  // Requests are logged for any Host header Caddy ever saw, including ones with no matching
+  // Hosted Site / Proxy Host / Redirect Host -- those fall through to the Default Site handler
+  // instead of a real backend. Badge those rows so they read as log history, not live config.
+  const configuredDomains = new Set([...state.sites, ...state.proxies, ...state.redirects].flatMap(item => [item.domain, ...(item.domains || [])]).filter(Boolean).map(domain => domain.toLowerCase()));
+  $("#performance-rows").innerHTML = routes.length ? routes.map(route => { const unconfigured = !configuredDomains.has((route.host || "").toLowerCase()); return `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}${unconfigured ? ' <span class="chip unconfigured-chip" title="No Hosted Site, Proxy Host, or Redirect Host currently matches this domain -- these requests hit the Default Site handler instead of a real backend.">Not configured</span>' : ""}</td><td>${countCell(route.hourRequests)}</td><td>${countCell(route.dayRequests)}</td><td>${formatLatency(route.dayAvgMs)}</td><td>${formatLatency(route.dayP95Ms)}</td><td>${route.dayBytes ? escapeHtml(formatBytes(route.dayBytes)) : "—"}</td><td>${(route.dayVisitors || 0).toLocaleString()}</td><td>${pathsCell(route)}</td></tr>`; }).join("") : '<tr><td colspan="8" class="quiet-state">No requests have been logged yet.</td></tr>';
   if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });
-  renderSlowestRequests(data.slowest || []);
-}
-
-// --- Performance: slowest individual requests -------------------------------------------
-function renderSlowestRequests(entries) {
-  const list = $("#performance-slowest"); if (!list) return;
-  list.innerHTML = entries.length ? entries.map(entry => `<div class="activity-tile"><span class="slowest-copy"><strong title="${escapeHtml(`${entry.method || ""} ${entry.uri || ""}`)}">${escapeHtml(entry.method || "GET")} ${escapeHtml(entry.uri || "/")}</strong><small>${escapeHtml(entry.host || "—")} · ${entry.status ?? "—"} · ${escapeHtml(formatTime(entry.at))}</small></span><span class="slowest-duration">${escapeHtml(formatLatency(entry.durationMs))}</span></div>`).join("") : '<p class="quiet-state">No timed requests in this window yet.</p>';
 }
 
 // --- Performance: hover tooltip on the request-trend chart -------------------------------
@@ -459,7 +455,7 @@ function renderUsers() {
     const statusToggle = user.status === "archived" ? "" : `<button class="toggle ${user.status === "active" ? "on" : ""}" data-user-action="status" data-value="${user.status === "active" ? "disabled" : "active"}" aria-label="${user.status === "active" ? "Disable" : "Enable"} ${escapeHtml(user.username)}"><span></span></button>`;
     const menu = `<div class="menu-wrap"><button class="icon-button menu-button" type="button" aria-label="User options" aria-expanded="false">•••</button><div class="menu"><button data-user-action="icon">Change icon</button>${!isSelf && user.mfaEnabled ? `<button data-user-action="mfa-disable">Disable 2FA</button>` : ""}${!isSelf ? `<button data-user-action="delete" class="danger-text">Delete</button>` : ""}</div></div>`;
     return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><div class="user-head-actions"><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span>${menu}</div></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${roleLabel}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : roleAction === "viewer" ? "Viewer" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}</div><div class="card-footer">${statusToggle}</div></article>`;
-  }).join("") : '<p class="quiet-state">No users found.</p>';
+  }).join("") : state.usersLoaded ? '<p class="quiet-state">No users found.</p>' : '<p class="quiet-state">Loading users…</p>';
   document.querySelectorAll("#user-list .user-card").forEach(card => { card.style.position = "relative"; card.style.minHeight = "250px"; card.style.paddingBottom = "64px"; const head = card.querySelector(".user-card-head"), status = head?.querySelector(".status-pill"), footer = card.querySelector(".card-footer"); if (!head || !footer) return; if (status) footer.prepend(status); });
   document.querySelectorAll("#user-list .user-card").forEach(card => { const user = state.users.find(item => item.id === card.dataset.userId); const old = card.querySelector('[data-user-action="role"]'); if (!user || !old) return; const select = document.createElement("select"); select.className = "user-role-select"; select.setAttribute("aria-label", `Role for ${user.username}`); select.innerHTML = '<option value="administrator">Administrator</option><option value="standard">Standard User</option><option value="viewer">Viewer</option>'; select.value = user.role; select.addEventListener("change", async () => { try { await api(`/api/users/${user.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ role:select.value }) }); await loadFeatureView(); toast("User role updated."); } catch (error) { select.value = user.role; toast(error.message, "error"); } }); old.replaceWith(select); });
 }
@@ -485,7 +481,7 @@ async function loadFeatureView() {
   if (state.view === "certificates") { [state.certificates, state.readiness] = await Promise.all([api("/api/certificates"), api("/api/readiness")]); renderCertificates(); }
   if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
   if (state.view === "performance") { state.performance = await api(`/api/performance?host=${encodeURIComponent($("#performance-host").value)}&hours=${encodeURIComponent($("#performance-range").value || "6")}`); renderPerformance(); }
-  if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); renderUsers(); window.renderExtendedViews?.(); }
+  if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); state.usersLoaded = true; renderUsers(); window.renderExtendedViews?.(); }
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
   restoreAdminTab();
 }
@@ -570,7 +566,7 @@ async function boot() {
   $("#login-copy").textContent = session.installationSetupPending ? "Sign in using the administrator credentials you configured during installation." : "Sign in to manage your sites.";
   if (!session.authenticated) return showLogin();
   if (session.setupRequired) { $("#login").classList.add("hidden"); $("#dashboard").classList.add("hidden"); $("#setup-form [name=username]").value = session.user.username; if (!$("#setup-dialog").open) $("#setup-dialog").showModal(); return; }
-  state.view = location.hash.slice(1) || "overview"; state.users = []; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canAdmin())); render(); state.config = await api("/api/config");
+  state.view = location.hash.slice(1) || "overview"; state.users = []; state.usersLoaded = false; showDashboard(); state.user = session.user; $("#user-label").textContent = session.user?.displayName || session.username; document.querySelectorAll(".admin-only").forEach(element => element.classList.toggle("hidden", !canAdmin())); render(); state.config = await api("/api/config");
   $("#version-label").textContent = `v${state.config.version || "unknown"}`;
   if (!state.loadedVersion) state.loadedVersion = state.config.version;
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
