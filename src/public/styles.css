@@ -688,7 +688,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 /* Documentation manual: intro & search */
 .docs-intro{margin-bottom:22px;padding:var(--space-5);border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--bg);color:var(--text)}
 .docs-intro h2{margin:0 0 10px}
-.docs-intro .docs-lede{margin:0;color:var(--muted);max-width:850px;line-height:1.6}
+.docs-intro .docs-lede{margin:0;color:var(--muted);line-height:1.6}
 .docs-layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:22px;align-items:start}
 .docs-nav{position:sticky;top:18px;height:calc(100vh - 170px);overflow:auto;display:grid;align-content:start;gap:6px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-2xl);background:var(--panel)}
 .docs-nav .eyebrow{margin:var(--space-1) 8px 8px}
@@ -719,7 +719,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .docs{display:block}
 .docs-intro{grid-column:1/-1}
 .docs-layout{width:100%}
-.docs-intro{text-align:left;max-width:900px;margin-left:auto;margin-right:auto}
+.docs-intro{text-align:left}
 .docs-intro>p:not(.eyebrow){margin-left:0;margin-right:0}
 .docs-search-panel{margin-left:0;margin-right:0}
 
