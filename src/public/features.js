@@ -622,30 +622,43 @@ function renderHeroPanel(prefix, health, { sixthSlot = "throughput" } = {}) {
   if (!document.querySelector(`#${prefix}-${keys[0]}-value`)) return;
   if (!health) { keys.forEach(key => setHeroStat(prefix, key, { value: "\u2014", detail: "Unavailable" })); return; }
   const tone = percent => percent >= 90 ? "critical" : percent >= 75 ? "warning" : "";
+  // Tracks the worst tone across the resource stats (not network/uptime/throughput, which don't
+  // carry one) so the panel's own top accent bar can reflect it too, instead of always showing
+  // green regardless of whether CPU/memory/swap/disk are actually in a warning/critical state.
+  const toneRank = { "": 0, warning: 1, critical: 2 };
+  let worstTone = "";
+  const trackTone = value => { if (toneRank[value] > toneRank[worstTone]) worstTone = value; };
   if (health.cpu) {
     const quotaLabel = health.cpu.quotaSource === "quota" ? `Of ${health.cpu.quotaCpus} allocated CPU${health.cpu.quotaCpus === 1 ? "" : "s"}` : health.cpu.quotaSource === "pinned" ? `Of ${health.cpu.quotaCpus} pinned core${health.cpu.quotaCpus === 1 ? "" : "s"}` : `Of host\u2019s ${health.cpu.quotaCpus} core${health.cpu.quotaCpus === 1 ? "" : "s"} \u2014 no limit set`;
+    trackTone(tone(health.cpu.percent));
     setHeroStat(prefix, "cpu", { value: `${health.cpu.percent.toFixed(1)}%`, percent: health.cpu.percent, tone: tone(health.cpu.percent), detail: quotaLabel });
   }
   else setHeroStat(prefix, "cpu", { value: "\u2014", detail: "cgroup CPU stats unavailable" });
-  if (health.memory) setHeroStat(prefix, "memory", { value: `${health.memory.percent.toFixed(1)}%`, percent: health.memory.percent, tone: tone(health.memory.percent), detail: `${formatBytes(health.memory.usedBytes)} / ${formatBytes(health.memory.limitBytes)}` });
+  if (health.memory) { trackTone(tone(health.memory.percent)); setHeroStat(prefix, "memory", { value: `${health.memory.percent.toFixed(1)}%`, percent: health.memory.percent, tone: tone(health.memory.percent), detail: `${formatBytes(health.memory.usedBytes)} / ${formatBytes(health.memory.limitBytes)}` }); }
   else setHeroStat(prefix, "memory", { value: "\u2014", detail: "cgroup memory stats unavailable" });
   // Swap only gets a real percentage when the container has an actual --memory-swap limit set
   // (memory.swap.max is a real number). Without one it's unbounded and shares the host's swap,
   // so a raw "0 B" would read like a hard cap that doesn't exist -- say so instead.
   if (health.swap && health.swap.configured === false) setHeroStat(prefix, "swap", { value: "Off", percent: 0, detail: "Swap is not configured for this container" });
-  else if (health.swap && health.swap.limitBytes) setHeroStat(prefix, "swap", { value: `${health.swap.percent.toFixed(1)}%`, percent: health.swap.percent, tone: tone(health.swap.percent), detail: `${formatBytes(health.swap.usedBytes)} / ${formatBytes(health.swap.limitBytes)}` });
+  else if (health.swap && health.swap.limitBytes) { trackTone(tone(health.swap.percent)); setHeroStat(prefix, "swap", { value: `${health.swap.percent.toFixed(1)}%`, percent: health.swap.percent, tone: tone(health.swap.percent), detail: `${formatBytes(health.swap.usedBytes)} / ${formatBytes(health.swap.limitBytes)}` }); }
   else if (health.swap) setHeroStat(prefix, "swap", { value: formatBytes(health.swap.usedBytes), percent: 0, detail: "Unlimited \u2014 shares host swap" });
   else setHeroStat(prefix, "swap", { value: "\u2014", detail: "cgroup swap stats unavailable" });
   if (health.disk) {
     const overAssigned = health.disk.assignedLimitBytes && health.disk.percent > 100;
     const diskDetail = health.disk.assignedLimitBytes ? `${formatBytes(health.disk.usedBytes)} used of ${formatBytes(health.disk.assignedLimitBytes)} assigned \u00b7 ${formatBytes(health.disk.availableBytes)} free on host` : `${formatBytes(health.disk.usedBytes)} used \u00b7 ${formatBytes(health.disk.availableBytes)} free`;
-    setHeroStat(prefix, "disk", { value: `${health.disk.percent.toFixed(1)}%`, percent: Math.min(100, health.disk.percent), tone: overAssigned ? "critical" : tone(health.disk.percent), detail: diskDetail });
+    const diskTone = overAssigned ? "critical" : tone(health.disk.percent);
+    trackTone(diskTone);
+    setHeroStat(prefix, "disk", { value: `${health.disk.percent.toFixed(1)}%`, percent: Math.min(100, health.disk.percent), tone: diskTone, detail: diskDetail });
   }
   else setHeroStat(prefix, "disk", { value: "\u2014", detail: "Disk stats unavailable" });
   if (health.network) setHeroStat(prefix, "network", { value: formatRate(health.network.rxBytesPerSec + health.network.txBytesPerSec), percent: 0, detail: `\u2193 ${formatRate(health.network.rxBytesPerSec)} \u00b7 \u2191 ${formatRate(health.network.txBytesPerSec)}` });
   else setHeroStat(prefix, "network", { value: "\u2014", detail: "Sampling\u2026" });
   if (sixthSlot === "throughput") setHeroStat(prefix, "throughput", { value: String(health.throughput?.liveRequests ?? 0), percent: 0, detail: "requests in the last minute" });
   else if (sixthSlot === "uptime") setHeroStat(prefix, "uptime", Number.isFinite(health.uptimeSeconds) ? { value: formatDuration(health.uptimeSeconds), detail: "Since last restart" } : { value: "\u2014", detail: "Unavailable" });
+  // Reflect the worst CPU/memory/swap/disk tone on the panel's own top accent bar -- previously
+  // hardcoded green regardless of what the stats inside it were actually showing.
+  const heroPanel = document.querySelector(`#${prefix}-grid`)?.closest(".system-panel");
+  if (heroPanel) { heroPanel.classList.remove("tone-warning", "tone-critical"); if (worstTone) heroPanel.classList.add(`tone-${worstTone}`); }
 }
 // --- System tab: environment/integration status, storage, scheduled jobs, sync, restart --------
 function renderSystemPanel() {
