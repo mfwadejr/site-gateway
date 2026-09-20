@@ -8,7 +8,7 @@
   <title>Site Gateway</title>
   <meta name="description" content="Host sites, proxy services, and manage HTTPS from one simple dashboard.">
   <link rel="icon" type="image/png" href="/site-gateway-icon-approved.png">
-  <link rel="stylesheet" href="/styles.css?v=0.16.61">
+  <link rel="stylesheet" href="/styles.css?v=0.16.62">
 </head>
 
 <!-- ================================================================
@@ -109,7 +109,7 @@
         <div class="metric-grid">
           <button class="metric-card accent-green" data-target="hosted"><span class="metric-icon">↗</span><span class="metric-label">Hosted sites</span><strong id="dash-hosted-total">0</strong><span id="dash-hosted-detail">None configured</span></button>
           <button class="metric-card accent-green" data-target="proxies"><span class="metric-icon">⇌</span><span class="metric-label">Proxy hosts</span><strong id="dash-proxy-total">0</strong><span id="dash-proxy-detail">None configured</span></button>
-          <button class="metric-card accent-green" data-target="certificates"><span class="metric-icon">▣</span><span class="metric-label">Certificates</span><strong id="dash-tls-total">0</strong><span id="dash-tls-detail">No TLS domains</span></button>
+          <button class="metric-card accent-green" data-target="certificates"><span class="metric-icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8.5" cy="8.5" r="3.4"></circle><path d="M10.9 10.9 17.8 17.8"></path><path d="M15.2 15.2 17 17"></path><path d="M17.4 17.4 19.5 15.3"></path></svg></span><span class="metric-label">Certificates</span><strong id="dash-tls-total">0</strong><span id="dash-tls-detail">No TLS domains</span></button>
         </div>
         <div class="metric-strip">
           <button class="metric-chip accent-green" data-target="redirects"><span class="chip-icon">↪</span><span class="chip-copy"><span class="metric-label">Redirect hosts</span><strong id="dash-redirect-total">0</strong></span></button>
@@ -451,6 +451,6 @@
   <div id="toast" class="toast" role="status"></div>
   <div id="update-banner" class="update-banner hidden" role="status"><span>A new version of Site Gateway is available.</span><div class="update-banner-actions"><button id="update-banner-refresh" class="button primary">Refresh</button><button id="update-banner-dismiss" class="text-button">Dismiss</button></div></div>
   <!-- App scripts: core (app.js) then extended views/admin (features.js) -->
-  <script src="/app.js?v=0.16.61" defer></script><script src="/features.js?v=0.16.61" defer></script><script src="/select-enhance.js?v=0.16.61" defer></script>
+  <script src="/app.js?v=0.16.62" defer></script><script src="/features.js?v=0.16.62" defer></script><script src="/select-enhance.js?v=0.16.62" defer></script>
 </body>
 </html>

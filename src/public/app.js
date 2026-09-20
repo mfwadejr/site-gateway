@@ -181,7 +181,7 @@ function renderDashboard() {
   $("#dash-hosted-detail").textContent = healthCopy(data.hosted, "sites");
   $("#dash-proxy-total").textContent = data.proxies.total;
   $("#dash-proxy-detail").textContent = healthCopy(data.proxies, "routes");
-  $("#dash-tls-total").textContent = data.tlsDomains;
+  $("#dash-tls-total").textContent = data.certificates.total;
   $("#dash-tls-detail").textContent = data.certificates.total ? `${data.certificates.healthy} healthy · ${data.certificates.pending} not detected` : "No TLS domains";
   $("#dash-redirect-total").textContent = state.redirects?.length || 0;
   $("#dash-stream-total").textContent = state.streams?.length || 0;
