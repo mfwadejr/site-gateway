@@ -807,6 +807,25 @@ async function syncCaddy() {
 
 
 let configDrift = { checkedAt: null, drift: false, detail: null };
+// storage.integrity() runs a full PRAGMA integrity_check -- a complete scan of the entire SQLite
+// database file for corruption. It's one of the most expensive operations SQLite can run, its
+// cost scales with total database size, and because this app's SQLite queries run synchronously,
+// it blocks the whole single-threaded server for its full duration while it runs -- not just the
+// request that triggered it. dashboardSnapshot() used to call it on EVERY /api/dashboard fetch
+// just to compute one cosmetic "Healthy"/"Needs attention" label, which is why unrelated requests
+// (confirmed via container logs: /api/system/security, /api/logs/prune/preview) were getting
+// stuck behind it in lockstep, all finishing at nearly the same multi-second mark regardless of
+// what they actually needed to do. A dashboard status badge doesn't need a fresh, exhaustive
+// integrity scan on every single poll -- checking it periodically in the background and caching
+// the result is more than sufficient, since real corruption doesn't appear and disappear between
+// one 7-second poll and the next.
+let databaseIntegrityCache = { checkedAt: null, status: "Healthy" };
+function refreshDatabaseIntegrityCache() {
+  try {
+    const result = storage.integrity();
+    databaseIntegrityCache = { checkedAt: new Date().toISOString(), status: result.length === 1 && result[0] === "ok" ? "Healthy" : "Needs attention" };
+  } catch (error) { console.warn("Database integrity check failed:", error.message); }
+}
 let lastUpstreamCheckAt = null;
 let lastAccessLogImportAt = null;
 let lastKnownGoodCaddyConfig = null;
@@ -1148,7 +1167,7 @@ async function dashboardSnapshot(precomputedCertificates) {
   for (const certificate of certificates.certificates.filter(item => ["warning", "critical", "expired", "mismatch"].includes(item.status))) attention.push({ kind: "certificate", target: "certificates", name: certificate.domain, message: certificate.status === "expired" ? "Certificate has expired." : certificate.status === "mismatch" ? "The uploaded certificate does not cover this domain." : `Certificate expires in ${certificate.daysRemaining} day${certificate.daysRemaining === 1 ? "" : "s"}.` });
   if (configDrift.drift) attention.push({ kind: "drift", name: "Configuration drift", message: "Caddy\u2019s live configuration no longer matches the saved configuration.", target: "administration/defaults" });
   const disk = await fsp.statfs(dataDir).catch(() => null);
-  const databaseIntegrity = storage.integrity();
+  // See refreshDatabaseIntegrityCache() above -- this used to be a live storage.integrity() call on every fetch.
   return {
     checkedAt: new Date().toISOString(),
     gateway: { ...gatewayProbe, lastReload: lastGatewayReload },
@@ -1175,7 +1194,7 @@ async function dashboardSnapshot(precomputedCertificates) {
       caddyVersion,
       nodeVersion: process.version,
       databaseEngine: "SQLite",
-      databaseStatus: databaseIntegrity.length === 1 && databaseIntegrity[0] === "ok" ? "Healthy" : "Needs attention",
+      databaseStatus: databaseIntegrityCache.status,
       databaseBytes: (await fsp.stat(storage.databasePath).catch(() => null))?.size || 0,
       publicIp: publicIpState.address,
       publicIpCheckedAt: publicIpState.checkedAt,
@@ -2611,6 +2630,10 @@ setTimeout(() => cleanupOldPruneSnapshots().catch(error => console.warn("Startup
 setInterval(() => checkAllProxies().then(() => { lastUpstreamCheckAt = new Date().toISOString(); }).catch(error => console.warn("Upstream checks failed:", error.message)), 60000).unref();
 setTimeout(() => checkConfigDrift().catch(error => console.warn("Config drift check failed:", error.message)), 10000).unref();
 setInterval(() => checkConfigDrift().catch(error => console.warn("Config drift check failed:", error.message)), 10 * 60000).unref();
+// Runs the (expensive, synchronous, whole-server-blocking) database integrity scan once shortly
+// after boot and then every 30 minutes in the background, rather than on every dashboard fetch.
+setTimeout(refreshDatabaseIntegrityCache, 5000).unref();
+setInterval(refreshDatabaseIntegrityCache, 30 * 60000).unref();
 
 
 // --- Scheduled jobs: automatic backups, log pruning, public IP checks, graceful shutdown ---------------------------------
