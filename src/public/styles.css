@@ -359,7 +359,7 @@ header{align-items:flex-end}
 
 /* Generic settings-form layout */
 .settings-form{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;margin-top:22px;padding:22px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel)}
-.settings-form>label:has(textarea),.settings-form>.dialog-actions,.settings-form>.error{grid-column:1/-1}
+.settings-form>label:has(textarea),.settings-form>.dialog-actions,.settings-form>.error,.settings-form>.dialog-heading{grid-column:1/-1}
 .settings-form.compact-grid{grid-template-columns:repeat(4,1fr)}
 .settings-form.compact-grid .check-control,.settings-form.compact-grid .dialog-actions{grid-column:auto}
 textarea{display:block;width:100%;min-height:110px;margin-top:7px;padding:var(--space-3);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--field-bg);color:var(--text);font:inherit;resize:vertical;outline:none}
