@@ -719,7 +719,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .docs{display:block}
 .docs-intro{grid-column:1/-1}
 .docs-layout{width:100%}
-.docs-intro{text-align:left}
+.docs-intro{text-align:left;max-width:900px;margin-left:auto;margin-right:auto}
 .docs-intro>p:not(.eyebrow){margin-left:0;margin-right:0}
 .docs-search-panel{margin-left:0;margin-right:0}
 
