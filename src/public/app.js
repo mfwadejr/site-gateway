@@ -123,7 +123,7 @@ document.addEventListener("submit", async event => {
   try {
     await api(`/api/${state.editing.kind === "proxy" ? "proxies" : "sites"}/${state.editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (uploadCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${state.editing.id}/certificate`, { method: "POST", body: files }); }
-    $("#settings-dialog").close(); await refresh(); toast("Gateway settings applied.");
+    $("#settings-dialog").close(); await refreshCurrentView(); toast("Gateway settings applied.");
   }
   catch (error) { $("#settings-error").textContent = error.message; }
   finally { button.disabled = false; }
@@ -493,7 +493,7 @@ function render() {
   $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const activeAdminTab = state.view === "administration" ? document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab : null;
   const adminUsersActive = activeAdminTab === "users", adminGroupsActive = activeAdminTab === "groups", adminApiActive = activeAdminTab === "api";
-  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || adminGroupsActive || adminApiActive || ["streaming","redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates" || !canAdmin()); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs");
+  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || adminGroupsActive || adminApiActive || ["streaming","redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates" || !canAdmin()); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs"); $("#refresh-view").classList.toggle("hidden", state.view === "logs");
   if (overview) {
     $("#page-title").textContent = "Dashboard";
     $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
@@ -532,7 +532,60 @@ function render() {
 }
 
 // --- Data refresh helpers ------------------------------------------------------------------
-async function refresh() { const requests = [api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/streams"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]; const results = await Promise.allSettled(requests); results.forEach((result, index) => { if (result.status !== "fulfilled") return; const keys = ["sites", "proxies", "redirects", "streams", "accessLists", "groups", "dashboard", "certificates"]; state[keys[index]] = result.value; }); state.loaded = true; render(); window.renderExtendedViews?.(); const pending = state.proxies.filter(proxy => proxy.enabled !== false && !proxy.upstream).map(proxy => proxy.id); if (pending.length && !state.pendingProxyRefresh) { state.pendingProxyRefresh = true; refreshPendingProxies(pending).finally(() => { state.pendingProxyRefresh = false; }); } }
+// Each entry is the state key a call populates and the fetch that populates it. refresh() (the
+// full, unscoped fetch) and refreshCurrentView() (the page-scoped fetch, see below) both build
+// their request list from this single map, so adding a new piece of shared state only ever means
+// adding one line here.
+const REFRESH_ENDPOINTS = {
+  sites: () => api("/api/sites"),
+  proxies: () => api("/api/proxies"),
+  redirects: () => api("/api/redirects"),
+  streams: () => api("/api/streams"),
+  accessLists: () => api("/api/access-lists"),
+  groups: () => canAdmin() ? api("/api/groups") : Promise.resolve([]),
+  dashboard: () => api("/api/dashboard"),
+  certificates: () => api("/api/certificates"),
+};
+// Which of the keys above each view actually renders. A view not listed here (certificates, logs,
+// performance, administration, account, documentation) already loads its own data separately via
+// loadFeatureView() and never called refresh() at all, so it isn't included. Overview intentionally
+// lists everything: its attention list and the sidebar's per-section counts summarize the whole
+// gateway, not one section of it, so a scoped fetch there would defeat the point of the page.
+const VIEW_REFRESH_KEYS = {
+  overview: Object.keys(REFRESH_ENDPOINTS),
+  hosted: ["sites"],
+  proxies: ["proxies"],
+  streaming: ["streams"],
+  redirects: ["redirects"],
+  access: ["accessLists", "groups"],
+};
+async function refreshKeys(keys) {
+  const results = await Promise.allSettled(keys.map(key => REFRESH_ENDPOINTS[key]()));
+  results.forEach((result, index) => { if (result.status === "fulfilled") state[keys[index]] = result.value; });
+}
+function maybeRefreshPendingProxies() {
+  const pending = state.proxies.filter(proxy => proxy.enabled !== false && !proxy.upstream).map(proxy => proxy.id);
+  if (pending.length && !state.pendingProxyRefresh) { state.pendingProxyRefresh = true; refreshPendingProxies(pending).finally(() => { state.pendingProxyRefresh = false; }); }
+}
+// The original, unscoped refresh -- fetches every shared list plus the dashboard and certificate
+// summaries in one pass. Kept for cases that genuinely need everything at once: first page load
+// (boot()) and the Overview page, whose attention list and counts summarize the entire gateway.
+async function refresh() { await refreshKeys(Object.keys(REFRESH_ENDPOINTS)); state.loaded = true; render(); window.renderExtendedViews?.(); maybeRefreshPendingProxies(); }
+// The page-scoped refresh: fetches only the state a given view actually renders, instead of
+// unconditionally re-fetching sites, proxies, redirects, streams, access lists, groups, the full
+// dashboard snapshot, and certificates every single time -- regardless of which one page the user
+// is looking at. This was the original, most direct cause behind "refreshing one page refetches
+// the whole site": every action (create, edit, toggle, delete) and every manual refresh called the
+// same all-8-endpoints refresh() no matter which view triggered it. Sidebar badge counts for
+// sections other than the current view are not re-fetched by this path and can go briefly stale
+// until the next full refresh() (a fresh page load, or a visit to Overview) -- an intentional
+// trade for not fetching data the current page doesn't display.
+async function refreshCurrentView() {
+  const keys = VIEW_REFRESH_KEYS[state.view] || Object.keys(REFRESH_ENDPOINTS);
+  await refreshKeys(keys);
+  state.loaded = true; render(); window.renderExtendedViews?.();
+  if (keys.includes("proxies")) maybeRefreshPendingProxies();
+}
 // Polls just /api/proxies for upstream health that wasn't ready yet on the last refresh() --
 // e.g. right after a page load or a new proxy, before its first health check has completed.
 // This used to call the full refresh() (all 8 endpoints, including two redundant certificate
@@ -645,6 +698,21 @@ $("#dashboard-view").addEventListener("click", event => { const target = event.t
 
 // --- Logs & Performance filter controls -----------------------------------------------------
 $("#refresh-logs").addEventListener("click", () => loadFeatureView().catch(error => toast(error.message, "error")));
+// Generic page-scoped refresh button, shown on every view except Logs (which already has its own
+// "Refresh logs" button wired to loadFeatureView()). Uses refreshCurrentView() for the shared-list
+// views (Overview, Hosted, Proxy Hosts, Streaming, Redirects, Access Lists) so it fetches only
+// what that page renders, and falls back to loadFeatureView() for every other view (Certificates,
+// Performance, Administration, Account, Documentation), which already load their own data scoped
+// to themselves.
+$("#refresh-view").addEventListener("click", async () => {
+  const button = $("#refresh-view"); button.disabled = true; button.classList.add("spinning");
+  try {
+    if (state.view in VIEW_REFRESH_KEYS || state.view === "overview") await refreshCurrentView();
+    else await loadFeatureView();
+    toast("Refreshed.");
+  } catch (error) { toast(error.message, "error"); }
+  finally { button.disabled = false; button.classList.remove("spinning"); }
+});
 $("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
 $("#performance-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
 $("#performance-range").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
@@ -702,8 +770,8 @@ document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("c
 
 // --- Hosted Sites & Proxy Hosts: create form submit handlers --------------------------------
 $("#refresh-health").addEventListener("click", () => refreshDashboard().catch(error => toast(error.message, "error")));
-$("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refresh(); toast("Hosted site created and gateway applied."); } catch (error) { $("#create-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
-$("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refresh(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { $("#proxy-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
+$("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refreshCurrentView(); toast("Hosted site created and gateway applied."); } catch (error) { $("#create-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
+$("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refreshCurrentView(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { $("#proxy-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 
 
 // --- Health-check field visibility polish for the create forms ------------------------------
@@ -737,7 +805,7 @@ $("#site-grid").addEventListener("click", async event => {
   const card = event.target.closest(".site-card"); if (!card) return; const action = event.target.closest("[data-action]")?.dataset.action, kind = card.dataset.kind;
   if (event.target.closest(".menu-button")) { const opening = !card.classList.contains("menu-open"); closeMenus(); card.classList.toggle("menu-open", opening); card.querySelector(".menu-button").setAttribute("aria-expanded", String(opening)); return; } if (!action) return;
   closeMenus();
-  if (action === "toggle") { const toggleButton = event.target.closest(".toggle"), wasOn = toggleButton.classList.contains("on"); toggleButton.classList.toggle("on", !wasOn); toggleButton.disabled = true; const base = kind === "proxy" ? "proxies" : "sites"; try { await api(`/api/${base}/${card.dataset.id}/toggle`, { method: "POST" }); await refresh(); toast("Status and gateway configuration updated."); } catch (error) { toggleButton.classList.toggle("on", wasOn); toggleButton.disabled = false; toast(error.message || "Could not update status.", "error"); } }
+  if (action === "toggle") { const toggleButton = event.target.closest(".toggle"), wasOn = toggleButton.classList.contains("on"); toggleButton.classList.toggle("on", !wasOn); toggleButton.disabled = true; const base = kind === "proxy" ? "proxies" : "sites"; try { await api(`/api/${base}/${card.dataset.id}/toggle`, { method: "POST" }); await refreshCurrentView(); toast("Status and gateway configuration updated."); } catch (error) { toggleButton.classList.toggle("on", wasOn); toggleButton.disabled = false; toast(error.message || "Could not update status.", "error"); } }
   if (action === "settings") openSettings(kind, card.dataset.id);
   if (action === "delete") { state.pendingDelete = { kind, id: card.dataset.id }; $("#confirm-title").textContent = kind === "proxy" ? "Delete this proxy host?" : "Delete this hosted site?"; $("#confirm-copy").textContent = kind === "proxy" ? "Its domain route will be removed from the gateway." : "Its route and uploaded files will be permanently removed."; $("#confirm-dialog").showModal(); }
   if (action === "replace") { state.pendingReplace = card.dataset.id; $("#replace-files").click(); }
@@ -781,7 +849,7 @@ window.openCaddyConfig = openCaddyConfig;
 
 
 // --- Delete confirmation dialog and replace-files handler ------------------------------------
-$("#confirm-dialog").addEventListener("close", async () => { if ($("#confirm-dialog").returnValue === "confirm" && state.pendingDelete) { const base = state.pendingDelete.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.pendingDelete.id}`, { method: "DELETE" }); await refresh(); toast("Entry deleted and gateway updated."); } state.pendingDelete = null; });
+$("#confirm-dialog").addEventListener("close", async () => { if ($("#confirm-dialog").returnValue === "confirm" && state.pendingDelete) { const base = state.pendingDelete.kind === "proxy" ? "proxies" : "sites"; await api(`/api/${base}/${state.pendingDelete.id}`, { method: "DELETE" }); await refreshCurrentView(); toast("Entry deleted and gateway updated."); } state.pendingDelete = null; });
 $("#replace-files").addEventListener("change", async event => { if (!event.target.files[0] || !state.pendingReplace) return; const data = new FormData(); data.append("files", event.target.files[0]); try { await api(`/api/sites/${state.pendingReplace}/files`, { method: "POST", body: data }); toast("Site files updated."); } catch (error) { toast(error.message, "error"); } event.target.value = ""; state.pendingReplace = null; });
 
 
