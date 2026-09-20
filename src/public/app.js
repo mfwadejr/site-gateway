@@ -533,12 +533,22 @@ function render() {
 
 // --- Data refresh helpers ------------------------------------------------------------------
 async function refresh() { const requests = [api("/api/sites"), api("/api/proxies"), api("/api/redirects"), api("/api/streams"), api("/api/access-lists"), canAdmin() ? api("/api/groups") : Promise.resolve([]), api("/api/dashboard"), api("/api/certificates")]; const results = await Promise.allSettled(requests); results.forEach((result, index) => { if (result.status !== "fulfilled") return; const keys = ["sites", "proxies", "redirects", "streams", "accessLists", "groups", "dashboard", "certificates"]; state[keys[index]] = result.value; }); state.loaded = true; render(); window.renderExtendedViews?.(); const pending = state.proxies.filter(proxy => proxy.enabled !== false && !proxy.upstream).map(proxy => proxy.id); if (pending.length && !state.pendingProxyRefresh) { state.pendingProxyRefresh = true; refreshPendingProxies(pending).finally(() => { state.pendingProxyRefresh = false; }); } }
+// Polls just /api/proxies for upstream health that wasn't ready yet on the last refresh() --
+// e.g. right after a page load or a new proxy, before its first health check has completed.
+// This used to call the full refresh() (all 8 endpoints, including two redundant certificate
+// walks via /api/dashboard + /api/certificates), up to 3 times in a row -- meaning a single
+// pending proxy could quietly trigger 3 extra full-app refetches over 6 seconds. Since all it
+// actually needs is fresh upstream status, it now re-fetches only /api/proxies.
 async function refreshPendingProxies(ids = []) {
   const pending = new Set(ids.map(String));
   for (const delay of [1000, 2000, 3000]) {
     if (!pending.size) return;
     await new Promise(resolve => setTimeout(resolve, delay));
-    await refresh();
+    try {
+      state.proxies = await api("/api/proxies");
+      render();
+      window.renderExtendedViews?.();
+    } catch { /* Keep the last-known proxy list if this poll fails; the next delay tries again. */ }
     for (const proxy of state.proxies) if (pending.has(String(proxy.id)) && proxy.upstream) pending.delete(String(proxy.id));
   }
 }

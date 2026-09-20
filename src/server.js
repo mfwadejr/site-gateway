@@ -64,6 +64,14 @@ let caddyVersion = "Unknown";
 const recentActivity = [];
 const upstreamHealth = new Map();
 const certificateStatusCache = new Map();
+// Certificate inventory is expensive (it walks and parses every certificate file on disk) and is
+// recomputed on every call with no memoization. It's called twice per client refresh() cycle --
+// once from /api/dashboard, once from /api/certificates -- and that whole cycle can itself repeat
+// several times in a row (see refreshPendingProxies in app.js), so a short time-based cache here
+// collapses that duplicate work into a single real disk walk every few seconds. The window is kept
+// well under the 7s hero-poll interval so nothing ever appears more than one cycle stale.
+const CERTIFICATE_INVENTORY_CACHE_MS = 3000;
+let certificateInventoryCache = null; // { at: number, value: object }
 const loginAttempts = new Map();
 const rateLimitBuckets = new Map();
 let dockerSocketMounted = false;
@@ -882,6 +890,7 @@ function certificateNames(certificate) {
 }
 
 async function certificateInventory() {
+  if (certificateInventoryCache && Date.now() - certificateInventoryCache.at < CERTIFICATE_INVENTORY_CACHE_MS) return certificateInventoryCache.value;
   const configured = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))]
     .filter(item => item.enabled && item.domain && item.tls !== "http");
   const configuredDomains = configured.flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
@@ -908,7 +917,9 @@ async function certificateInventory() {
   });
   for (const certificate of certificates) { const previous = certificateStatusCache.get(certificate.domain); if (previous && previous !== certificate.status) recordActivity(`Certificate status changed for ${certificate.domain}: ${previous} → ${certificate.status}.`, certificate.status === "healthy" ? "ok" : "error"); certificateStatusCache.set(certificate.domain, certificate.status); }
   const latestError = recentActivity.find(item => item.status === "error" && /cert|tls|acme|caddy|gateway/i.test(item.message)) || null;
-  return { checkedAt: new Date().toISOString(), thresholds: settings.certificateHealth, latestError, summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, within30Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 30 && item.daysRemaining > 0).length, within7Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 7 && item.daysRemaining > 0).length, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length, mismatch: certificates.filter(item => item.status === "mismatch").length }, certificates };
+  const result = { checkedAt: new Date().toISOString(), thresholds: settings.certificateHealth, latestError, summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, within30Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 30 && item.daysRemaining > 0).length, within7Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 7 && item.daysRemaining > 0).length, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length, mismatch: certificates.filter(item => item.status === "mismatch").length }, certificates };
+  certificateInventoryCache = { at: Date.now(), value: result };
+  return result;
 }
 
 async function pruneOrphanedCertificates(candidateDomains) {
