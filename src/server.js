@@ -1185,6 +1185,8 @@ async function dashboardSnapshot(precomputedCertificates) {
         { name: "Access-log import", enabled: true, schedule: "30s", lastRunAt: lastAccessLogImportAt },
         { name: "Public IP check", enabled: true, schedule: "60m", lastRunAt: publicIpState.checkedAt || null },
         { name: "Configuration drift check", enabled: true, schedule: "10m", lastRunAt: configDrift.checkedAt || null },
+        { name: "Database integrity check", enabled: true, schedule: "30m", lastRunAt: databaseIntegrityCache.checkedAt || null },
+        { name: "Disk usage refresh", enabled: true, schedule: "60s", lastRunAt: dataDirSizeCache.checkedAt || null },
       ]
     },
     activity: recentActivity
