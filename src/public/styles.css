@@ -487,25 +487,21 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 #app .upstream-diagnostics summary{padding:0;color:var(--blue);font-size:var(--font-size-xs);font-weight:700;border:0}
 #app .upstream-diagnostics .upstream-detail{margin:6px 0 0}
 
-/* Log table layout & column widths */
+/* Log table layout & column widths -- matches the .event-table/.performance-table
+   pattern used by Gateway Events, Backup history, and the Audit log: sticky header
+   only (no pinned/divided trailing columns), and the Request column absorbs the
+   remaining width instead of leaving a gap on wide panels. */
 .log-table-wrap{max-height:min(52vh,620px);overflow:auto}
 .log-table-wrap .log-table thead th{position:sticky;top:0;background:var(--panel);z-index:1}
 .log-section-heading{margin:20px 0 10px}
 .log-section-heading h2{margin:0;font-size:1.05rem}
 .log-section-heading p{margin:var(--space-1) 0 0;font-size:.76rem}
 @media(min-width:761px){#dashboard>aside{position:sticky;top:0;height:100vh;max-height:100vh;overflow-y:auto;align-self:start}}
-.log-table th:nth-last-child(2),.log-table td:nth-last-child(2),.log-table th:last-child,.log-table td:last-child{position:sticky;background:var(--panel);z-index:2}
-.log-table th:nth-last-child(2),.log-table td:nth-last-child(2){right:104px;min-width:104px}
-.log-table th:last-child,.log-table td:last-child{right:0;min-width:104px}
-.log-table th:nth-last-child(2){box-shadow:-1px 0 0 var(--line)}
-.log-table td:nth-last-child(2){box-shadow:-1px 0 0 var(--line)}
-.log-table-wrap{overflow-x:hidden;overflow-y:auto}
 .log-table{table-layout:fixed}
 .log-table th:nth-child(1),.log-table td:nth-child(1){width:190px}
 .log-table th:nth-child(2),.log-table td:nth-child(2){width:220px}
 .log-table th:nth-child(4),.log-table td:nth-child(4),.log-table th:nth-child(5),.log-table td:nth-child(5){width:104px}
-.log-table th:nth-child(3),.log-table td:nth-child(3){white-space:normal;overflow-wrap:anywhere}
-.log-table th:last-child,.log-table td:last-child{box-shadow:-1px 0 0 var(--line)}
+.log-table th:nth-child(3),.log-table td:nth-child(3){width:auto;white-space:normal;overflow-wrap:anywhere}
 @media(max-width:900px){.log-table th:nth-child(1),.log-table td:nth-child(1){width:150px}.log-table th:nth-child(2),.log-table td:nth-child(2){width:170px}}
 .log-table th:nth-child(4),.log-table td:nth-child(4),.log-table th:nth-child(5),.log-table td:nth-child(5){text-align:center}
 #access-dialog .dialog-heading .close-dialog{display:none}
