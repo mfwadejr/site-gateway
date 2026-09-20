@@ -493,7 +493,7 @@ function render() {
   $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const activeAdminTab = state.view === "administration" ? document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab : null;
   const adminUsersActive = activeAdminTab === "users", adminGroupsActive = activeAdminTab === "groups", adminApiActive = activeAdminTab === "api";
-  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || adminGroupsActive || adminApiActive || ["streaming","redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates" || !canAdmin()); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs"); $("#refresh-view").classList.toggle("hidden", state.view === "logs");
+  $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || adminGroupsActive || adminApiActive || ["streaming","redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates" || !canAdmin()); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs");
   if (overview) {
     $("#page-title").textContent = "Dashboard";
     $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
@@ -606,9 +606,9 @@ async function refreshPendingProxies(ids = []) {
   }
 }
 async function refreshDashboard() {
-  const button = $("#refresh-health"); button.disabled = true; button.classList.add("spinning"); $("#health-checked").innerHTML = '<span class="live-dot checking"></span>Checking services…';
+  $("#health-checked").innerHTML = '<span class="live-dot checking"></span>Checking services…';
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
-  finally { button.disabled = false; button.classList.remove("spinning"); }
+  finally { /* no-op: the Live Health panel's own refresh icon was removed in favor of the page-level refresh button */ }
 }
 // Populates the Dashboard's hero panel (CPU/memory/swap/disk/network/uptime) directly from
 // /api/system/health, the same call and the same renderHeroPanel() the Administration > System
@@ -769,7 +769,6 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("close", () => { closeMenus(); dialog.querySelectorAll('input[type="password"]').forEach(input => input.value = ""); }));
 
 // --- Hosted Sites & Proxy Hosts: create form submit handlers --------------------------------
-$("#refresh-health").addEventListener("click", () => refreshDashboard().catch(error => toast(error.message, "error")));
 $("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refreshCurrentView(); toast("Hosted site created and gateway applied."); } catch (error) { $("#create-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 $("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refreshCurrentView(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { $("#proxy-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 

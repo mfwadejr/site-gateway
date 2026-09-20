@@ -8,7 +8,7 @@
   <title>Site Gateway</title>
   <meta name="description" content="Host sites, proxy services, and manage HTTPS from one simple dashboard.">
   <link rel="icon" type="image/png" href="/site-gateway-icon-approved.png">
-  <link rel="stylesheet" href="/styles.css?v=0.16.45">
+  <link rel="stylesheet" href="/styles.css?v=0.16.47">
 </head>
 
 <!-- ================================================================
@@ -101,7 +101,7 @@
       </nav>
       <header>
         <div><p class="eyebrow">Gateway control</p><h1 id="page-title">Dashboard</h1><p id="page-subtitle" class="muted">Health, activity, and system status at a glance.</p></div>
-        <button id="refresh-view" class="icon-button" aria-label="Refresh this page" title="Refresh this page">↻</button><button id="open-create" class="button primary">＋ New hosted site</button><button id="check-health" class="button primary hidden">Run certificate check</button><button id="refresh-logs" class="button primary hidden">Refresh logs</button>
+        <button id="open-create" class="button primary">＋ New hosted site</button><button id="check-health" class="button primary hidden">Run certificate check</button><button id="refresh-logs" class="button primary hidden">Refresh logs</button><button id="refresh-view" class="icon-button page-refresh" aria-label="Refresh this page" title="Refresh this page">↻</button>
       </header>
 
       <!-- Overview / Dashboard: health, activity, system stats -->
@@ -119,7 +119,7 @@
         </div>
         <div class="dashboard-columns">
           <section class="dashboard-panel health-panel status-healthy" id="health-panel">
-            <div class="panel-heading"><div><p class="eyebrow">Live health</p><h2>Services</h2></div><div class="health-actions"><span id="overall-health" class="health-badge healthy">Healthy</span><button id="refresh-health" class="icon-button" aria-label="Refresh health checks" title="Refresh health checks">↻</button></div></div>
+            <div class="panel-heading"><div><p class="eyebrow">Live health</p><h2>Services</h2></div><div class="health-actions"><span id="overall-health" class="health-badge healthy">Healthy</span></div></div>
             <div class="health-grid">
               <div class="health-tile"><span id="gateway-health-dot" class="status-dot running"></span><span class="health-tile-copy"><strong>Gateway</strong><small id="gateway-health-copy">Configuration valid</small></span></div>
               <div class="health-tile"><span id="http-health-dot" class="status-dot running"></span><span class="health-tile-copy"><strong>HTTP · Port 80</strong><small id="http-health-copy">Ready and responding</small></span></div>
@@ -432,6 +432,6 @@
   <div id="toast" class="toast" role="status"></div>
   <div id="update-banner" class="update-banner hidden" role="status"><span>A new version of Site Gateway is available.</span><div class="update-banner-actions"><button id="update-banner-refresh" class="button primary">Refresh</button><button id="update-banner-dismiss" class="text-button">Dismiss</button></div></div>
   <!-- App scripts: core (app.js) then extended views/admin (features.js) -->
-  <script src="/app.js?v=0.16.45" defer></script><script src="/features.js?v=0.16.45" defer></script><script src="/select-enhance.js?v=0.16.45" defer></script>
+  <script src="/app.js?v=0.16.47" defer></script><script src="/features.js?v=0.16.47" defer></script><script src="/select-enhance.js?v=0.16.47" defer></script>
 </body>
 </html>
