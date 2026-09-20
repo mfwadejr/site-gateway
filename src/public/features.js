@@ -691,10 +691,18 @@ function renderSystemPanel() {
     if (!state.systemHealthTimer) state.systemHealthTimer = setInterval(() => {
       const systemPanel = document.querySelector('[data-admin-panel="system"]');
       if (state.view !== "administration" || !systemPanel || systemPanel.classList.contains("hidden")) return;
-      api("/api/system/health").then(health => renderHeroPanel("system-hero", health)).catch(() => {});
+      api("/api/system/health").then(health => { renderHeroPanel("system-hero", health); updateSystemVersionUptime(health); }).catch(() => {});
     }, 7000);
   }
   renderSystemStatus(panel);
+}
+// Updates just the Version panel's Uptime figure from a fresh /api/system/health payload --
+// kept separate from the rest of renderSystemStatus() so it can be called on the fast 7s hero
+// poll without re-rendering (or re-fetching) everything else in that panel.
+function updateSystemVersionUptime(health) {
+  const el = document.querySelector("#system-version-uptime");
+  if (!el) return;
+  el.textContent = Number.isFinite(health?.uptimeSeconds) ? formatDuration(health.uptimeSeconds) : "Unavailable";
 }
 async function renderSystemStatus(panel) {
   panel = panel || document.querySelector('[data-admin-panel="system"]');
@@ -715,16 +723,19 @@ async function renderSystemStatus(panel) {
   }
   if (syncStatus) { const drift = (state.dashboard?.attention || []).some(item => item.kind === "drift"); syncStatus.textContent = drift ? "Configuration drift detected \u2014 the running gateway no longer matches the last known-good configuration." : `Gateway configuration is in sync. Last reload: ${state.dashboard?.gateway?.lastReload ? formatTime(state.dashboard.gateway.lastReload) : "unknown"}.`; syncStatus.className = drift ? "muted status-warning" : "muted"; }
   if (version) {
-    // Uptime, Caddy version, Database status, and Public IP used to live on the Dashboard's
-    // Runtime/System panel -- that panel is now the shared hero component (CPU/memory/swap/disk/
-    // network), so this operational metadata moved here instead, reusing the same system.* fields
-    // from the global dashboard snapshot rather than a separate fetch.
+    // Caddy version, Database status, and Public IP used to live on the Dashboard's Runtime/System
+    // panel -- that panel is now the shared hero component (CPU/memory/swap/disk/network), so this
+    // operational metadata moved here instead, reusing the same system.* fields from the global
+    // dashboard snapshot rather than a separate fetch. Uptime is the one exception: it's wrapped in
+    // its own #system-version-uptime span and kept current by updateSystemVersionUptime(), called
+    // from the same 7-second /api/system/health poll that drives the hero panel above, instead of
+    // only refreshing on the slower ~30s dashboard snapshot like the rest of this block.
     const sys = state.dashboard?.system || {};
     const uptime = Number.isFinite(sys.uptimeSeconds) ? formatDuration(sys.uptimeSeconds) : "Unavailable";
     const database = sys.databaseEngine ? `${extendedEscape(sys.databaseEngine)} \u00b7 ${extendedEscape(sys.databaseStatus || "unknown")} \u00b7 ${formatBytes(sys.databaseBytes)}` : "Unavailable";
     const publicIp = sys.publicIp || (sys.publicIpError ? "Unavailable" : "Checking\u2026");
     const publicIpDetail = sys.publicIpError ? `check failed \u00b7 ${extendedEscape(sys.publicIpError)}` : sys.publicIpCheckedAt ? `checked ${extendedEscape(formatTime(sys.publicIpCheckedAt))}` : "not yet checked";
-    version.innerHTML = `Site Gateway v${extendedEscape(state.config?.version || "unknown")} \u00b7 Caddy ${extendedEscape(sys.caddyVersion || "unknown")}<br>Uptime: ${uptime} \u00b7 Database: ${database} \u00b7 Public IP: ${extendedEscape(publicIp)} (${publicIpDetail})<br>Access this dashboard at: <code>${extendedEscape(location.origin)}</code><br>Data directory: <code>${extendedEscape(state.config?.storage?.databasePath ? state.config.storage.databasePath.replace(/\/database\/.*/, "") : "/data")}</code> &middot; Site ports: <code>${extendedEscape(String(state.config?.minPort ?? ""))}\u2013${extendedEscape(String(state.config?.maxPort ?? ""))}</code>`;
+    version.innerHTML = `Site Gateway v${extendedEscape(state.config?.version || "unknown")} \u00b7 Caddy ${extendedEscape(sys.caddyVersion || "unknown")}<br>Uptime: <span id="system-version-uptime">${uptime}</span> \u00b7 Database: ${database} \u00b7 Public IP: ${extendedEscape(publicIp)} (${publicIpDetail})<br>Access this dashboard at: <code>${extendedEscape(location.origin)}</code><br>Data directory: <code>${extendedEscape(state.config?.storage?.databasePath ? state.config.storage.databasePath.replace(/\/database\/.*/, "") : "/data")}</code> &middot; Site ports: <code>${extendedEscape(String(state.config?.minPort ?? ""))}\u2013${extendedEscape(String(state.config?.maxPort ?? ""))}</code>`;
   }
   try {
     const [sec, store, policy, health] = await Promise.all([
@@ -734,6 +745,7 @@ async function renderSystemStatus(panel) {
       api("/api/system/health").catch(() => null),
     ]);
     renderHeroPanel("system-hero", health);
+    if (health) updateSystemVersionUptime(health);
     if (security) security.innerHTML = [
       { ok: !sec.adminPasswordIsDefault, label: "ADMIN_PASSWORD", detail: sec.adminPasswordIsDefault ? "Still using the built-in default \u2014 set this before exposing the dashboard." : "Configured." },
       { ok: !sec.sessionSecretIsDefault, label: "SESSION_SECRET", detail: sec.sessionSecretIsDefault ? "Not set \u2014 sessions are keyed off the admin credentials instead of an independent secret." : "Configured." },
