@@ -2192,7 +2192,7 @@ app.post("/api/sites/:id/files", upload.single("files"), async (req, res, next) 
     if (!req.file) return res.status(400).json({ error: "Choose a ZIP file or index.html." });
     await installUpload(site, req.file);
     await syncCaddy();
-    recordActivity(`Files replaced for “${site.name}”.`);
+    recordActivity(`Hosted site “${site.name}” files replaced.`);
     res.json(publicSite(site));
   } catch (error) { next(error); }
 });
