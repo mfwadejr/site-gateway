@@ -598,7 +598,7 @@ function heroSlotsMarkup(prefix, slots) {
 }
 function setHeroStat(prefix, key, { value, percent, detail, tone } = {}) {
   const valueEl = document.querySelector(`#${prefix}-${key}-value`), fillEl = document.querySelector(`#${prefix}-${key}-fill`), detailEl = document.querySelector(`#${prefix}-${key}-detail`);
-  if (valueEl) valueEl.textContent = value ?? "\u2014";
+  if (valueEl) { valueEl.textContent = value ?? "\u2014"; valueEl.className = `system-hero-value${tone ? ` ${tone}` : ""}`; }
   if (fillEl) { fillEl.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`; fillEl.className = `system-hero-fill${tone ? ` ${tone}` : ""}`; }
   if (detailEl) detailEl.textContent = detail || "";
 }
@@ -632,7 +632,7 @@ function renderHeroPanel(prefix, health, { sixthSlot = "throughput" } = {}) {
   else setHeroStat(prefix, "swap", { value: "\u2014", detail: "cgroup swap stats unavailable" });
   if (health.disk) {
     const overAssigned = health.disk.assignedLimitBytes && health.disk.percent > 100;
-    const diskDetail = health.disk.assignedLimitBytes ? `${formatBytes(health.disk.usedBytes)} used of ${formatBytes(health.disk.assignedLimitBytes)} assigned` : `${formatBytes(health.disk.usedBytes)} used \u00b7 ${formatBytes(health.disk.availableBytes)} free`;
+    const diskDetail = health.disk.assignedLimitBytes ? `${formatBytes(health.disk.usedBytes)} used of ${formatBytes(health.disk.assignedLimitBytes)} assigned \u00b7 ${formatBytes(health.disk.availableBytes)} free on host` : `${formatBytes(health.disk.usedBytes)} used \u00b7 ${formatBytes(health.disk.availableBytes)} free`;
     setHeroStat(prefix, "disk", { value: `${health.disk.percent.toFixed(1)}%`, percent: Math.min(100, health.disk.percent), tone: overAssigned ? "critical" : tone(health.disk.percent), detail: diskDetail });
   }
   else setHeroStat(prefix, "disk", { value: "\u2014", detail: "Disk stats unavailable" });
@@ -764,9 +764,11 @@ async function renderSystemStatus(panel) {
       { ok: sec.acmeEmailConfigured, label: "ACME_EMAIL", detail: sec.acmeEmailConfigured ? "Configured." : "Not set \u2014 certificate issuance will proceed without a registration contact." },
     ].map(row => `<div class="health-tile"><span class="status-dot ${row.ok ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>${row.label}</strong><small>${row.detail}</small></span></div>`).join("");
     if (storage) {
+      // Host disk capacity (free/total) now lives on the Runtime hero panel's Disk stat detail
+      // line instead of duplicating it here -- this breakdown stays scoped to what Site Gateway
+      // itself is storing (Sites, Backups, Certificates, Logs, Database).
       const rows = Object.entries(store.breakdown || {}).map(([key, bytes]) => `<div class="health-tile"><span class="status-dot running"></span><span class="health-tile-copy"><strong>${key[0].toUpperCase()}${key.slice(1)}</strong><small>${formatBytes(bytes)}</small></span></div>`).join("");
-      const capacity = store.capacity ? `<div class="health-tile"><span class="status-dot ${store.capacity.availableBytes / store.capacity.totalBytes > 0.1 ? "running" : "idle"}"></span><span class="health-tile-copy"><strong>Disk</strong><small>${formatBytes(store.capacity.availableBytes)} free of ${formatBytes(store.capacity.totalBytes)}</small></span></div>` : "";
-      storage.innerHTML = rows + capacity || '<p class="quiet-state">Storage usage unavailable.</p>';
+      storage.innerHTML = rows || '<p class="quiet-state">Storage usage unavailable.</p>';
     }
     if (restartButton) { restartButton.disabled = !policy.restartAvailable; if (restartStatus) restartStatus.textContent = policy.reason || (policy.policyName ? `Restart policy: ${policy.policyName}.` : ""); }
   } catch { /* Status widgets keep their last-known values if a refresh call fails. */ }
