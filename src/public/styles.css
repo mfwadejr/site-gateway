@@ -65,7 +65,7 @@ h2{letter-spacing:-.025em}
 .status-pill{display:flex;align-items:center;gap:var(--space-2);text-transform:capitalize;font-size:var(--font-size-sm);color:var(--muted)}
 .icon-button,.launch{width:34px;height:34px;border-radius:var(--radius-sm);border:1px solid var(--line);display:grid;place-items:center;background:var(--icon-button-bg);color:var(--muted);cursor:pointer;text-decoration:none}
 .page-refresh{width:44px;height:44px;flex:0 0 auto}
-header .page-refresh{margin-left:8px}
+.header-actions{display:flex;align-items:center;gap:var(--space-5)}
 .menu-wrap{position:relative}
 .menu{display:none;position:absolute;right:0;top:var(--space-7);width:145px;background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius-2xs);padding:6px;box-shadow:var(--shadow);z-index:3}
 .menu-open .menu{display:block}

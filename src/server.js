@@ -193,22 +193,31 @@ async function sampleNetworkInterfaces() {
 }
 setInterval(sampleNetworkInterfaces, 5000).unref();
 sampleNetworkInterfaces();
+// A recursive walk of /data (directorySize()) is only needed when DATA_DIR_LIMIT_GB is set, and
+// only to compute one denominator-relative percentage -- disk usage doesn't change fast enough to
+// justify redoing that walk on every single hero-panel poll (every 7 seconds, times every
+// concurrent viewer). Cached in the background instead, same pattern as refreshDatabaseIntegrityCache()
+// above: compute once shortly after boot, then on a steady interval, and have the hot request path
+// just read the cached number.
+let dataDirSizeCache = { checkedAt: null, bytes: null };
+async function refreshDataDirSizeCache() {
+  try { dataDirSizeCache = { checkedAt: new Date().toISOString(), bytes: await directorySize(dataDir) }; }
+  catch (error) { console.warn("Could not compute data directory size:", error.message); }
+}
 // One combined snapshot for the System tab's hero panel -- CPU/memory/swap/network are all
 // container-scoped (cgroup v2 + this container's network namespace); disk reuses the same
 // statfs-on-the-data-volume approach as /api/system/storage.
 async function systemHealthSnapshot() {
   const assignedLimitGb = numberEnv("DATA_DIR_LIMIT_GB", null);
   const assignedLimitBytes = assignedLimitGb && assignedLimitGb > 0 ? assignedLimitGb * 1024 ** 3 : null;
-  const [cpu, memory, swap, disk, appUsedBytes] = await Promise.all([
+  const [cpu, memory, swap, disk] = await Promise.all([
     cgroupCpuPercent(),
     cgroupMemory(),
     cgroupSwap(),
     fsp.statfs(dataDir).catch(() => null),
-    // Only walk /data (the same directorySize() the storage breakdown below already uses) when
-    // an assigned limit is actually configured -- it's the one case that needs it, and the walk
-    // isn't free, so skip it when the panel is just going to show whole-volume stats anyway.
-    assignedLimitBytes !== null ? directorySize(dataDir) : Promise.resolve(null),
   ]);
+  // See refreshDataDirSizeCache() above -- this used to be a live directorySize() walk on every fetch.
+  const appUsedBytes = assignedLimitBytes !== null ? dataDirSizeCache.bytes : null;
   return {
     cpu,
     memory,
@@ -544,7 +553,6 @@ function applyAdvancedSettings(item, body) {
   if (body.accessListId !== undefined) item.accessListId = String(body.accessListId || "");
   if (body.compression !== undefined) item.compression = ["off", "gzip", "automatic"].includes(body.compression) ? body.compression : "automatic";
   if (body.hstsSubdomains !== undefined) item.hstsSubdomains = Boolean(body.hstsSubdomains);
-  if (body.blockCommonExploits !== undefined) item.blockCommonExploits = Boolean(body.blockCommonExploits);
   if (body.requestHeaders !== undefined) item.requestHeaders = cleanHeaders(body.requestHeaders);
   if (body.responseHeaders !== undefined) item.responseHeaders = cleanHeaders(body.responseHeaders);
   if (body.upstreamTlsServerName !== undefined) item.upstreamTlsServerName = String(body.upstreamTlsServerName || "").trim().slice(0, 253);
@@ -603,19 +611,8 @@ function accessDirectives(accessListId) {
   return output;
 }
 
-// Static, general-purpose ruleset for the "Block common exploits" toggle — not a full WAF. Rejects
-// requests whose path matches common exploit-probe patterns before they reach the upstream: directory
-// traversal, WordPress/PHP admin and scanner paths, dotfile exposure attempts, and SQL-injection-style
-// query strings. One named matcher + one respond directive per host, so it's cheap to add or remove.
-const COMMON_EXPLOIT_PATTERN = String.raw`(?i)(\.\./|\.\.\\|/etc/passwd|/wp-login\.php|/wp-admin(?:/|$)|/xmlrpc\.php|/\.env(?:$|\?)|/\.git/|/\.aws/|/vendor/phpunit|/phpunit(?:/|$)|eval\(|base64_decode\(|union(?:\s|%20|\+)+select|<script)`;
-
-function exploitBlockDirectives(id) {
-  return [`  @blocked-exploit-${id} {`, `    path_regexp ${caddyQuote(COMMON_EXPLOIT_PATTERN)}`, "  }", `  respond @blocked-exploit-${id} 403`];
-}
-
 function commonHostDirectives(item) {
   const output = [...accessDirectives(item.accessListId)];
-  if (item.blockCommonExploits) output.push(...exploitBlockDirectives(item.id));
   if (item.compression !== "off") output.push(item.compression === "gzip" ? "  encode gzip" : "  encode zstd gzip");
   for (const header of item.responseHeaders || []) output.push(`  header ${header.name} ${caddyQuote(header.value)}`);
   if (item.hsts && item.tls !== "http") output.push(`  header Strict-Transport-Security ${caddyQuote(`max-age=31536000${item.hstsSubdomains ? "; includeSubDomains" : ""}`)}`);
@@ -1037,30 +1034,12 @@ async function readAccessLogs(limit = 100, host = "") {
   return entries;
 }
 
-// Diagnostic timing (v0.16.44): this job reads Caddy's access-log files, JSON.parses up to 5000
-// lines, hashes each one, and batch-inserts them -- all synchronous work that runs on Node's single
-// thread and therefore blocks every other request in the app for its full duration, every time it
-// runs (every 30 seconds). A user reported requests as simple as GET /api/sites randomly taking
-// 6-14 seconds with a Network-tab Timing capture showing nearly all of it as server-side "Waiting"
-// (TTFB) rather than connection/DNS time -- consistent with getting stuck behind a job like this
-// one. Logging real durations here (only when a run takes long enough to plausibly explain that)
-// gives proof of whether this is the actual cause before changing how it works, rather than
-// shipping a fourth guess.
 async function importAccessLogsToSqlite() {
   if (!storage?.recordAccessEvents) return;
-  const startedAt = performance.now();
   try {
-    const readStarted = performance.now();
     const entries = await readAccessLogs(5000);
-    const readMs = Math.round(performance.now() - readStarted);
-    const hashStarted = performance.now();
     const events = entries.map(entry => ({ ...entry, source: crypto.createHash("sha1").update(JSON.stringify([entry.at, entry.host, entry.method, entry.uri, entry.status, entry.size, entry.durationMs, entry.remoteIp])).digest("hex") }));
-    const hashMs = Math.round(performance.now() - hashStarted);
-    const insertStarted = performance.now();
     storage.recordAccessEvents(events);
-    const insertMs = Math.round(performance.now() - insertStarted);
-    const totalMs = Math.round(performance.now() - startedAt);
-    if (totalMs > 500) console.warn(`[perf] importAccessLogsToSqlite took ${totalMs}ms for ${entries.length} entries (read ${readMs}ms, hash ${hashMs}ms, insert ${insertMs}ms) -- this blocks every other request while it runs.`);
   } catch (error) { console.warn("Could not import access logs into SQLite:", error.message); }
 }
 
@@ -1531,20 +1510,6 @@ app.disable("x-powered-by");
 // HTTP layer: Express app setup, auth middleware, and every /api/* route.
 // Routes below are grouped by area; see the section comments for each group.
 // ============================================================================================
-// Diagnostic timing (v0.16.44): logs any request that takes noticeably long to answer, alongside
-// the importAccessLogsToSqlite instrumentation above -- together these should show, in the
-// container's own logs, whether a slow page load lines up with a background job's run window or
-// is a slow request in its own right. Placed first so it wraps the full request, including any
-// auth/body-parsing work below it. Remove once the real cause behind reported multi-second page
-// loads is confirmed and fixed; this is a temporary aid, not a permanent feature.
-app.use((req, res, next) => {
-  const startedAt = performance.now();
-  res.on("finish", () => {
-    const durationMs = Math.round(performance.now() - startedAt);
-    if (durationMs > 1000) console.warn(`[perf] ${req.method} ${req.originalUrl} took ${durationMs}ms`);
-  });
-  next();
-});
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.get(["/", "/index.html"], (req, res) => {
@@ -2634,6 +2599,8 @@ setInterval(() => checkConfigDrift().catch(error => console.warn("Config drift c
 // after boot and then every 30 minutes in the background, rather than on every dashboard fetch.
 setTimeout(refreshDatabaseIntegrityCache, 5000).unref();
 setInterval(refreshDatabaseIntegrityCache, 30 * 60000).unref();
+setTimeout(refreshDataDirSizeCache, 5000).unref();
+setInterval(refreshDataDirSizeCache, 60000).unref();
 
 
 // --- Scheduled jobs: automatic backups, log pruning, public IP checks, graceful shutdown ---------------------------------
