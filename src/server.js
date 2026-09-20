@@ -91,6 +91,21 @@ function recordActivity(message, status = "ok") {
   try { storage?.recordAudit(message, status, null, currentAuditActor); } catch (error) { console.warn("Could not record SQLite audit event:", error.message); }
 }
 
+// --- Edit-route change summaries: builds one human-readable, comma-joined line describing
+//     exactly what changed in a single PATCH save, instead of a generic "X updated" message
+//     that looks identical whether a rename, a domain change, or a TLS toggle happened.
+function describeDomainsChange(previousDomains, nextDomains) {
+  if (previousDomains.join("|") === nextDomains.join("|")) return null;
+  if (!nextDomains.length) return "domain removed";
+  const shown = nextDomains.slice(0, 3).join(", ");
+  return `domain${nextDomains.length > 1 ? "s" : ""} changed to ${shown}${nextDomains.length > 3 ? ` (+${nextDomains.length - 3} more)` : ""}`;
+}
+function summarizeUpdate(kind, name, changes) {
+  const list = changes.filter(Boolean);
+  if (!list.length) return;
+  recordActivity(`${kind} “${name}” updated — ${list.join(", ")}.`);
+}
+
 async function directorySize(directory) {
   const entries = await fsp.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
   const sizes = await Promise.all(entries.map(async entry => {
@@ -2200,6 +2215,7 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     const site = sites.find(item => item.id === req.params.id);
     if (!site) return res.status(404).json({ error: "Site not found." });
     const previousDomains = normalizeDomains(site.domain, site.domains);
+    const before = { name: site.name, tls: site.tls, hsts: site.hsts, accessListId: site.accessListId, healthEnabled: site.healthEnabled, healthDetail: JSON.stringify([site.compression, site.hstsSubdomains, site.requestHeaders, site.responseHeaders, site.customConfig, site.healthPath, site.healthMethod, site.healthExpected, site.healthTimeoutSeconds, site.healthRetries]) };
     const domain = normalizeDomain(req.body.domain);
     const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : site.domains);
     const domainError = validateDomains(domains, site.id);
@@ -2218,7 +2234,16 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     await syncCaddy();
     await pruneOrphanedCertificates(previousDomains);
     await saveSites();
-    recordActivity(`Gateway settings updated for “${site.name}”.`);
+    const afterHealthDetail = JSON.stringify([site.compression, site.hstsSubdomains, site.requestHeaders, site.responseHeaders, site.customConfig, site.healthPath, site.healthMethod, site.healthExpected, site.healthTimeoutSeconds, site.healthRetries]);
+    summarizeUpdate("Hosted site", site.name, [
+      before.name !== site.name ? `renamed from “${before.name}”` : null,
+      describeDomainsChange(previousDomains, domains),
+      before.tls !== site.tls ? `TLS set to ${site.tls}` : null,
+      before.hsts !== site.hsts ? `HSTS ${site.hsts ? "enabled" : "disabled"}` : null,
+      before.accessListId !== site.accessListId ? (site.accessListId ? "Access List assigned" : "Access List removed") : null,
+      before.healthEnabled !== site.healthEnabled ? `health checks ${site.healthEnabled === false ? "disabled" : "enabled"}` : null,
+      before.healthDetail !== afterHealthDetail ? "advanced settings updated" : null
+    ]);
     res.json(publicSite(site));
   } catch (error) { next(error); }
 });
@@ -2257,6 +2282,7 @@ app.patch("/api/proxies/:id", async (req, res, next) => {
     const proxy = proxies.find(item => item.id === req.params.id);
     if (!proxy) return res.status(404).json({ error: "Proxy host not found." });
     const previousDomains = normalizeDomains(proxy.domain, proxy.domains);
+    const before = { name: proxy.name, target: proxy.target, tls: proxy.tls, hsts: proxy.hsts, accessListId: proxy.accessListId, healthEnabled: proxy.healthEnabled, healthDetail: JSON.stringify([proxy.upstreams, proxy.lbPolicy, proxy.compression, proxy.hstsSubdomains, proxy.requestHeaders, proxy.responseHeaders, proxy.upstreamTlsServerName, proxy.upstreamTlsInsecure, proxy.customConfig, proxy.healthPath, proxy.healthMethod, proxy.healthExpected, proxy.healthTimeoutSeconds, proxy.healthRetries]) };
     if (req.body.domain !== undefined) {
       const domain = normalizeDomain(req.body.domain);
       const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : proxy.domains);
@@ -2281,7 +2307,17 @@ app.patch("/api/proxies/:id", async (req, res, next) => {
     await syncCaddy();
     await pruneOrphanedCertificates(previousDomains);
     await saveProxies();
-    recordActivity(`Proxy host “${proxy.name}” updated.`);
+    const afterHealthDetail = JSON.stringify([proxy.upstreams, proxy.lbPolicy, proxy.compression, proxy.hstsSubdomains, proxy.requestHeaders, proxy.responseHeaders, proxy.upstreamTlsServerName, proxy.upstreamTlsInsecure, proxy.customConfig, proxy.healthPath, proxy.healthMethod, proxy.healthExpected, proxy.healthTimeoutSeconds, proxy.healthRetries]);
+    summarizeUpdate("Proxy host", proxy.name, [
+      before.name !== proxy.name ? `renamed from “${before.name}”` : null,
+      describeDomainsChange(previousDomains, normalizeDomains(proxy.domain, proxy.domains)),
+      before.target !== proxy.target ? `target changed to ${proxy.target}` : null,
+      before.tls !== proxy.tls ? `TLS set to ${proxy.tls}` : null,
+      before.hsts !== proxy.hsts ? `HSTS ${proxy.hsts ? "enabled" : "disabled"}` : null,
+      before.accessListId !== proxy.accessListId ? (proxy.accessListId ? "Access List assigned" : "Access List removed") : null,
+      before.healthEnabled !== proxy.healthEnabled ? `health checks ${proxy.healthEnabled === false ? "disabled" : "enabled"}` : null,
+      before.healthDetail !== afterHealthDetail ? "advanced settings updated" : null
+    ]);
     res.json(publicProxy(proxy));
   } catch (error) { next(error); }
 });
@@ -2410,6 +2446,7 @@ app.patch("/api/redirects/:id", async (req, res, next) => {
   try {
     const item = redirects.find(value => value.id === req.params.id); if (!item) return res.status(404).json({ error: "Redirect Host not found." });
     const previousDomains = normalizeDomains(item.domain, item.domains);
+    const before = { name: item.name, target: item.target, accessListId: item.accessListId, enabled: item.enabled, code: item.code, preservePath: item.preservePath, tls: item.tls, hsts: item.hsts };
     if (req.body.domain !== undefined || req.body.domains !== undefined) { const domain = normalizeDomain(req.body.domain ?? item.domain); const domains = normalizeDomains(domain, req.body.domains !== undefined ? req.body.domains : item.domains); const error = validateDomains(domains, item.id); if (error || !domain) return res.status(400).json({ error: error || "Primary source domain is required." }); item.domain = domain; item.domains = domains; }
     if (req.body.enabled !== undefined) item.enabled = Boolean(req.body.enabled);
     for (const key of ["name","target","accessListId"]) if (req.body[key] !== undefined) item[key] = String(req.body[key]).trim();
@@ -2418,7 +2455,19 @@ app.patch("/api/redirects/:id", async (req, res, next) => {
     if (req.body.preservePath !== undefined) item.preservePath = Boolean(req.body.preservePath);
     if (req.body.tls !== undefined) item.tls = ["http","automatic","internal"].includes(req.body.tls) ? req.body.tls : item.tls;
     if (req.body.hsts !== undefined) item.hsts = Boolean(req.body.hsts);
-    await syncCaddy(); await pruneOrphanedCertificates(previousDomains); await saveRedirects(); recordActivity(`Redirect Host “${item.name}” updated.`); res.json(item);
+    await syncCaddy(); await pruneOrphanedCertificates(previousDomains); await saveRedirects();
+    summarizeUpdate("Redirect Host", item.name, [
+      before.name !== item.name ? `renamed from “${before.name}”` : null,
+      describeDomainsChange(previousDomains, normalizeDomains(item.domain, item.domains)),
+      before.target !== item.target ? `destination changed to ${item.target}` : null,
+      before.code !== item.code ? `redirect code changed to ${item.code}` : null,
+      before.preservePath !== item.preservePath ? `path preservation ${item.preservePath ? "enabled" : "disabled"}` : null,
+      before.tls !== item.tls ? `TLS set to ${item.tls}` : null,
+      before.hsts !== item.hsts ? `HSTS ${item.hsts ? "enabled" : "disabled"}` : null,
+      before.accessListId !== item.accessListId ? (item.accessListId ? "Access List assigned" : "Access List removed") : null,
+      before.enabled !== item.enabled ? (item.enabled ? "enabled" : "disabled") : null
+    ]);
+    res.json(item);
   } catch (error) { next(error); }
 });
 app.delete("/api/redirects/:id", async (req, res, next) => {
@@ -2450,6 +2499,7 @@ app.post("/api/streams", async (req, res, next) => {
 app.patch("/api/streams/:id", async (req, res, next) => {
   try {
     const stream = streams.find(item => item.id === req.params.id); if (!stream) return res.status(404).json({ error: "Streaming host not found." });
+    const before = { name: stream.name, port: stream.port, target: stream.target, tcp: stream.tcp, udp: stream.udp, healthEnabled: stream.healthEnabled, enabled: stream.enabled };
     const next_ = { ...stream };
     if (req.body.name !== undefined) { const name = String(req.body.name).trim(); if (!name) return res.status(400).json({ error: "Name is required." }); next_.name = name; }
     if (req.body.port !== undefined) { const port = validateStreamPort(req.body.port); const portError = streamPortConflict(port, stream.id); if (portError) return res.status(400).json({ error: portError }); next_.port = port; }
@@ -2465,7 +2515,15 @@ app.patch("/api/streams/:id", async (req, res, next) => {
     if (stream.healthEnabled === false) upstreamHealth.set(stream.id, { status: "unmonitored", checkedAt: null, history: [] });
     else { upstreamHealth.set(stream.id, { status: "pending", checkedAt: null, history: [] }); checkStream(stream).catch(error => console.warn("Streaming host health check failed:", error.message)); }
     await saveStreams();
-    recordActivity(`Streaming host “${stream.name}” updated.`);
+    const protocolLabel = (tcp, udp) => tcp && udp ? "TCP+UDP" : tcp ? "TCP" : "UDP";
+    summarizeUpdate("Streaming host", stream.name, [
+      before.name !== stream.name ? `renamed from “${before.name}”` : null,
+      before.port !== stream.port ? `port changed from ${before.port} to ${stream.port}` : null,
+      before.target !== stream.target ? `target changed to ${stream.target}` : null,
+      (before.tcp !== stream.tcp || before.udp !== stream.udp) ? `protocol changed to ${protocolLabel(stream.tcp, stream.udp)}` : null,
+      before.healthEnabled !== stream.healthEnabled ? `health checks ${stream.healthEnabled === false ? "disabled" : "enabled"}` : null,
+      before.enabled !== stream.enabled ? (stream.enabled ? "enabled" : "disabled") : null
+    ]);
     res.json(publicStream(stream));
   } catch (error) { next(error); }
 });
