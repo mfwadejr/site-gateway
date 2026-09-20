@@ -1018,12 +1018,30 @@ async function readAccessLogs(limit = 100, host = "") {
   return entries;
 }
 
+// Diagnostic timing (v0.16.44): this job reads Caddy's access-log files, JSON.parses up to 5000
+// lines, hashes each one, and batch-inserts them -- all synchronous work that runs on Node's single
+// thread and therefore blocks every other request in the app for its full duration, every time it
+// runs (every 30 seconds). A user reported requests as simple as GET /api/sites randomly taking
+// 6-14 seconds with a Network-tab Timing capture showing nearly all of it as server-side "Waiting"
+// (TTFB) rather than connection/DNS time -- consistent with getting stuck behind a job like this
+// one. Logging real durations here (only when a run takes long enough to plausibly explain that)
+// gives proof of whether this is the actual cause before changing how it works, rather than
+// shipping a fourth guess.
 async function importAccessLogsToSqlite() {
   if (!storage?.recordAccessEvents) return;
+  const startedAt = performance.now();
   try {
+    const readStarted = performance.now();
     const entries = await readAccessLogs(5000);
+    const readMs = Math.round(performance.now() - readStarted);
+    const hashStarted = performance.now();
     const events = entries.map(entry => ({ ...entry, source: crypto.createHash("sha1").update(JSON.stringify([entry.at, entry.host, entry.method, entry.uri, entry.status, entry.size, entry.durationMs, entry.remoteIp])).digest("hex") }));
+    const hashMs = Math.round(performance.now() - hashStarted);
+    const insertStarted = performance.now();
     storage.recordAccessEvents(events);
+    const insertMs = Math.round(performance.now() - insertStarted);
+    const totalMs = Math.round(performance.now() - startedAt);
+    if (totalMs > 500) console.warn(`[perf] importAccessLogsToSqlite took ${totalMs}ms for ${entries.length} entries (read ${readMs}ms, hash ${hashMs}ms, insert ${insertMs}ms) -- this blocks every other request while it runs.`);
   } catch (error) { console.warn("Could not import access logs into SQLite:", error.message); }
 }
 
@@ -1494,6 +1512,20 @@ app.disable("x-powered-by");
 // HTTP layer: Express app setup, auth middleware, and every /api/* route.
 // Routes below are grouped by area; see the section comments for each group.
 // ============================================================================================
+// Diagnostic timing (v0.16.44): logs any request that takes noticeably long to answer, alongside
+// the importAccessLogsToSqlite instrumentation above -- together these should show, in the
+// container's own logs, whether a slow page load lines up with a background job's run window or
+// is a slow request in its own right. Placed first so it wraps the full request, including any
+// auth/body-parsing work below it. Remove once the real cause behind reported multi-second page
+// loads is confirmed and fixed; this is a temporary aid, not a permanent feature.
+app.use((req, res, next) => {
+  const startedAt = performance.now();
+  res.on("finish", () => {
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (durationMs > 1000) console.warn(`[perf] ${req.method} ${req.originalUrl} took ${durationMs}ms`);
+  });
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.get(["/", "/index.html"], (req, res) => {
