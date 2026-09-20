@@ -994,12 +994,6 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .api-token-hide-revoked span{line-height:normal}
 .api-token-secret{display:block;margin-top:var(--space-3);padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(var(--bg-rgb),.4);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--font-size-sm);line-height:1.6;word-break:break-all}
 
-/* Backup history timeline */
-.backup-history-list{display:flex;flex-direction:column;gap:var(--space-2);margin-top:var(--space-4);max-height:min(46vh,520px);overflow:auto}
-.backup-history-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
-.backup-history-copy strong{font-size:var(--font-size-md)}
-.backup-history-copy small{color:var(--muted);font-size:var(--font-size-xs)}
-.backup-history-copy small.failed{color:var(--danger)}
 .check-control.is-disabled{opacity:.55}
 .check-control.is-disabled span{color:var(--muted)}
 .docker-integration-section,.backup-history-section{margin-top:var(--space-5)}

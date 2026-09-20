@@ -470,13 +470,19 @@ function backupHistoryLabel(event) {
   if (event.type === "imported") return `Imported ${lower} — ${when}`;
   return `${kind} — ${when}`;
 }
+function backupHistoryAction(event) {
+  return event.type === "restored" ? "Restored" : event.type === "deleted" ? "Deleted" : event.type === "imported" ? "Imported" : "Backup";
+}
+function backupHistoryType(event) {
+  return event.backupType === "complete" ? "Complete" : event.backupType === "configuration" ? "Configuration" : event.backupType === "safety" ? "Safety (pre-restore)" : "—";
+}
 async function renderBackupHistory() {
   const panel = document.querySelector('[data-admin-panel="backups"]'); if (!panel || state.user?.role !== "administrator") return;
   let section = panel.querySelector(".backup-history-section");
   if (!section) {
     section = document.createElement("div");
     section.className = "dashboard-panel backup-history-section";
-    section.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">History</p><h2>Backup history</h2><p class="muted">Every backup, restore, import, and deletion — including failed attempts — recorded independently of what is currently stored on disk.</p></div></div><div id="backup-history-list" class="backup-history-list"><p class="quiet-state">Loading backup history…</p></div>';
+    section.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">History</p><h2>Backup history</h2><p class="muted">Every backup, restore, import, and deletion — including failed attempts — recorded independently of what is currently stored on disk.</p></div></div><div class="table-wrap performance-table-wrap event-table-wrap"><table class="performance-table event-table"><thead><tr><th>Time</th><th>Action</th><th>Type</th><th>Detail</th></tr></thead><tbody id="backup-history-list"><tr><td colspan="4" class="quiet-state">Loading backup history…</td></tr></tbody></table></div>';
     panel.append(section);
   }
   const list = section.querySelector("#backup-history-list");
@@ -485,9 +491,9 @@ async function renderBackupHistory() {
     list.innerHTML = events.length ? events.map(item => {
       const failed = item.status === "failed";
       const detail = failed ? `Failed — ${item.errorMessage || "no further detail recorded"}` : [item.sizeBytes ? formatBytes(item.sizeBytes) : "", item.safetyBackupFilename ? "A safety backup was taken first" : ""].filter(Boolean).join(" · ") || "Completed";
-      return `<div class="activity-tile"><span class="activity-mark ${failed ? "bad" : ""}">${failed ? "!" : "✓"}</span><span class="backup-history-copy"><strong>${extendedEscape(backupHistoryLabel(item))}</strong><small class="${failed ? "failed" : ""}" title="${extendedEscape(formatTime(item.createdAt))}">${extendedEscape(detail)}</small></span></div>`;
-    }).join("") : '<p class="quiet-state">No backup activity recorded yet.</p>';
-  } catch (error) { list.innerHTML = `<p class="quiet-state">${extendedEscape(error.message)}</p>`; }
+      return `<tr><td>${extendedEscape(formatTime(item.createdAt))}</td><td>${extendedEscape(backupHistoryAction(item))}</td><td>${extendedEscape(backupHistoryType(item))}</td><td><span class="status-dot ${failed ? "error" : "running"}"></span>${extendedEscape(detail)}</td></tr>`;
+    }).join("") : '<tr><td colspan="4" class="quiet-state">No backup activity recorded yet.</td></tr>';
+  } catch (error) { list.innerHTML = `<tr><td colspan="4" class="quiet-state">${extendedEscape(error.message)}</td></tr>`; }
 }
 
 
