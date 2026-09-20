@@ -64,6 +64,7 @@ export async function openStorage(dataDir, backupsDir) {
     CREATE TABLE IF NOT EXISTS access_assignments (instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE, route_kind TEXT NOT NULL, route_id TEXT NOT NULL, access_list_id TEXT NOT NULL REFERENCES access_lists(id) ON DELETE RESTRICT, created_at TEXT NOT NULL, PRIMARY KEY(route_kind,route_id));
     CREATE TABLE IF NOT EXISTS settings (instance_id TEXT PRIMARY KEY REFERENCES instances(id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)), updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), actor_id TEXT, action TEXT NOT NULL, status TEXT NOT NULL, details TEXT, created_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS audit_events_instance_created ON audit_events(instance_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS activity_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), message TEXT NOT NULL, status TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'activity', created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS activity_events_instance_created ON activity_events(instance_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS access_events (id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT REFERENCES instances(id), at TEXT, host TEXT, method TEXT, uri TEXT, status INTEGER, size INTEGER, duration_ms INTEGER, remote_ip TEXT, source TEXT, UNIQUE(instance_id,source));
