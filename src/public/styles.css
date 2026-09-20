@@ -52,6 +52,7 @@ h2{letter-spacing:-.025em}
 .status-dot.running{background:var(--green);box-shadow:0 0 0 4px rgba(var(--green-rgb),.1)}
 .status-dot.disabled{background:var(--danger);box-shadow:0 0 0 4px rgba(var(--danger-rgb),.09)}
 .status-dot.error,.status-dot.idle{background:var(--warning);box-shadow:0 0 0 4px rgba(var(--warning-rgb),.09)}
+.status-dot.bad{background:var(--danger);box-shadow:0 0 0 4px rgba(var(--danger-rgb),.09)}
 
 /* Hosted Site / Proxy Host cards, card menu, and the toggle switch */
 .site-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:18px}

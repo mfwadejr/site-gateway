@@ -271,10 +271,9 @@ function renderCertificates() {
     const cert = row.cert, item = row.readiness;
     const dnsOk = item ? item.dns.healthy : null;
     const tlsOk = item ? ["healthy", "warning", "critical", "not-configured"].includes(item.tls.status) : null;
-    const upstreamOk = item ? (!item.upstream || item.upstream.status === "healthy") : null;
     const dnsCell = item ? `<span class="status-dot ${dnsOk ? "running" : "error"}"></span>${dnsOk ? "Resolved" : "Failed"}` : `<span class="status-dot idle"></span>—`;
     const tlsCell = item ? `<span class="status-dot ${tlsOk ? "running" : "error"}"></span>${escapeHtml(item.tls.status.replaceAll("-", " "))}` : `<span class="status-dot idle"></span>—`;
-    const upstreamCell = item ? (item.upstream ? `<span class="status-dot ${upstreamOk ? "running" : "error"}"></span>${item.upstream.httpStatus ?? "no response"}` : `<span class="status-dot idle"></span>Not configured`) : `<span class="status-dot idle"></span>—`;
+    const upstreamCell = !item ? `<span class="status-dot idle"></span>—` : !item.upstream || item.upstream.status === "unmonitored" ? `<span class="status-dot idle"></span>Monitoring paused` : item.upstream.status === "pending" ? `<span class="status-dot idle"></span>Check pending` : item.upstream.status === "healthy" ? `<span class="status-dot running"></span>${item.upstream.httpStatus}` : `<span class="status-dot bad"></span>${escapeHtml(item.upstream.error || "Unavailable")}`;
     const statusLabel = cert.status === "mismatch" ? "Domain mismatch" : cert.status.charAt(0).toUpperCase() + cert.status.slice(1);
     return `<tr class="cert-table-row" data-index="${index}" tabindex="0"><td><strong>${escapeHtml(cert.domain)}</strong><br><small class="muted">${escapeHtml(cert.kind)} · ${escapeHtml(cert.source)}</small></td><td><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span>${escapeHtml(statusLabel)}</td><td>${cert.expiresAt ? `${cert.daysRemaining} days` : "—"}</td><td>${escapeHtml(cert.issuer || "—")}</td><td>${dnsCell}</td><td>${tlsCell}</td><td>${upstreamCell}</td></tr>`;
   }).join("") : '<tr><td colspan="7" class="quiet-state">No HTTPS domains are configured.</td></tr>';
