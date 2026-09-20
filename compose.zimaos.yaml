@@ -76,8 +76,8 @@ x-casaos:
   author: mfwadejr
   developer: mfwadejr
   architectures: ["amd64", "arm64"]
-  version: "0.11.101"
-  update_at: "2026-09-16"
+  version: "0.16.58"
+  update_at: "2026-09-20"
   website: https://github.com/mfwadejr/site-gateway2
   repo: https://github.com/mfwadejr/site-gateway2
   support: https://github.com/mfwadejr/site-gateway2/issues
