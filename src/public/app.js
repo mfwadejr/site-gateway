@@ -265,24 +265,35 @@ function renderCertificates() {
   $("#cert-healthy").textContent = data.summary.healthy; $("#cert-30").textContent = data.summary.within30Days; $("#cert-7").textContent = data.summary.within7Days; $("#cert-warning").textContent = data.summary.warning + data.summary.critical + data.summary.expired + data.summary.mismatch; $("#cert-pending").textContent = data.summary.pending;
   const ageMinutes = (Date.now() - new Date(data.checkedAt).getTime()) / 60000, stale = ageMinutes > (data.thresholds?.staleMinutes || 10);
   $("#cert-last-checked").textContent = `Last checked ${formatTime(data.checkedAt)} · ${stale ? "data may be stale" : "current"}`;
-  $("#certificate-list").innerHTML = data.certificates.length ? data.certificates.map(cert => `<details class="certificate-row"><summary><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span><span><strong>${escapeHtml(cert.domain)}</strong><small>${escapeHtml(cert.kind)} · ${escapeHtml(cert.name)} · ${escapeHtml(cert.source)}</small></span><span><strong>${cert.expiresAt ? `${cert.daysRemaining} days remaining` : cert.status === "mismatch" ? "Domain mismatch" : "Not detected"}</strong><small>${cert.expiresAt ? `Expires ${formatTime(cert.expiresAt)}` : cert.mismatch ? `Covers: ${(cert.coveredNames || []).map(escapeHtml).join(", ") || "no DNS names"}` : "No stored certificate was found"}</small></span></summary><dl class="certificate-details"><div><dt>Status</dt><dd>${escapeHtml(cert.status)}</dd></div><div><dt>Valid from</dt><dd>${cert.validFrom ? escapeHtml(formatTime(cert.validFrom)) : "—"}</dd></div><div><dt>Issuer</dt><dd>${escapeHtml(cert.issuer || "—")}</dd></div><div><dt>Covered domains</dt><dd>${escapeHtml((cert.coveredNames || []).join(", ") || "—")}</dd></div><div><dt>Serial number</dt><dd>${escapeHtml(cert.serialNumber || "—")}</dd></div><div><dt>SHA-256 fingerprint</dt><dd>${escapeHtml(cert.fingerprint || "—")}</dd></div><div><dt>Last detected update</dt><dd>${cert.updatedAt ? escapeHtml(formatTime(cert.updatedAt)) : "—"}</dd></div></dl></details>`).join("") : '<p class="quiet-state padded">No HTTPS domains are configured.</p>';
-  renderReadiness();
-}
-
-
-// --- Domain readiness (used inside the Certificates view) ---------------------------
-function renderReadiness() {
   const routes = state.readiness?.routes || [];
-  $("#readiness-list").innerHTML = routes.length ? routes.map(item => {
-    const dnsOk = item.dns.healthy, portsOk = item.ports.http && item.ports.https !== false;
-    const tlsOk = ["healthy", "warning", "critical", "not-configured"].includes(item.tls.status);
-    const upstreamOk = !item.upstream || item.upstream.status === "healthy";
-    const check = item.upstream;
-    const message = !dnsOk ? `DNS failed${item.dns.error ? ` · ${item.dns.error}` : ""}` : !item.ports.http ? "HTTP port 80 is not responding inside the container" : item.ports.https === false ? "HTTPS port 443 is not responding inside the container" : !tlsOk ? `TLS ${item.tls.status.replaceAll("-", " ")}` : !upstreamOk ? `Upstream ${check?.error || "unavailable"}` : `Ready · DNS ${item.dns.addresses.join(", ")}${check ? ` · upstream ${check.httpStatus || "responding"}` : ""}`;
-    const upstreamDetail = check ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${check.httpStatus ?? "no response"}${check.responseMs != null ? ` · ${check.responseMs} ms` : ""} · ${check.attempts || 1} attempt${(check.attempts || 1) === 1 ? "" : "s"}</dd></div><div><dt>Last checked</dt><dd>${escapeHtml(formatTime(check.checkedAt))}</dd></div>${check.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(check.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>";
-    return `<details class="certificate-row readiness-row"><summary><span class="status-dot ${dnsOk && portsOk && tlsOk && upstreamOk ? "running" : "error"}"></span><span><strong>${escapeHtml(item.domain)}</strong><small>${escapeHtml(message)}</small></span></summary><dl class="certificate-details"><div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}</dd></div>${upstreamDetail}</dl></details>`;
-  }).join("") : '<p class="quiet-state">No configured domains to check.</p>';
+  state.certRows = data.certificates.map(cert => ({ cert, readiness: routes.find(item => item.domain === cert.domain) || null }));
+  $("#certificate-list").innerHTML = state.certRows.length ? state.certRows.map((row, index) => {
+    const cert = row.cert, item = row.readiness;
+    const dnsOk = item ? item.dns.healthy : null;
+    const tlsOk = item ? ["healthy", "warning", "critical", "not-configured"].includes(item.tls.status) : null;
+    const upstreamOk = item ? (!item.upstream || item.upstream.status === "healthy") : null;
+    const dnsCell = item ? `<span class="status-dot ${dnsOk ? "running" : "error"}"></span>${dnsOk ? "Resolved" : "Failed"}` : `<span class="status-dot idle"></span>—`;
+    const tlsCell = item ? `<span class="status-dot ${tlsOk ? "running" : "error"}"></span>${escapeHtml(item.tls.status.replaceAll("-", " "))}` : `<span class="status-dot idle"></span>—`;
+    const upstreamCell = item ? (item.upstream ? `<span class="status-dot ${upstreamOk ? "running" : "error"}"></span>${item.upstream.httpStatus ?? "no response"}` : `<span class="status-dot idle"></span>Not configured`) : `<span class="status-dot idle"></span>—`;
+    const statusLabel = cert.status === "mismatch" ? "Domain mismatch" : cert.status.charAt(0).toUpperCase() + cert.status.slice(1);
+    return `<tr class="cert-table-row" data-index="${index}" tabindex="0"><td><strong>${escapeHtml(cert.domain)}</strong><br><small class="muted">${escapeHtml(cert.kind)} · ${escapeHtml(cert.source)}</small></td><td><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span>${escapeHtml(statusLabel)}</td><td>${cert.expiresAt ? `${cert.daysRemaining} days` : "—"}</td><td>${escapeHtml(cert.issuer || "—")}</td><td>${dnsCell}</td><td>${tlsCell}</td><td>${upstreamCell}</td></tr>`;
+  }).join("") : '<tr><td colspan="7" class="quiet-state">No HTTPS domains are configured.</td></tr>';
 }
+
+
+// --- Certificate detail popup (deep fields for a single certificate row) ------------
+function openCertificateDetail(row) {
+  const cert = row.cert, item = row.readiness;
+  $("#cert-detail-title").textContent = cert.domain;
+  $("#cert-detail-eyebrow").textContent = `${cert.kind} · ${cert.source}`;
+  const certRows = `<div><dt>Status</dt><dd>${escapeHtml(cert.status)}</dd></div><div><dt>Valid from</dt><dd>${cert.validFrom ? escapeHtml(formatTime(cert.validFrom)) : "—"}</dd></div><div><dt>Expires</dt><dd>${cert.expiresAt ? escapeHtml(formatTime(cert.expiresAt)) : "—"}</dd></div><div><dt>Issuer</dt><dd>${escapeHtml(cert.issuer || "—")}</dd></div><div><dt>Covered domains</dt><dd>${escapeHtml((cert.coveredNames || []).join(", ") || "—")}</dd></div><div><dt>Serial number</dt><dd>${escapeHtml(cert.serialNumber || "—")}</dd></div><div><dt>SHA-256 fingerprint</dt><dd>${escapeHtml(cert.fingerprint || "—")}</dd></div><div><dt>Last detected update</dt><dd>${cert.updatedAt ? escapeHtml(formatTime(cert.updatedAt)) : "—"}</dd></div>`;
+  const readinessRows = item ? `<div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}</dd></div>${item.upstream ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${item.upstream.httpStatus ?? "no response"}${item.upstream.responseMs != null ? ` · ${item.upstream.responseMs} ms` : ""} · ${item.upstream.attempts || 1} attempt${(item.upstream.attempts || 1) === 1 ? "" : "s"}</dd></div><div><dt>Last checked</dt><dd>${escapeHtml(formatTime(item.upstream.checkedAt))}</dd></div>${item.upstream.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(item.upstream.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>"}` : "<div><dt>Domain readiness</dt><dd>No readiness data available for this domain.</dd></div>";
+  $("#cert-detail-body").innerHTML = certRows + readinessRows;
+  $("#certificate-detail-dialog").showModal();
+}
+$("#certificate-list").addEventListener("click", event => { const row = event.target.closest(".cert-table-row"); if (!row) return; const data = state.certRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
+$("#certificate-list").addEventListener("keydown", event => { if (event.key !== "Enter" && event.key !== " ") return; const row = event.target.closest(".cert-table-row"); if (!row) return; event.preventDefault(); const data = state.certRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
+$("#cert-threshold-trigger").addEventListener("click", () => { renderHealthSettings(); $("#health-settings-dialog").showModal(); });
 
 
 // --- Logs view -------------------------------------------------------------------------

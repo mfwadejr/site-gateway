@@ -824,6 +824,15 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .diagnostic-section-heading p:last-child{margin:var(--space-1) 0 0}
 .diagnostic-section-heading{margin-bottom:0}
 .diagnostic-section-heading + .log-table-wrap{border-top:0;border-radius:0 0 15px 15px}
+.diagnostic-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-4)}
+.diagnostic-section-heading + .cert-table-wrap{border-top:0;border-radius:0 0 15px 15px}
+.cert-table-row{cursor:pointer}
+.cert-table-row:hover{background:rgba(var(--green-rgb),.06)}
+.cert-table-row:focus{outline:none}
+.cert-table-row:focus-visible{outline:2px solid var(--green);outline-offset:-2px}
+.cert-table td{vertical-align:middle}
+.cert-table td .status-dot{margin-right:6px;vertical-align:-1px}
+#cert-detail-body{padding:0;background:transparent;border-top:0;margin-top:var(--space-4)}
 #certificate-list.diagnostic-list,#readiness-list.diagnostic-list,#gateway-log-list.diagnostic-list,#audit-list.diagnostic-list{border-radius:0 0 15px 15px}
 .data-list>.quiet-state,.diagnostic-list>.quiet-state{padding:22px}
 .readiness-panel,.log-activity{background:transparent;border:0;padding:0}
