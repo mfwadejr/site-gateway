@@ -964,7 +964,7 @@ async function domainReadiness(precomputedCertificates) {
     let addresses = [], dnsError = null;
     try { addresses = [...new Set((await dns.lookup(item.domain, { all: true })).map(value => value.address))]; } catch (error) { dnsError = error.code || error.message; }
     const certificate = certs.certificates.find(cert => cert.domain === item.domain) || null;
-    const upstream = item.kind === "Proxy host" ? upstreamHealth.get(item.id) || null : null;
+    const upstream = (item.kind === "Proxy host" || item.kind === "Hosted site") ? upstreamHealth.get(item.id) || null : null;
     return { id: item.id, domain: item.domain, name: item.name, kind: item.kind, dns: { healthy: addresses.length > 0, addresses, error: dnsError }, ports: { http: httpResponding, https: item.tls === "http" ? null : httpsResponding }, tls: item.tls === "http" ? { status: "not-configured" } : { status: certificate?.status || "pending" }, upstream };
   }));
 }
