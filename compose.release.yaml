@@ -20,6 +20,17 @@ services:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
       ACME_EMAIL: ${ACME_EMAIL:-}
+      # Optional: display-only Disk allowance for the resource panel. Set
+      # DATA_DIR_LIMIT_GB in .env to use.
+      DATA_DIR_LIMIT_GB: ${DATA_DIR_LIMIT_GB:-}
+    # Optional but recommended: without a memory/CPU limit, the Dashboard and
+    # Administration > System tab's live resource panel can only show usage
+    # against the whole host. Uncomment and set in .env to give CPU/Memory a
+    # real, container-scoped denominator (MEM_LIMIT, e.g. "2g"; CPU_LIMIT,
+    # e.g. "2"; or CPUSET, e.g. "0,1", to pin cores instead of a count).
+    # mem_limit: ${MEM_LIMIT}
+    # cpus: ${CPU_LIMIT}
+    # cpuset: ${CPUSET}
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"

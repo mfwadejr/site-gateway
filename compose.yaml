@@ -43,6 +43,20 @@ services:
 
       # Optional: certificate account email, passed to Caddy's ACME client.
       ACME_EMAIL: ""
+
+      # Optional: display-only Disk allowance for the resource panel (e.g. a
+      # smaller dedicated share) -- usage/free space still come from the real
+      # volume, this just gives the panel a number to measure against.
+      # DATA_DIR_LIMIT_GB: 30
+    # Optional but recommended: without a memory/CPU limit, the Dashboard and
+    # Administration > System tab's live resource panel can only show usage
+    # against the whole host, which is rarely meaningful on a shared machine.
+    # Setting these gives CPU/Memory a real, container-scoped denominator.
+    # mem_limit: 2g
+    # cpus: "2"
+    # Pinning specific cores is also supported instead of (or alongside) a
+    # count -- the resource panel reads whichever one Docker actually applied.
+    # cpuset: "0,1"
     ports:
       - "80:80"
       - "443:443"
