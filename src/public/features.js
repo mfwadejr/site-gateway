@@ -595,8 +595,12 @@ function setHeroStat(prefix, key, { value, percent, detail, tone } = {}) {
 // isn't available (e.g. no cgroup v2, no readable network interfaces, swap disabled on the host).
 // Throughput is System-tab-only -- the Dashboard already shows live requests/min in its own chip,
 // so `includeThroughput: false` there skips it rather than showing the same number twice.
-function renderHeroPanel(prefix, health, { includeThroughput } = { includeThroughput: true }) {
-  const keys = includeThroughput ? ["cpu", "memory", "swap", "disk", "network", "throughput"] : ["cpu", "memory", "swap", "disk", "network"];
+function renderHeroPanel(prefix, health, { sixthSlot = "throughput" } = {}) {
+  // sixthSlot picks what the panel's sixth stat is: "throughput" (Administration > System, since
+  // that page has no other requests/min display) or "uptime" (the Dashboard, which already has
+  // its own Throughput chip elsewhere -- showing it twice added nothing). Both come straight off
+  // the same /api/system/health poll as everything else here, no separate ticker or anchor.
+  const keys = ["cpu", "memory", "swap", "disk", "network", sixthSlot];
   if (!document.querySelector(`#${prefix}-${keys[0]}-value`)) return;
   if (!health) { keys.forEach(key => setHeroStat(prefix, key, { value: "\u2014", detail: "Unavailable" })); return; }
   const tone = percent => percent >= 90 ? "critical" : percent >= 75 ? "warning" : "";
@@ -622,7 +626,8 @@ function renderHeroPanel(prefix, health, { includeThroughput } = { includeThroug
   else setHeroStat(prefix, "disk", { value: "\u2014", detail: "Disk stats unavailable" });
   if (health.network) setHeroStat(prefix, "network", { value: formatRate(health.network.rxBytesPerSec + health.network.txBytesPerSec), percent: 0, detail: `\u2193 ${formatRate(health.network.rxBytesPerSec)} \u00b7 \u2191 ${formatRate(health.network.txBytesPerSec)}` });
   else setHeroStat(prefix, "network", { value: "\u2014", detail: "Sampling\u2026" });
-  if (includeThroughput) setHeroStat(prefix, "throughput", { value: String(health.throughput?.liveRequests ?? 0), percent: 0, detail: "requests in the last minute" });
+  if (sixthSlot === "throughput") setHeroStat(prefix, "throughput", { value: String(health.throughput?.liveRequests ?? 0), percent: 0, detail: "requests in the last minute" });
+  else if (sixthSlot === "uptime") setHeroStat(prefix, "uptime", Number.isFinite(health.uptimeSeconds) ? { value: formatDuration(health.uptimeSeconds), detail: "Since last restart" } : { value: "\u2014", detail: "Unavailable" });
 }
 // --- System tab: environment/integration status, storage, scheduled jobs, sync, restart --------
 function renderSystemPanel() {
@@ -686,7 +691,7 @@ function renderSystemPanel() {
     if (!state.systemHealthTimer) state.systemHealthTimer = setInterval(() => {
       const systemPanel = document.querySelector('[data-admin-panel="system"]');
       if (state.view !== "administration" || !systemPanel || systemPanel.classList.contains("hidden")) return;
-      api("/api/system/health").then(health => renderHeroPanel("system-hero", health, { includeThroughput: true })).catch(() => {});
+      api("/api/system/health").then(health => renderHeroPanel("system-hero", health)).catch(() => {});
     }, 7000);
   }
   renderSystemStatus(panel);
@@ -728,7 +733,7 @@ async function renderSystemStatus(panel) {
       api("/api/system/restart-policy"),
       api("/api/system/health").catch(() => null),
     ]);
-    renderHeroPanel("system-hero", health, { includeThroughput: true });
+    renderHeroPanel("system-hero", health);
     if (security) security.innerHTML = [
       { ok: !sec.adminPasswordIsDefault, label: "ADMIN_PASSWORD", detail: sec.adminPasswordIsDefault ? "Still using the built-in default \u2014 set this before exposing the dashboard." : "Configured." },
       { ok: !sec.sessionSecretIsDefault, label: "SESSION_SECRET", detail: sec.sessionSecretIsDefault ? "Not set \u2014 sessions are keyed off the admin credentials instead of an independent secret." : "Configured." },

@@ -222,6 +222,10 @@ async function systemHealthSnapshot() {
     })() : null,
     network: networkRate,
     throughput: { liveRequests: storage.performanceLiveCount(60) },
+    // Same source dashboardSnapshot() already uses for its own uptime figure -- included here too
+    // so the Dashboard's hero panel can show Uptime as a plain value on the same 7s poll as every
+    // other hero stat, instead of a separate client-side ticker anchored against a one-time fetch.
+    uptimeSeconds: Math.floor(process.uptime()),
   };
 }
 

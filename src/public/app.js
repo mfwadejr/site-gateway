@@ -147,7 +147,6 @@ function probeCopy(service, ready, error, unconfigured = "Not configured") {
 
 
 function renderDashboardJobs(system) { const columns = document.querySelector("#dashboard-view .dashboard-columns"), health = columns?.firstElementChild; if (!columns) return; let panel = document.querySelector("#dashboard-jobs"); if (!panel) { panel = document.createElement("section"); panel.id = "dashboard-jobs"; panel.className = "dashboard-panel dashboard-jobs-panel"; columns.insertBefore(panel, columns.children[1] || null); } if (health && health.parentElement === columns) columns.parentElement.insertBefore(health, columns); panel.innerHTML = `<div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div class="dashboard-jobs-list">${(system.jobs || []).map(job => `<div class="dashboard-list-item"><span class="status-dot ${job.enabled ? "running" : "idle"}"></span><span><strong>${escapeHtml(job.name)}</strong><small>${job.enabled ? `Active · ${escapeHtml(job.schedule)}` : "Disabled"}</small></span></div>`).join("")}</div>`; }
-function updateDashboardUptime(seconds) { if (Number.isFinite(seconds)) window.__dashboardStartedAt = Date.now() - seconds * 1000; const started = window.__dashboardStartedAt; const target = document.querySelector("#system-uptime"); if (!target || started === undefined) return; const elapsed = Math.max(0, Math.floor((Date.now() - started) / 1000)); target.textContent = formatDuration(elapsed); }
 // Dashboard tiles share one baseline accent (green) and switch to the existing
 // --warning / --danger tokens when the thing they count is actually in trouble --
 // the same mechanism the "Needs attention" chip already used.
@@ -214,7 +213,6 @@ function renderDashboard() {
   $("#upstream-health-dot").className = `status-dot ${!upstreams.total ? "inactive" : upstreams.unhealthy > 0 ? "error" : "running"}`;
   $("#upstream-health-copy").textContent = !upstreams.total ? "No proxy hosts configured" : `${upstreams.healthy} of ${upstreams.total} healthy`;
   $("#health-checked").innerHTML = `<span class="live-dot" id="health-live-dot"></span>Last checked ${formatTime(data.checkedAt)}`;
-  updateDashboardUptime(data.system.uptimeSeconds);
   // Memory/Data/Storage/Version/Database/Public IP moved to the Administration > System tab's
   // Version panel -- the Dashboard's own Runtime/System panel is now the shared hero component
   // (see renderHeroPanel/refreshDashboardHero), which reads real container-scoped CPU/memory/
@@ -228,7 +226,6 @@ function renderDashboard() {
   $("#activity-list").innerHTML = data.activity.length ? data.activity.slice(0, 5).map(item => `<div class="activity-tile"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" || item.status === "warning" ? "!" : "✓"}</span><span class="activity-copy"><strong>${escapeHtml(item.message)}</strong><small title="${escapeHtml(formatTime(item.at))}">${escapeHtml(formatRelativeTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No recent activity.</p>';
 }
 
-setInterval(() => { if (!document.querySelector("#dashboard-view.hidden")) updateDashboardUptime(); }, 1000);
 
 
 // --- Card rendering helpers (icons, permissions) -----------------------------------
@@ -550,17 +547,20 @@ async function refreshDashboard() {
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
   finally { button.disabled = false; button.classList.remove("spinning"); }
 }
-// Populates the Dashboard's hero panel (CPU/memory/swap/disk/network -- Throughput is skipped
-// here since the Dashboard already has its own live-requests chip, and Uptime is handled by the
-// existing updateDashboardUptime() ticker rather than this endpoint) directly from
+// Populates the Dashboard's hero panel (CPU/memory/swap/disk/network/uptime) directly from
 // /api/system/health, the same call and the same renderHeroPanel() the Administration > System
 // tab's hero uses, so the two can never show different numbers for the same live stat again.
+// Uptime uses sixthSlot: "uptime" here (the System tab uses the default "throughput" slot instead,
+// since the Dashboard already has its own live-requests chip elsewhere -- see below). There's no
+// separate ticker or anchor for Uptime anymore: formatDuration() only ever shows minute-level
+// granularity, so refreshing it on this same 7s poll as everything else is all the precision the
+// display needs, and it removes a whole class of ticker/anchor race-condition bugs for free.
 async function refreshDashboardHero() {
   try {
     const health = await api("/api/system/health");
-    window.renderHeroPanel?.("dashboard-hero", health, { includeThroughput: false });
+    window.renderHeroPanel?.("dashboard-hero", health, { sixthSlot: "uptime" });
     // /api/system/health already computes throughput.liveRequests (the hero just doesn't display
-    // it here, since the Dashboard shows it in its own chip instead -- see includeThroughput above).
+    // it here, since the Dashboard shows it in its own chip instead -- see sixthSlot above).
     // Reuse that number to keep the chip on the same 7s cadence as the hero, instead of leaving it
     // on the separate 30s refreshDashboard() timer, which was the actual bug being reported here.
     const throughputTotal = $("#dash-throughput-total"); if (throughputTotal && health.throughput) throughputTotal.textContent = health.throughput.liveRequests ?? 0;
