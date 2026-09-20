@@ -267,6 +267,9 @@ header{align-items:flex-end}
 .log-toolbar{display:flex;align-items:end;justify-content:space-between;gap:var(--space-4)}
 .log-toolbar label{margin:0;min-width:250px}
 .feature-note{margin:var(--space-4) 0}
+.feature-note-row{display:flex;align-items:center;gap:var(--space-4)}
+.feature-note-row .feature-note{flex:1;min-width:0}
+.performance-hide-unconfigured{margin:0 0 0 auto;padding:0;border:0;background:transparent;font-size:.85rem;flex-shrink:0;white-space:nowrap}
 .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius-2xl);background:var(--panel)}
 .log-table{width:100%;border-collapse:collapse;font-size:var(--font-size-md)}
 .log-table th,.log-table td{padding:13px 15px;text-align:left;border-top:1px solid var(--line);white-space:nowrap}

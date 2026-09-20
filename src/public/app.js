@@ -390,7 +390,9 @@ function renderPerformance() {
   // Hosted Site / Proxy Host / Redirect Host -- those fall through to the Default Site handler
   // instead of a real backend. Badge those rows so they read as log history, not live config.
   const configuredDomains = new Set([...state.sites, ...state.proxies, ...state.redirects].flatMap(item => [item.domain, ...(item.domains || [])]).filter(Boolean).map(domain => domain.toLowerCase()));
-  $("#performance-rows").innerHTML = routes.length ? routes.map(route => { const unconfigured = !configuredDomains.has((route.host || "").toLowerCase()); return `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}${unconfigured ? ' <span class="chip unconfigured-chip" title="No Hosted Site, Proxy Host, or Redirect Host currently matches this domain -- these requests hit the Default Site handler instead of a real backend.">Not configured</span>' : ""}</td><td>${countCell(route.hourRequests)}</td><td>${countCell(route.dayRequests)}</td><td>${formatLatency(route.dayAvgMs)}</td><td>${formatLatency(route.dayP95Ms)}</td><td>${route.dayBytes ? escapeHtml(formatBytes(route.dayBytes)) : "—"}</td><td>${(route.dayVisitors || 0).toLocaleString()}</td><td>${pathsCell(route)}</td></tr>`; }).join("") : '<tr><td colspan="8" class="quiet-state">No requests have been logged yet.</td></tr>';
+  const isUnconfigured = route => !configuredDomains.has((route.host || "").toLowerCase());
+  const visibleRoutes = state.performanceHideUnconfigured ? routes.filter(route => !isUnconfigured(route)) : routes;
+  $("#performance-rows").innerHTML = visibleRoutes.length ? visibleRoutes.map(route => { const unconfigured = isUnconfigured(route); return `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}${unconfigured ? ' <span class="chip unconfigured-chip" title="No Hosted Site, Proxy Host, or Redirect Host currently matches this domain -- these requests hit the Default Site handler instead of a real backend.">Not configured</span>' : ""}</td><td>${countCell(route.hourRequests)}</td><td>${countCell(route.dayRequests)}</td><td>${formatLatency(route.dayAvgMs)}</td><td>${formatLatency(route.dayP95Ms)}</td><td>${route.dayBytes ? escapeHtml(formatBytes(route.dayBytes)) : "—"}</td><td>${(route.dayVisitors || 0).toLocaleString()}</td><td>${pathsCell(route)}</td></tr>`; }).join("") : `<tr><td colspan="8" class="quiet-state">${routes.length ? "No configured domains match the current filter — uncheck \u201cHide not configured\u201d to see them." : "No requests have been logged yet."}</td></tr>`;
   if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });
 }
 
@@ -746,6 +748,7 @@ $("#performance-rows").addEventListener("click", event => {
   const pathsButton = event.target.closest("[data-paths-host]");
   if (pathsButton) { const paths = state.performanceTopPaths?.[pathsButton.dataset.pathsHost]; if (paths) showTopPaths(pathsButton.dataset.pathsHost, paths); }
 });
+$("#performance-hide-unconfigured").addEventListener("change", event => { state.performanceHideUnconfigured = event.target.checked; renderPerformance(); });
 $("#log-status").addEventListener("change", renderLogs);
 $("#event-severity").addEventListener("change", renderLogs);
 $("#event-category").addEventListener("change", renderLogs);
