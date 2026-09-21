@@ -5,7 +5,7 @@
 #   docker compose -f compose.release.yaml up -d
 services:
   site-gateway:
-    image: ${SITE_GATEWAY_IMAGE:-ghcr.io/mfwadejr/site-gateway2:latest}
+    image: ${SITE_GATEWAY_IMAGE:-git.us2plus2.com/marvin/site-gateway:latest}
     container_name: site-gateway
     restart: unless-stopped
     environment:

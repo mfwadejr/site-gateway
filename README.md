@@ -103,7 +103,7 @@ At startup, the container creates the complete `/data` hierarchy, applies `PUID`
 
 ## Unraid
 
-1. Add the container from **Docker → Add Container** using the image `ghcr.io/mfwadejr/site-gateway2:latest`, or search Community Applications once a template is published.
+1. Add the container from **Docker → Add Container** using the image `git.us2plus2.com/marvin/site-gateway:latest`, or search Community Applications once a template is published.
 2. Map ports `80`, `443` (TCP+UDP), `8080`, and `9000-9099` as above, plus any Streaming Host ports you plan to use.
 3. Map one path, e.g. `/mnt/user/appdata/site-gateway:/data`.
 4. Set `PUID=99` and `PGID=100` so the container writes to `/data` as the `nobody`/`users` account Unraid expects.
