@@ -511,7 +511,7 @@ function render() {
   const adminUsersActive = activeAdminTab === "users", adminGroupsActive = activeAdminTab === "groups", adminApiActive = activeAdminTab === "api";
   $("#open-create").classList.toggle("hidden", !(management || adminUsersActive || adminGroupsActive || adminApiActive || ["streaming","redirects","access"].includes(state.view)) || !canManage()); $("#check-health").classList.toggle("hidden", state.view !== "certificates" || !canAdmin()); $("#refresh-logs").classList.toggle("hidden", state.view !== "logs");
   if (overview) {
-    $("#page-title").textContent = "Dashboard";
+    $("#page-title").textContent = "Dashboard v2";
     $("#page-subtitle").textContent = "Health, activity, and system status at a glance.";
     renderDashboard();
     return;
