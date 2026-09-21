@@ -52,13 +52,17 @@ jobs:
       - name: Verify Node and built-in SQLite
         run: docker run --rm --entrypoint node site-gateway:smoke-test --input-type=module -e "import { DatabaseSync } from 'node:sqlite'; const db = new DatabaseSync(':memory:'); db.exec('CREATE TABLE smoke (id INTEGER)'); db.close();"
 
+      - name: Install Trivy
+        run: |
+          set -e
+          TRIVY_VERSION=0.56.2
+          curl -sfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -o /tmp/trivy.tar.gz
+          tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+          sudo mv /tmp/trivy /usr/local/bin/trivy
+          trivy --version
+
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: site-gateway:smoke-test
-          severity: CRITICAL,HIGH
-          exit-code: "0"
-          format: table
+        run: trivy image --severity CRITICAL,HIGH --exit-code 0 --format table site-gateway:smoke-test
 
       - name: Build and publish
         uses: docker/build-push-action@v6
