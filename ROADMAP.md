@@ -284,3 +284,5 @@ Roughly in priority order:
 `v0.16.79` is a smoke test for direct-push access: with the newly scoped `site-gateway-claude-push` tokens wired into both remotes (Gitea via a repository-scoped Gitea access token, GitHub via a fine-grained PAT limited to this one repo's Contents), this commit is pushed directly from the device shell rather than handed off as a script for manual execution -- the Dashboard heading briefly reads "Dashboard v3" to make the change visually obvious end to end, the same pattern used for the v0.16.75 Gitea-migration smoke test.
 
 `v0.16.80` is another smoke test for direct-push access, requested to reconfirm the pipeline after the Gitea CPU/bot-traffic investigation: the Dashboard heading reads "Dashboard v4" instead of "Dashboard v3," pushed directly from the device shell to both remotes as before.
+
+`v0.16.81` reverts the Dashboard heading from "Dashboard v4" back to "Dashboard" now that the direct-push smoke tests (v0.16.79/v0.16.80) are confirmed live on both remotes -- no functional change, text only.
