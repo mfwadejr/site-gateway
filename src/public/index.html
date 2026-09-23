@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=0.16.81">
+  <link rel="stylesheet" href="/styles.css?v=0.16.82">
 </head>
 
 <!-- ================================================================
@@ -27,8 +27,8 @@
       <p class="eyebrow">Host. Proxy. Secure.</p>
       <h1 id="login-title">Welcome back</h1>
       <p id="login-copy" class="muted">Sign in to manage your sites.</p>
-      <label>Username<input name="username" autocomplete="username" required></label>
-      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <label for="login-username">Username</label><input id="login-username" name="username" autocomplete="username" required>
+      <label for="login-password">Password</label><input id="login-password" name="password" type="password" autocomplete="current-password" required>
       <p id="login-error" class="error" role="alert"></p>
       <button class="button primary wide">Sign in</button>
     </form>
@@ -40,7 +40,7 @@
       <p class="eyebrow">Two-factor authentication</p>
       <h1>Enter your code</h1>
       <p class="muted">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
-      <label>Code<input name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="11" required autofocus></label>
+      <label for="mfa-code">Code</label><input id="mfa-code" name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="11" required autofocus>
       <p id="mfa-login-error" class="error" role="alert"></p>
       <button class="button primary wide">Verify</button>
       <button type="button" id="mfa-login-cancel" class="button secondary wide">Back to sign in</button>
@@ -50,7 +50,7 @@
 
 <!-- First-run admin setup dialog (shown once, when installationSetupPending) -->
   <dialog id="setup-dialog" class="setup-dialog">
-    <form id="setup-form" class="dialog-card setup-card">
+    <form id="setup-form" class="dialog-card setup-card" autocomplete="off">
       <div class="brand-stack">
         <img class="brand-icon-lg" src="/site-gateway-icon-approved.png" alt="">
         <img class="brand-wordmark-lg" src="/site-gateway-wordmark-approved.png" alt="Site Gateway">
@@ -440,7 +440,7 @@
   </dialog>
   <!-- Reset user password dialog -->
   <dialog id="password-dialog">
-    <form id="password-form" class="dialog-card">
+    <form id="password-form" class="dialog-card" autocomplete="off">
       <div class="dialog-heading"><div><p class="eyebrow">Credentials</p><h2 id="password-title">Reset password</h2></div></div>
       <label>New password<input name="password" type="password" minlength="8" autocomplete="new-password" required><small>At least 8 characters.</small></label>
       <p id="password-error" class="error" role="alert"></p>
@@ -454,6 +454,6 @@
   <div id="toast" class="toast" role="status"></div>
   <div id="update-banner" class="update-banner hidden" role="status"><span>A new version of Site Gateway is available.</span><div class="update-banner-actions"><button id="update-banner-refresh" class="button primary">Refresh</button><button id="update-banner-dismiss" class="text-button">Dismiss</button></div></div>
   <!-- App scripts: core (app.js) then extended views/admin (features.js) -->
-  <script src="/app.js?v=0.16.81" defer></script><script src="/features.js?v=0.16.81" defer></script><script src="/select-enhance.js?v=0.16.81" defer></script>
+  <script src="/app.js?v=0.16.82" defer></script><script src="/features.js?v=0.16.82" defer></script><script src="/select-enhance.js?v=0.16.82" defer></script>
 </body>
 </html>
