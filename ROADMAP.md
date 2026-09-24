@@ -311,3 +311,5 @@ Roughly in priority order:
 
 `v0.16.87` fixes a small cosmetic inconsistency in the icon mirror status line added in v0.16.84: the `dashboard-icons` source had a proper display label ("Dashboard Icons"), but `selfhst` fell through to its raw, lowercase internal source key ("selfhst") instead of a real label. Both sources now map through the same lookup and read consistently ("Dashboard Icons" / "selfh.st Icons").
 
+
+`v0.16.88` fixes two more small icon-picker issues the mirror status line surfaced: its text visibly didn't match the dialog's other helper text (bold labels, a different font size, and a hardcoded fallback color instead of the theme's `--muted` variable), and the picker's empty results area reserved more vertical space than it needed before a search is typed, leaving a noticeably empty-looking dialog. The status line now uses the same font size/weight/color as the URL field's own helper text and the "Enter at least two characters" placeholder, and the empty-results placeholder's reserved height and padding were both reduced.
