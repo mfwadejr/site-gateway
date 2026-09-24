@@ -37,6 +37,8 @@ const accessLogPath = path.join(logsDir, "access.json");
 const activityLogPath = path.join(logsDir, "activity.jsonl");
 const certificateDir = path.join(managedCertificatesDir, "certificates");
 const iconCatalogPath = path.join(iconsDir, "catalog.json");
+const iconMirrorRoot = path.join(iconsDir, "mirror");
+function iconMirrorSourceDir(source) { return path.join(iconMirrorRoot, source); }
 const caddyfilePath = path.join(caddyDir, "Caddyfile");
 const execFileAsync = promisify(execFile);
 const scryptAsync = promisify(crypto.scrypt);
@@ -439,7 +441,7 @@ async function clearDirectoryContents(directory) {
 }
 
 async function loadSites() {
-  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(logsDir, { recursive: true }), fsp.mkdir(backupsDir, { recursive: true }), fsp.mkdir(defaultSiteDir, { recursive: true }), fsp.mkdir(customCertificatesDir, { recursive: true }), fsp.mkdir(managedCertificatesDir, { recursive: true }), fsp.mkdir(certificateExportsDir, { recursive: true })]);
+  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(iconMirrorRoot, { recursive: true }), fsp.mkdir(logsDir, { recursive: true }), fsp.mkdir(backupsDir, { recursive: true }), fsp.mkdir(defaultSiteDir, { recursive: true }), fsp.mkdir(customCertificatesDir, { recursive: true }), fsp.mkdir(managedCertificatesDir, { recursive: true }), fsp.mkdir(certificateExportsDir, { recursive: true })]);
   if (!storage) storage = await openStorage(dataDir, backupsDir);
   storage.humanizeGatewayErrors?.();
   if (storage.snapshot) { recordActivity(`Legacy JSON migrated to SQLite. Safety backup: ${storage.snapshot.filename}.`); storage.snapshot = null; }
@@ -1119,7 +1121,11 @@ function iconLabel(slug) {
 // second catalog source can be added later without a schema change. A bare slug with no
 // colon is treated as dashboard-icons for backward compatibility with icons saved before
 // this namespacing existed.
-const ICON_SOURCE_BASE_URLS = { "dashboard-icons": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons" };
+const ICON_SOURCE_BASE_URLS = { "dashboard-icons": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons", "selfhst": "https://cdn.jsdelivr.net/gh/selfhst/icons" };
+// GitHub repo (owner/name) backing each icon source, used only by the background mirror job to pull a full tarball snapshot.
+const ICON_SOURCE_REPOS = { "dashboard-icons": "homarr-labs/dashboard-icons", "selfhst": "selfhst/icons" };
+// In-memory state for the two background mirror jobs, surfaced via /api/icons/mirror/status and folded into system.jobs.
+const iconMirrorJobs = { "dashboard-icons": { status: "idle", lastRunAt: null, lastError: null, total: 0 }, "selfhst": { status: "idle", lastRunAt: null, lastError: null, total: 0 } };
 
 function parseIconRef(raw) {
   const value = String(raw || "").trim();
@@ -1138,6 +1144,69 @@ async function fetchIconAsset(source, slug, format) {
   } catch { return null; }
 }
 
+// --- Local icon mirror: a full tarball snapshot of each icon source, refreshed on startup and daily.
+// This lets icon selection/preview work without a network round-trip per icon and survive upstream
+// outages. It intentionally never touches files already saved for in-use icons (those stay wherever
+// cacheIcon() originally wrote them) -- it only accelerates *new* lookups and tracks source freshness.
+async function readMirroredIcon(source, slug, formatOrder) {
+  for (const format of formatOrder) {
+    const file = path.join(iconMirrorSourceDir(source), format, `${slug}.${format}`);
+    try { return { buffer: await fsp.readFile(file), format }; } catch { /* not mirrored (yet) in this format */ }
+  }
+  return null;
+}
+
+async function runIconMirrorSync(source, { initial = false } = {}) {
+  const job = iconMirrorJobs[source];
+  const repo = ICON_SOURCE_REPOS[source];
+  if (!job || !repo || job.status === "running") return;
+  job.status = "running";
+  job.lastError = null;
+  const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), `icon-mirror-${source}-`));
+  const tarballPath = path.join(tmpRoot, "src.tar.gz");
+  try {
+    const response = await fetch(`https://codeload.github.com/${repo}/tar.gz/refs/heads/main`, { signal: AbortSignal.timeout(120000) });
+    if (!response.ok) throw new Error(`Tarball download returned ${response.status}.`);
+    await fsp.writeFile(tarballPath, Buffer.from(await response.arrayBuffer()));
+    await execFileAsync("tar", ["-xzf", tarballPath, "-C", tmpRoot]);
+    const extractedRoot = (await fsp.readdir(tmpRoot, { withFileTypes: true })).find(entry => entry.isDirectory());
+    if (!extractedRoot) throw new Error("Tarball did not contain a source directory.");
+    const extractedPath = path.join(tmpRoot, extractedRoot.name);
+    let total = 0;
+    const seenSlugs = [];
+    for (const format of ["svg", "png", "webp"]) {
+      const formatDir = path.join(extractedPath, format);
+      let entries;
+      try { entries = await fsp.readdir(formatDir); } catch { continue; }
+      const destDir = path.join(iconMirrorSourceDir(source), format);
+      await fsp.mkdir(destDir, { recursive: true });
+      for (const filename of entries) {
+        if (!filename.endsWith(`.${format}`)) continue;
+        const slug = filename.slice(0, -(format.length + 1));
+        if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) continue;
+        const buffer = await fsp.readFile(path.join(formatDir, filename));
+        const contentHash = crypto.createHash("sha256").update(buffer).digest("hex");
+        await fsp.writeFile(path.join(destDir, filename), buffer);
+        storage?.upsertIconMirror({ source, slug, format, contentHash });
+        seenSlugs.push(slug);
+        total += 1;
+      }
+    }
+    const removedCount = storage?.markIconMirrorRemoved(source, seenSlugs) || 0;
+    job.total = total;
+    job.status = "idle";
+    job.lastRunAt = new Date().toISOString();
+    recordActivity(`Icon mirror sync (${source}): ${total} icons synced${removedCount ? `, ${removedCount} removed upstream` : ""}.`, "ok");
+  } catch (error) {
+    job.status = "error";
+    job.lastError = error.message;
+    job.lastRunAt = new Date().toISOString();
+    recordActivity(`Icon mirror sync (${source}) failed: ${error.message}`, "error");
+  } finally {
+    await fsp.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function cacheIcon(rawRef) {
   const { source, slug } = parseIconRef(rawRef);
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(source)) throw Object.assign(new Error("Invalid icon selection."), { status: 400 });
@@ -1148,21 +1217,26 @@ async function cacheIcon(rawRef) {
   if (!metadata) throw Object.assign(new Error("Icon not found."), { status: 404 });
   const preferredFormat = metadata.base === "png" ? "png" : "svg";
   const formatOrder = preferredFormat === "png" ? ["png", "webp", "svg"] : ["svg", "png", "webp"];
-  let response = null, format = null;
-  for (const candidate of formatOrder) {
-    response = await fetchIconAsset(source, slug, candidate);
-    if (response) { format = candidate; break; }
+  let format = null, buffer = null;
+  const mirrored = await readMirroredIcon(source, slug, formatOrder);
+  if (mirrored) { format = mirrored.format; buffer = mirrored.buffer; }
+  if (!buffer) {
+    let response = null;
+    for (const candidate of formatOrder) {
+      response = await fetchIconAsset(source, slug, candidate);
+      if (response) { format = candidate; break; }
+    }
+    if (!response) throw Object.assign(new Error("The selected icon could not be downloaded."), { status: 502 });
+    buffer = format === "svg" ? Buffer.from(await response.text(), "utf8") : Buffer.from(await response.arrayBuffer());
   }
-  if (!response) throw Object.assign(new Error("The selected icon could not be downloaded."), { status: 502 });
   const filename = `${source}-${slug}.${format}`;
   if (format === "svg") {
-    const svg = await response.text();
+    const svg = buffer.toString("utf8");
     if (svg.length > 512 * 1024 || !/<svg[\s>]/i.test(svg) || /<(?:script|foreignObject)\b|\son\w+\s*=|(?:href|xlink:href)\s*=\s*["'](?:https?:|\/\/)/i.test(svg)) {
       throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
     }
     await fsp.writeFile(path.join(iconsDir, filename), svg);
   } else {
-    const buffer = Buffer.from(await response.arrayBuffer());
     if (buffer.length > 2 * 1024 * 1024) throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
     await fsp.writeFile(path.join(iconsDir, filename), buffer);
   }
@@ -1242,6 +1316,7 @@ async function dashboardSnapshot(precomputedCertificates) {
         { name: "Configuration drift check", enabled: true, schedule: "10m", lastRunAt: configDrift.checkedAt || null },
         { name: "Database integrity check", enabled: true, schedule: "30m", lastRunAt: databaseIntegrityCache.checkedAt || null },
         { name: "Disk usage refresh", enabled: true, schedule: "60s", lastRunAt: dataDirSizeCache.checkedAt || null },
+        ...Object.entries(iconMirrorJobs).map(([source, job]) => ({ name: `Icon mirror (${source})`, enabled: true, schedule: "24h", lastRunAt: job.lastRunAt, lastStatus: job.status === "error" ? "error" : job.total ? `${job.total} icons` : null })),
       ]
     },
     activity: recentActivity
@@ -2091,6 +2166,24 @@ app.get("/api/:kind/:id/caddy-config", (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.get("/api/icons/mirror/status", (req, res) => {
+  const stats = storage.iconMirrorStats ? storage.iconMirrorStats() : [];
+  const sources = {};
+  for (const source of Object.keys(ICON_SOURCE_REPOS)) {
+    const rows = stats.filter(row => row.source === source);
+    sources[source] = { ...iconMirrorJobs[source], mirrored: rows.find(row => row.status === "mirrored")?.count || 0, removed: rows.find(row => row.status === "removed")?.count || 0 };
+  }
+  res.json({ sources });
+});
+
+app.post("/api/icons/mirror/:source/sync", requireAuth, (req, res) => {
+  const source = String(req.params.source || "");
+  if (!ICON_SOURCE_REPOS[source]) return res.status(404).json({ error: "Unknown icon source." });
+  if (iconMirrorJobs[source].status === "running") return res.status(409).json({ error: "A sync for this source is already running." });
+  runIconMirrorSync(source).catch(error => console.warn(`Manual icon mirror sync (${source}) failed:`, error.message));
+  res.status(202).json({ ok: true });
+});
+
 app.get("/api/icons/search", async (req, res, next) => {
   try {
     const query = String(req.query.q || "").trim().toLowerCase().slice(0, 80);
@@ -2748,6 +2841,14 @@ async function checkPublicIp() {
 }
 setTimeout(() => checkPublicIp(), 4000).unref();
 setInterval(() => checkPublicIp(), 60 * 60000).unref();
+
+// Icon mirror: pull each source once, staggered, shortly after startup (non-blocking -- the app
+// serves normally while this runs), then resync daily, offset 6 hours apart so the two sources
+// don't compete for bandwidth.
+for (const [index, source] of Object.keys(ICON_SOURCE_REPOS).entries()) {
+  setTimeout(() => runIconMirrorSync(source, { initial: true }).catch(error => console.warn(`Initial icon mirror sync (${source}) failed:`, error.message)), 15000 + index * 30000).unref();
+  setInterval(() => runIconMirrorSync(source).catch(error => console.warn(`Icon mirror sync (${source}) failed:`, error.message)), 24 * 60 * 60000 + index * 6 * 60 * 60000).unref();
+}
 
 async function shutdown() {
   await Promise.all([...activeServers.keys()].map(stopSite));

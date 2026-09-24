@@ -1025,3 +1025,9 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .error-detail-link { background: none; border: none; padding: 0; margin: 0; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; opacity: 0.85; }
 .error-detail-link:hover { opacity: 1; }
 .error-detail-text { white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow: auto; background: var(--surface-2, rgba(0,0,0,0.05)); padding: 0.75rem; border-radius: 6px; font-size: 0.85em; }
+
+/* Icon mirror status line in the icon picker (v0.16.84) */
+.icon-mirror-status { font-size: 0.85em; color: var(--muted, #6b7280); display: flex; flex-wrap: wrap; gap: 0.5rem; margin: -0.25rem 0 0.25rem; }
+.icon-mirror-source { display: inline-flex; align-items: center; gap: 0.35rem; }
+.link-button { background: none; border: none; padding: 0; margin: 0; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; opacity: 0.85; }
+.link-button:hover { opacity: 1; }

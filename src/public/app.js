@@ -918,7 +918,31 @@ $("#replace-files").addEventListener("change", async event => { if (!event.targe
 // --- Icon picker dialog: search, upload, URL, and reset-to-fallback -------------------------
 function openIconPicker(kind, id) {
   state.iconTarget = { kind, id }; $("#icon-search").value = ""; $("#icon-url").value = ""; $("#icon-upload").value = ""; $("#icon-error").textContent = ""; $("#icon-results").innerHTML = '<p class="quiet-state">Enter at least two characters to search.</p>'; $("#icon-dialog").showModal(); setTimeout(() => $("#icon-search").focus(), 0);
+  loadIconMirrorStatus();
 }
+
+function iconMirrorStatusLine(source, info) {
+  const label = source === "dashboard-icons" ? "Dashboard Icons" : source;
+  const statusText = info.status === "running" ? "syncing\u2026" : info.status === "error" ? `sync failed${info.lastError ? ` (${info.lastError})` : ""}` : info.mirrored ? `${info.mirrored.toLocaleString()} icons mirrored` : "not yet mirrored";
+  return `<span class="icon-mirror-source"><strong>${label}:</strong> ${statusText}${info.status !== "running" ? ` <button type="button" class="link-button" data-sync-source="${source}">Sync now</button>` : ""}</span>`;
+}
+
+async function loadIconMirrorStatus() {
+  const el = $("#icon-mirror-status");
+  if (!el) return;
+  try {
+    const { sources } = await api("/api/icons/mirror/status");
+    el.innerHTML = Object.entries(sources).map(([source, info]) => iconMirrorStatusLine(source, info)).join(" \u00b7 ");
+  } catch { el.innerHTML = ""; }
+}
+
+$("#icon-mirror-status")?.addEventListener("click", async event => {
+  const source = event.target.closest("[data-sync-source]")?.dataset.syncSource;
+  if (!source) return;
+  event.target.disabled = true;
+  try { await api(`/api/icons/mirror/${source}/sync`, { method: "POST" }); toast("Icon mirror sync started."); setTimeout(loadIconMirrorStatus, 1500); }
+  catch (error) { toast(error, "error"); }
+});
 let iconSearchTimer;
 $("#icon-search").addEventListener("input", event => {
   clearTimeout(iconSearchTimer); const query = event.target.value.trim(); $("#icon-error").textContent = "";
