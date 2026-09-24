@@ -34,9 +34,9 @@ async function api(url, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-// Shared error presentation: friendly text always; a "Details" affordance and/or a
-// "View log entry" link only appear when the error actually carries that data (a
-// gateway-validation failure does, a plain client-side check does not).
+// Shared error presentation: friendly text always; a "Details" affordance opens the
+// raw-detail popup only when the error actually carries that data (a gateway-validation
+// failure does, a plain client-side check does not).
 function showError(selector, error) {
   const el = typeof selector === "string" ? $(selector) : selector;
   if (!el) return;
@@ -51,16 +51,6 @@ function showError(selector, error) {
 }
 function openErrorDetail(error) {
   $("#error-detail-text").textContent = error?.detail || error?.message || "No further detail is available.";
-  const logLink = $("#error-detail-log-link");
-  if (error?.eventId) {
-    logLink.classList.remove("hidden");
-    logLink.onclick = async event => {
-      event.preventDefault(); const targetEventId = error.eventId; document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close()); state.view = "logs"; render();
-      try { await loadFeatureView(); } catch (err) { toast(err); return; }
-      const row = document.querySelector(`#gateway-log-list [data-event-id="${targetEventId}"]`);
-      if (row) { row.scrollIntoView({ behavior: "smooth", block: "center" }); row.classList.add("log-row-highlight"); setTimeout(() => row.classList.remove("log-row-highlight"), 2600); }
-    };
-  } else logLink.classList.add("hidden");
   $("#error-detail-dialog").showModal();
 }
 
