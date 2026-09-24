@@ -55,7 +55,7 @@ function openErrorDetail(error) {
   if (error?.eventId) {
     logLink.classList.remove("hidden");
     logLink.onclick = async event => {
-      event.preventDefault(); const targetEventId = error.eventId; $("#error-detail-dialog").close(); state.view = "logs"; render();
+      event.preventDefault(); const targetEventId = error.eventId; document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close()); state.view = "logs"; render();
       try { await loadFeatureView(); } catch (err) { toast(err); return; }
       const row = document.querySelector(`#gateway-log-list [data-event-id="${targetEventId}"]`);
       if (row) { row.scrollIntoView({ behavior: "smooth", block: "center" }); row.classList.add("log-row-highlight"); setTimeout(() => row.classList.remove("log-row-highlight"), 2600); }

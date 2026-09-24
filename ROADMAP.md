@@ -350,6 +350,14 @@ Icons stay frozen in place by design (an already-saved reference never silently 
 
 Verified with a full live `node src/server.js` round trip against a seeded SQLite instance: a saved icon reference matching its mirror's current hash reports no updates; overwriting the mirrored file (simulating an upstream change) and re-seeding `icon_mirror` with the new hash makes it report exactly one stale item; calling the refresh endpoint resolves it back to zero. Also caught and fixed a real bug during this verification, before shipping: `findIconMirror()` returns the raw SQLite row with snake_case columns (`content_hash`), unlike `searchIconMirror()` which aliases it to `contentHash` -- the first draft of `findIconUpdates()` read the wrong field name and silently reported zero updates for everything. `node --check` on `server.js`, a client-side parse check on `app.js`, and a full manual diff review.
 
+## v0.16.98
+
+Fixed a modal-stacking bug in the human-readable error surfaces flow: clicking "View log entry" from the error-detail popup closed only that popup, not whatever form dialog (e.g. Edit Proxy Host, Advanced tab) the error had originated from -- so the Logs view rendered behind the still-open parent modal, visible only as a blurred background. Caught live by the user while testing the malformed-Caddy-config error flow, in the same testing pass that also caught the Gateway Events card formatting bug fixed in v0.16.97.
+
+Root cause: the "View log entry" click handler explicitly closed only `#error-detail-dialog` before switching to the Logs view. Any other dialog that happened to be open underneath it (the one the error was actually surfaced from) was left open, since nothing ever told it to close. Fixed by closing every currently-open `<dialog>` element before navigating, instead of just the one the handler already knew about -- so this fix holds regardless of which form dialog an error originates from, not just the one that was reported.
+
+Verified with a live `node src/server.js` round trip confirming the server starts and serves the page correctly, and a full manual diff review confirming the change is a single-line handler fix with no other call sites or dialogs affected.
+
 ## v0.16.97
 
 Fixed a visual inconsistency between the two tables on the Logs view: the "Activity and errors" (Gateway Events) card rendered with a different border/scroll treatment than the "Access requests" card right above it -- a stray scrollbar track and a row clipped mid-height at the bottom of the visible window, instead of a clean, fully-rounded bordered box matching Access requests. Caught live by the user while testing the human-readable error-surface flow (a malformed Caddy config test case) and comparing screenshots of the two cards side by side.
