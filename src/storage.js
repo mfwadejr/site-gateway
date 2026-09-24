@@ -208,7 +208,14 @@ export async function openStorage(dataDir, backupsDir) {
     const deduped = [];
     for (const row of rows) { if (seen.has(row.slug)) continue; seen.add(row.slug); deduped.push(row); }
     const lowerQuery = String(query).toLowerCase();
-    const scored = deduped.map(row => ({
+    // dashboard-icons/selfhst commonly ship a "-light"/"-dark" background-context variant
+    // alongside a brand's base icon (plex, plex-dark, plex-light, plex-dash-dark, ...) -- real,
+    // distinct files, not duplicates, but this app is dark-only and showing every variant in a
+    // single unified results grid buries the one icon most searches actually want. Hide them from
+    // a broad search (lucide is unaffected -- it has no such convention), but never hide the exact
+    // slug someone actually typed, so a specific variant stays reachable on request.
+    const filtered = deduped.filter(row => row.source === "lucide" || row.slug === lowerQuery || !/-(?:light|dark)$/i.test(row.slug));
+    const scored = filtered.map(row => ({
       ...row,
       score: row.slug === lowerQuery ? 0 : row.slug.startsWith(lowerQuery) ? 1 : (row.label || "").toLowerCase().startsWith(lowerQuery) ? 2 : 3,
     }));
