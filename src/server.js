@@ -1303,7 +1303,13 @@ async function cacheIcon(rawRef) {
     if (buffer.length > 2 * 1024 * 1024) throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
     await fsp.writeFile(path.join(iconsDir, filename), buffer);
   }
-  return { icon: `/site-icons/${filename}`, iconSlug: `${source}:${slug}` };
+  // Cache-bust with the actual saved content's own hash, not the mirror row's -- this file
+  // gets reused in place under the same filename on every future save of this source:slug
+  // (e.g. after an upstream update, or a fix like the lucide recolor), and /site-icons is
+  // served immutable with a 30-day max-age, so without this a browser that already loaded
+  // the old bytes at this exact URL would keep serving them from cache indefinitely.
+  const savedContentHash = crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 10);
+  return { icon: `/site-icons/${filename}?v=${savedContentHash}`, iconSlug: `${source}:${slug}` };
 }
 
 
@@ -2261,7 +2267,7 @@ app.get("/api/icons/search", (req, res, next) => {
       slug: `${row.source}:${row.slug}`,
       label: row.label || iconLabel(row.slug),
       aliases: [],
-      preview: `/site-icons/mirror/${row.source}/${row.format}/${row.slug}.${row.format}`,
+      preview: `/site-icons/mirror/${row.source}/${row.format}/${row.slug}.${row.format}?v=${(row.contentHash || "").slice(0, 10)}`,
     }));
     res.json(results);
   } catch (error) { next(error); }

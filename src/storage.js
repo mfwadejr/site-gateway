@@ -198,7 +198,7 @@ export async function openStorage(dataDir, backupsDir) {
   function searchIconMirror(query, limit = 30, instanceId = LOCAL_INSTANCE_ID) {
     const needle = `%${String(query).toLowerCase()}%`;
     const rows = db.prepare(
-      "SELECT source, slug, format, label, search_text AS searchText FROM icon_mirror " +
+      "SELECT source, slug, format, label, search_text AS searchText, content_hash AS contentHash FROM icon_mirror " +
       "WHERE instance_id=? AND status='mirrored' AND (search_text LIKE ? OR slug LIKE ?) " +
       "ORDER BY CASE source WHEN 'dashboard-icons' THEN 0 WHEN 'selfhst' THEN 1 ELSE 2 END, slug"
     ).all(instanceId, needle, needle);
