@@ -86,9 +86,11 @@ function recordActivity(message, status = "ok") {
   const entry = { message, status, at: new Date().toISOString() };
   recentActivity.unshift(entry);
   recentActivity.splice(20);
-  try { storage?.recordActivity(message, status); } catch (error) { console.warn("Could not record SQLite activity event:", error.message); }
+  let eventId;
+  try { eventId = storage?.recordActivity(message, status); } catch (error) { console.warn("Could not record SQLite activity event:", error.message); }
   fsp.appendFile(activityLogPath, `${JSON.stringify(entry)}\n`).catch(() => {});
   try { storage?.recordAudit(message, status, null, currentAuditActor); } catch (error) { console.warn("Could not record SQLite audit event:", error.message); }
+  return eventId;
 }
 
 // --- Edit-route change summaries: builds one human-readable, comma-joined line describing
@@ -811,9 +813,9 @@ async function syncCaddy() {
       sites = storage.loadCollection("sites"); proxies = storage.loadCollection("proxies"); redirects = storage.loadCollection("redirects"); streams = storage.loadCollection("streams"); accessLists = storage.loadCollection("access_lists"); settings = storage.loadSettings() || settings;
     } catch { /* Startup may not have completed database initialization yet. */ }
     gatewayError = rollbackSucceeded ? null : rejectedReason;
-    const friendly = /upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(rejectedReason) ? "This host forwards to HTTP, but Ignore upstream TLS certificate errors is enabled. Turn that option off or change the upstream to HTTPS." : /upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(rejectedReason) ? "This host forwards to HTTPS, but its upstream transport is configured for plain HTTP. Use HTTPS transport settings or change the upstream to HTTP." : /duplicate.*address|already.*site address/i.test(rejectedReason) ? "This hostname or address is already used by another host. Choose a unique hostname and port." : /dial tcp|no such host|lookup .* no such host|upstream.*(invalid|malformed)/i.test(rejectedReason) ? "The upstream address could not be reached or is invalid. Check the hostname, IP address, and port." : /invalid hostname|host name.*invalid|malformed.*host/i.test(rejectedReason) ? "The hostname is not valid. Use a valid domain name without a protocol or path." : /unrecognized directive|unknown directive|parsing caddyfile tokens/i.test(rejectedReason) ? "The gateway configuration contains an unsupported or malformed directive. Check the selected host settings." : /certificate|tls.*(config|handshake)|no certificate/i.test(rejectedReason) ? "The TLS certificate configuration is invalid or unavailable. Check the certificate, key, and HTTPS settings." : "The gateway rejected this configuration. Check the host, upstream address, and TLS settings.";
-    const detail = `${friendly}${rollbackSucceeded ? " The previous working configuration remains active." : ""}\nDetails: ${rejectedReason}`;
-    throw Object.assign(new Error(detail), { status: 400 });
+    const friendly = humanizeGatewayError(rejectedReason);
+    const message = `${friendly}${rollbackSucceeded ? " The previous working configuration remains active." : ""}`;
+    throw Object.assign(new Error(message), { status: 400, detail: rejectedReason });
   }
 }
 
@@ -1113,20 +1115,58 @@ function iconLabel(slug) {
   return slug.split("-").map(word => word ? word[0].toUpperCase() + word.slice(1) : "").join(" ");
 }
 
-async function cacheIcon(slug) {
+// Icon references are namespaced as "source:slug" (e.g. "dashboard-icons:jellyfin") so a
+// second catalog source can be added later without a schema change. A bare slug with no
+// colon is treated as dashboard-icons for backward compatibility with icons saved before
+// this namespacing existed.
+const ICON_SOURCE_BASE_URLS = { "dashboard-icons": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons" };
+
+function parseIconRef(raw) {
+  const value = String(raw || "").trim();
+  const colonIndex = value.indexOf(":");
+  return colonIndex === -1
+    ? { source: "dashboard-icons", slug: value }
+    : { source: value.slice(0, colonIndex), slug: value.slice(colonIndex + 1) };
+}
+
+async function fetchIconAsset(source, slug, format) {
+  const baseUrl = ICON_SOURCE_BASE_URLS[source];
+  if (!baseUrl) return null;
+  try {
+    const response = await fetch(`${baseUrl}/${format}/${slug}.${format}`, { signal: AbortSignal.timeout(7000) });
+    return response.ok ? response : null;
+  } catch { return null; }
+}
+
+async function cacheIcon(rawRef) {
+  const { source, slug } = parseIconRef(rawRef);
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(source)) throw Object.assign(new Error("Invalid icon selection."), { status: 400 });
   if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) throw Object.assign(new Error("Invalid icon selection."), { status: 400 });
+  if (!ICON_SOURCE_BASE_URLS[source]) throw Object.assign(new Error("Unknown icon source."), { status: 400 });
   const catalog = await loadIconCatalog();
   const metadata = catalog[slug];
   if (!metadata) throw Object.assign(new Error("Icon not found."), { status: 404 });
-  const response = await fetch(`https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/${slug}.svg`, { signal: AbortSignal.timeout(7000) });
-  if (!response.ok) throw Object.assign(new Error("The selected icon could not be downloaded."), { status: 502 });
-  const svg = await response.text();
-  if (svg.length > 512 * 1024 || !/<svg[\s>]/i.test(svg) || /<(?:script|foreignObject)\b|\son\w+\s*=|(?:href|xlink:href)\s*=\s*["'](?:https?:|\/\/)/i.test(svg)) {
-    throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
+  const preferredFormat = metadata.base === "png" ? "png" : "svg";
+  const formatOrder = preferredFormat === "png" ? ["png", "webp", "svg"] : ["svg", "png", "webp"];
+  let response = null, format = null;
+  for (const candidate of formatOrder) {
+    response = await fetchIconAsset(source, slug, candidate);
+    if (response) { format = candidate; break; }
   }
-  const filename = `${slug}.svg`;
-  await fsp.writeFile(path.join(iconsDir, filename), svg);
-  return `/site-icons/${filename}`;
+  if (!response) throw Object.assign(new Error("The selected icon could not be downloaded."), { status: 502 });
+  const filename = `${source}-${slug}.${format}`;
+  if (format === "svg") {
+    const svg = await response.text();
+    if (svg.length > 512 * 1024 || !/<svg[\s>]/i.test(svg) || /<(?:script|foreignObject)\b|\son\w+\s*=|(?:href|xlink:href)\s*=\s*["'](?:https?:|\/\/)/i.test(svg)) {
+      throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
+    }
+    await fsp.writeFile(path.join(iconsDir, filename), svg);
+  } else {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > 2 * 1024 * 1024) throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
+    await fsp.writeFile(path.join(iconsDir, filename), buffer);
+  }
+  return { icon: `/site-icons/${filename}`, iconSlug: `${source}:${slug}` };
 }
 
 
@@ -2062,7 +2102,7 @@ app.get("/api/icons/search", async (req, res, next) => {
       const score = slug === query ? 0 : slug.startsWith(query) ? 1 : aliases.some(alias => alias.toLowerCase() === query) ? 2 : searchText.includes(query) ? 3 : 99;
       return { slug, metadata, aliases, score };
     }).filter(item => item.score < 99).sort((left, right) => left.score - right.score || left.slug.localeCompare(right.slug)).slice(0, 30)
-      .map(({ slug, aliases }) => ({ slug, label: iconLabel(slug), aliases: aliases.slice(0, 3), preview: `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/${slug}.svg` }));
+      .map(({ slug, metadata, aliases }) => { const format = metadata.base === "png" ? "png" : "svg"; return { slug: `dashboard-icons:${slug}`, label: iconLabel(slug), aliases: aliases.slice(0, 3), preview: `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/${format}/${slug}.${format}` }; });
     res.json(results);
   } catch (error) { next(error); }
 });
@@ -2083,8 +2123,8 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
         recordActivity(`Icon URL updated for “${entryLabel(existing)}”.`);
       } else {
         const slug = String(req.body.slug || "").trim();
-        const icon = slug ? await cacheIcon(slug) : null;
-        updated = storage.setApiTokenIcon(req.params.id, { icon, iconSlug: slug || null });
+        const cached = slug ? await cacheIcon(slug) : null;
+        updated = storage.setApiTokenIcon(req.params.id, { icon: cached?.icon || null, iconSlug: cached?.iconSlug || null });
         recordActivity(`${slug ? "Icon updated" : "Icon reset"} for “${entryLabel(existing)}”.`);
       }
       return res.json({ ...updated, ownerUsername: users.find(item => item.id === updated.ownerUserId)?.username || "unknown", revoked: Boolean(updated.revokedAt) });
@@ -2102,9 +2142,9 @@ app.put("/api/:kind/:id/icon", async (req, res, next) => {
       return res.json(item);
     }
     const slug = String(req.body.slug || "").trim();
-    const icon = slug ? await cacheIcon(slug) : null;
-    item.iconSlug = slug || null;
-    item.icon = icon;
+    const cached = slug ? await cacheIcon(slug) : null;
+    item.iconSlug = cached?.iconSlug || null;
+    item.icon = cached?.icon || null;
     if (collection === sites) await saveSites(); else if (collection === proxies) await saveProxies(); else if (collection === redirects) await saveRedirects(); else if (collection === streams) await saveStreams(); else if (collection === groups) await saveGroups(); else await saveAccessLists();
     recordActivity(`${slug ? "Icon updated" : "Icon reset"} for “${entryLabel(item)}”.`);
     res.json(item);
@@ -2628,7 +2668,17 @@ app.delete("/api/backups/:filename", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-function humanizeGatewayActivityError(message) { const text = String(message || "Unexpected gateway error"); if (/upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(text)) return "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; if (/upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(text)) return "Gateway configuration rejected: HTTPS upstream requires HTTPS transport settings. Change the upstream URL or transport setting."; if (/duplicate.*address|already.*site address/i.test(text)) return "Gateway configuration rejected: This hostname or address is already used by another host. Choose a unique hostname and port."; if (/dial tcp|no such host|lookup .* no such host|upstream.*(invalid|malformed)/i.test(text)) return "Gateway configuration rejected: The upstream address could not be reached or is invalid. Check the hostname, IP address, and port."; if (/invalid hostname|host name.*invalid|malformed.*host/i.test(text)) return "Gateway configuration rejected: The hostname is not valid. Use a valid domain name without a protocol or path."; if (/unrecognized directive|unknown directive|parsing caddyfile tokens/i.test(text)) return "Gateway configuration rejected: The gateway configuration contains an unsupported or malformed directive. Check the selected host settings."; if (/certificate|tls.*(config|handshake)|no certificate/i.test(text)) return "Gateway configuration rejected: The TLS certificate configuration is invalid or unavailable. Check the certificate, key, and HTTPS settings."; return text.replace(/^Gateway configuration was rejected:\s*/i, "Gateway configuration rejected: ").replace(/\s+Details:\s+[\s\S]*$/i, ""); }
+function humanizeGatewayError(message) {
+  const text = String(message || "Unexpected gateway error");
+  if (/upstream address scheme is HTTP but transport is configured for HTTP\+TLS/i.test(text)) return "This host forwards to HTTP, but Ignore upstream TLS certificate errors is enabled. Turn that option off or change the upstream to HTTPS.";
+  if (/upstream address scheme is HTTPS but transport is configured for plain HTTP/i.test(text)) return "This host forwards to HTTPS, but its upstream transport is configured for plain HTTP. Use HTTPS transport settings or change the upstream to HTTP.";
+  if (/duplicate.*address|already.*site address/i.test(text)) return "This hostname or address is already used by another host. Choose a unique hostname and port.";
+  if (/dial tcp|no such host|lookup .* no such host|upstream.*(invalid|malformed)/i.test(text)) return "The upstream address could not be reached or is invalid. Check the hostname, IP address, and port.";
+  if (/invalid hostname|host name.*invalid|malformed.*host/i.test(text)) return "The hostname is not valid. Use a valid domain name without a protocol or path.";
+  if (/unrecognized directive|unknown directive|parsing caddyfile tokens/i.test(text)) return "The gateway configuration contains an unsupported or malformed directive. Check the selected host settings.";
+  if (/certificate|tls.*(config|handshake)|no certificate/i.test(text)) return "The TLS certificate configuration is invalid or unavailable. Check the certificate, key, and HTTPS settings.";
+  return "The gateway rejected this configuration. Check the host, upstream address, and TLS settings.";
+}
 const GATEWAY_CONFIG_ROUTE = /^\/api\/(sites|proxies|redirects|streams|access-lists)(\/|$)/i;
 
 // --- Error handling middleware & server startup -------------------------------------------------------------------------
@@ -2636,13 +2686,12 @@ app.use((error, req, res, next) => {
   console.error(error);
   const rawMessage = error.message || "Something went wrong.";
   const isConfigRoute = GATEWAY_CONFIG_ROUTE.test(req.path) && ["PATCH", "POST", "DELETE", "PUT"].includes(req.method);
-  let logMessage = rawMessage;
-  if (isConfigRoute) {
-    const humanized = humanizeGatewayActivityError(rawMessage);
-    logMessage = /^Gateway configuration rejected:/i.test(humanized) ? humanized : `Gateway configuration rejected: ${humanized}`;
-  }
-  recordActivity(`${req.method} ${req.path}: ${logMessage}`, "error");
-  res.status(error.status || 500).json({ error: rawMessage });
+  const logMessage = isConfigRoute ? `Gateway configuration rejected: ${rawMessage}` : rawMessage;
+  const eventId = recordActivity(`${req.method} ${req.path}: ${logMessage}`, "error");
+  const responseBody = { error: rawMessage };
+  if (error.detail) responseBody.detail = String(error.detail);
+  if (eventId) responseBody.eventId = eventId;
+  res.status(error.status || 500).json(responseBody);
 });
 
 app.listen(adminPort, "0.0.0.0", () => {

@@ -1019,3 +1019,9 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
    narrower -- collapse it a step earlier, keyed to its own id rather than the viewport. */
 #dashboard-hero-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:900px){#dashboard-hero-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* Human-readable error surfaces (v0.16.83): "Details" affordance + raw-detail popup */
+.error-detail-link { background: none; border: none; padding: 0; margin: 0; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; opacity: 0.85; }
+.error-detail-link:hover { opacity: 1; }
+.error-detail-text { white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow: auto; background: var(--surface-2, rgba(0,0,0,0.05)); padding: 0.75rem; border-radius: 6px; font-size: 0.85em; }

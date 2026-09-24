@@ -413,6 +413,14 @@
   <dialog id="confirm-dialog">
     <form method="dialog" class="dialog-card compact"><h2 id="confirm-title">Delete this site?</h2><p id="confirm-copy" class="muted">Its uploaded files will be permanently removed.</p><div class="dialog-actions"><button value="cancel" class="button secondary">Cancel</button><button value="confirm" class="button danger">Delete</button></div></form>
   </dialog>
+  <!-- Raw error detail popup: opened from any "Details" affordance next to a friendly error message -->
+  <dialog id="error-detail-dialog" class="error-detail-dialog">
+    <form method="dialog" class="dialog-card compact">
+      <div class="dialog-heading"><div><p class="eyebrow">Diagnostics</p><h2>Error detail</h2></div></div>
+      <pre id="error-detail-text" class="error-detail-text"></pre>
+      <div class="dialog-actions"><a id="error-detail-log-link" href="#" class="button secondary hidden">View log entry</a><button value="close" class="button primary">Close</button></div>
+    </form>
+  </dialog>
   <!-- Icon picker dialog (search / upload / URL) -->
   <dialog id="icon-dialog" class="icon-dialog">
     <form method="dialog" class="dialog-card icon-picker">

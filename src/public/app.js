@@ -24,14 +24,60 @@ document.querySelector("#settings-advanced [name=accessListId]")?.closest("label
 async function api(url, options = {}) {
   const response = await fetch(url, options);
   if (response.status === 401) { showLogin(); throw new Error("Please sign in again."); }
-  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Request failed."); }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const error = new Error(body.error || "Request failed.");
+    if (body.detail) error.detail = body.detail;
+    if (body.eventId) error.eventId = body.eventId;
+    throw error;
+  }
   return response.status === 204 ? null : response.json();
+}
+
+// Shared error presentation: friendly text always; a "Details" affordance and/or a
+// "View log entry" link only appear when the error actually carries that data (a
+// gateway-validation failure does, a plain client-side check does not).
+function showError(selector, error) {
+  const el = typeof selector === "string" ? $(selector) : selector;
+  if (!el) return;
+  el.innerHTML = "";
+  el.append(document.createTextNode(error?.message || String(error)));
+  if (error?.detail) {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "error-detail-link"; button.textContent = "Details";
+    button.addEventListener("click", event => { event.preventDefault(); openErrorDetail(error); });
+    el.append(" ", button);
+  }
+}
+function openErrorDetail(error) {
+  $("#error-detail-text").textContent = error?.detail || error?.message || "No further detail is available.";
+  const logLink = $("#error-detail-log-link");
+  if (error?.eventId) {
+    logLink.classList.remove("hidden");
+    logLink.onclick = event => { event.preventDefault(); $("#error-detail-dialog").close(); state.view = "logs"; render(); loadFeatureView().catch(err => toast(err.message)); };
+  } else logLink.classList.add("hidden");
+  $("#error-detail-dialog").showModal();
 }
 
 // --- Login/dashboard shell, toast, and small formatting helpers ------------------
 function showLogin(message = "") { state.user = null; state.users = []; state.usersLoaded = false; state.view = "overview"; const form = $("#login-form"); form.reset(); form.elements.username.value = ""; form.elements.password.value = ""; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; $("#mfa-login-form").reset(); $("#mfa-login-form").classList.add("hidden"); $("#login-form").classList.remove("hidden"); $("#mfa-login-error").textContent = ""; setTimeout(() => form.elements.username.focus(), 0); }
 function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); }
-function toast(message, type = "success") { const el = $("#toast"); el.textContent = message; el.classList.toggle("toast-error", type === "error"); el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2800); }
+function toast(message, type = "success") {
+  const el = $("#toast");
+  const error = message instanceof Error ? message : null;
+  el.innerHTML = "";
+  el.append(document.createTextNode(error ? error.message : message));
+  if (error?.detail) {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "error-detail-link"; button.textContent = "Details";
+    button.addEventListener("click", event => { event.preventDefault(); openErrorDetail(error); });
+    el.append(" ", button);
+    type = "error";
+  }
+  el.classList.toggle("toast-error", type === "error");
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2800);
+}
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
 function publicUrl(item) { return item.domain ? `${item.tls === "http" ? "http" : "https"}://${item.domain}` : `${location.protocol}//${location.hostname}:${item.port}`; }
 
@@ -125,7 +171,7 @@ document.addEventListener("submit", async event => {
     if (uploadCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${state.editing.id}/certificate`, { method: "POST", body: files }); }
     $("#settings-dialog").close(); await refreshCurrentView(); toast("Gateway settings applied.");
   }
-  catch (error) { $("#settings-error").textContent = error.message; }
+  catch (error) { showError("#settings-error", error); }
   finally { button.disabled = false; }
 }, true);
 
@@ -234,7 +280,7 @@ function initials(name) {
   if (!words.length) return "??";
   return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2).padEnd(2, words[0][0])).toUpperCase();
 }
-function iconMarkup(item) { return item.icon ? `<img src="${escapeHtml(item.icon)}" alt="">` : escapeHtml(initials(item.name)); }
+function iconMarkup(item) { return item.icon ? `<img src="${escapeHtml(item.icon)}" alt="" data-fallback="${escapeHtml(initials(item.name))}" onerror="this.onerror=null;this.replaceWith(document.createTextNode(this.dataset.fallback));">` : escapeHtml(initials(item.name)); }
 document.addEventListener('error', event => { const image = event.target; if (!(image instanceof HTMLImageElement) || !image.closest('.site-icon') || image.dataset.fallback) return; image.dataset.fallback = 'true'; const fallback = document.createElement('span'); fallback.textContent = initials(image.closest('[data-id]')?.querySelector('h2')?.textContent || '?'); image.replaceWith(fallback); }, true);
 function canManage() { return ["administrator", "standard"].includes(state.user?.role); }
 function canAdmin() { return state.user?.role === "administrator"; }
@@ -786,8 +832,8 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("close", () => { closeMenus(); dialog.querySelectorAll('input[type="password"]').forEach(input => input.value = ""); }));
 
 // --- Hosted Sites & Proxy Hosts: create form submit handlers --------------------------------
-$("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refreshCurrentView(); toast("Hosted site created and gateway applied."); } catch (error) { $("#create-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
-$("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refreshCurrentView(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { $("#proxy-error").textContent = error.message; } finally { button.disabled = false; button.textContent = "Create & publish"; } });
+$("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refreshCurrentView(); toast("Hosted site created and gateway applied."); } catch (error) { showError("#create-error", error); } finally { button.disabled = false; button.textContent = "Create & publish"; } });
+$("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refreshCurrentView(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { showError("#proxy-error", error); } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 
 
 // --- Health-check field visibility polish for the create forms ------------------------------
@@ -881,8 +927,8 @@ $("#icon-search").addEventListener("input", event => {
   iconSearchTimer = setTimeout(async () => {
     try {
       const results = await api(`/api/icons/search?q=${encodeURIComponent(query)}`);
-      $("#icon-results").innerHTML = results.length ? results.map(icon => `<button type="button" class="icon-choice" data-slug="${escapeHtml(icon.slug)}"><img src="${escapeHtml(icon.preview)}" alt=""><span>${escapeHtml(icon.label)}</span></button>`).join("") : '<p class="quiet-state">No matching icons found.</p>';
-    } catch (error) { $("#icon-results").innerHTML = ""; $("#icon-error").textContent = error.message; }
+      $("#icon-results").innerHTML = results.length ? results.map(icon => `<button type="button" class="icon-choice" data-slug="${escapeHtml(icon.slug)}"><img src="${escapeHtml(icon.preview)}" alt="" data-fallback="${escapeHtml(initials(icon.label))}" onerror="this.onerror=null;this.replaceWith(document.createTextNode(this.dataset.fallback));"><span>${escapeHtml(icon.label)}</span></button>`).join("") : '<p class="quiet-state">No matching icons found.</p>';
+    } catch (error) { $("#icon-results").innerHTML = ""; showError("#icon-error", error); }
   }, 280);
 });
 async function refreshIconTargetView() { await refresh(); if (state.iconTarget?.kind === "tokens") await window.loadApiTokens?.(); }
