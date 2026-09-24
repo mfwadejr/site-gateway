@@ -1188,6 +1188,14 @@ async function runIconMirrorSync(source, { initial = false } = {}) {
   const job = iconMirrorJobs[source];
   const repo = ICON_SOURCE_REPOS[source];
   if (!job || !repo || job.status === "running") return;
+  // The "initial" startup kick-off previously fired unconditionally on every server start --
+  // meaning every deploy/restart re-triggered a full resync of all three sources within a
+  // minute of boot, regardless of whether they already had a fresh mirror. Skip it when a
+  // recent-enough mirror already exists; the daily setInterval schedule still keeps it current.
+  if (initial && storage?.iconMirrorStats) {
+    const recentRow = storage.iconMirrorStats().find(row => row.source === source && row.status === "mirrored" && row.count > 0);
+    if (recentRow?.last_synced_at && Date.now() - new Date(recentRow.last_synced_at).getTime() < 20 * 60 * 60000) return;
+  }
   job.status = "running";
   job.lastError = null;
   const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), `icon-mirror-${source}-`));
