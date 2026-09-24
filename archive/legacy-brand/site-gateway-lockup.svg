@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 320" role="img" aria-labelledby="title desc">
+  <title id="title">Site Gateway</title>
+  <desc id="desc">Site Gateway wordmark with a green and blue gateway icon and colored routing nodes.</desc>
+  <defs><filter id="glow" x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <g opacity=".8" stroke="#9bb2ca" stroke-width="2"><path d="M30 160h330"/><path d="M1470 160h300"/></g>
+  <g fill="#62e6a7" stroke="#0b1525" stroke-width="3"><circle cx="150" cy="160" r="14"/><circle cx="1650" cy="160" r="14"/></g>
+  <g fill="#1686ff" stroke="#0b1525" stroke-width="3"><circle cx="215" cy="160" r="14"/><circle cx="1585" cy="160" r="14"/></g>
+  <g fill="#ffbf69" stroke="#0b1525" stroke-width="3"><circle cx="280" cy="160" r="14"/><circle cx="1520" cy="160" r="14"/></g>
+  <g transform="translate(405 54)" filter="url(#glow)">
+    <path d="M92 0 172 47v83l-51-30V76L92 59 63 76v24l-51 30V47z" fill="#62e6a7"/>
+    <path d="m92 59 29 17v83l51-30v58l-80 47-80-47v-58l51 30V76z" fill="#1686ff"/>
+    <path d="m92 59 29 17v83l-29 17-29-17V76z" fill="#172a47"/>
+  </g>
+  <text x="650" y="202" fill="#f4f7fb" font-family="Arial,sans-serif" font-size="112" font-weight="800" letter-spacing="-5">Site</text>
+  <text x="985" y="202" fill="#62e6a7" font-family="Arial,sans-serif" font-size="112" font-weight="800" letter-spacing="-5">Gateway</text>
+</svg>
