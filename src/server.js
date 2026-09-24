@@ -2263,6 +2263,54 @@ app.post("/api/icons/mirror/:source/sync", (req, res) => {
   res.status(202).json({ ok: true });
 });
 
+// Compares each saved icon reference's embedded content-hash (the "?v=" suffix baked into its
+// URL at save time) against that source:slug's *current* icon_mirror row -- a mismatch means the
+// upstream file has changed since this reference was last saved (or refreshed). Icons are frozen
+// in place by design (an already-saved reference never silently changes underneath a user), so
+// this only ever surfaces as a visible "update available" nudge, never an automatic swap.
+function findIconUpdates() {
+  if (!storage?.findIconMirror) return [];
+  const collections = [
+    ["sites", sites], ["proxies", proxies], ["redirects", redirects], ["streams", streams],
+    ["access-lists", accessLists], ["groups", groups], ["users", users],
+  ];
+  const results = [];
+  for (const [kind, list] of collections) {
+    for (const item of list) {
+      if (!item.iconSlug || !item.icon) continue;
+      const hashMatch = /[?&]v=([0-9a-f]{6,64})/i.exec(item.icon);
+      if (!hashMatch) continue;
+      const { source, slug } = parseIconRef(item.iconSlug);
+      const mirrorRow = storage.findIconMirror(source, slug);
+      // findIconMirror() returns the raw SQLite row (snake_case columns) -- unlike
+      // searchIconMirror(), it does not alias content_hash to contentHash.
+      if (!mirrorRow?.content_hash) continue;
+      if (mirrorRow.content_hash.slice(0, 10) !== hashMatch[1].slice(0, 10)) {
+        results.push({ kind, id: item.id, name: entryLabel(item), iconSlug: item.iconSlug });
+      }
+    }
+  }
+  for (const token of storage.listApiTokens ? storage.listApiTokens() : []) {
+    if (!token.iconSlug || !token.icon) continue;
+    const hashMatch = /[?&]v=([0-9a-f]{6,64})/i.exec(token.icon);
+    if (!hashMatch) continue;
+    const { source, slug } = parseIconRef(token.iconSlug);
+    const mirrorRow = storage.findIconMirror(source, slug);
+    if (!mirrorRow?.content_hash) continue;
+    if (mirrorRow.content_hash.slice(0, 10) !== hashMatch[1].slice(0, 10)) {
+      results.push({ kind: "tokens", id: token.id, name: entryLabel(token), iconSlug: token.iconSlug });
+    }
+  }
+  return results;
+}
+
+app.get("/api/icons/updates", (req, res, next) => {
+  try {
+    const items = findIconUpdates();
+    res.json({ count: items.length, items });
+  } catch (error) { next(error); }
+});
+
 app.get("/api/icons/search", (req, res, next) => {
   try {
     const query = String(req.query.q || "").trim().toLowerCase().slice(0, 80);

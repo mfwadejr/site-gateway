@@ -59,7 +59,9 @@ h2{letter-spacing:-.025em}
 .site-card{position:relative;background:linear-gradient(145deg,rgba(var(--panel2-rgb),.95),rgba(var(--card-shade-rgb),.95));border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px;min-height:220px;box-shadow:0 14px 40px rgba(var(--black-rgb),.14);transition:.2s}
 .site-card:hover{transform:translateY(-2px);border-color:var(--border-hover)}
 .card-top,.card-footer,.card-actions{display:flex;align-items:center;justify-content:space-between}
-.site-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:var(--radius-md);background:var(--icon-tile-blue-bg);color:var(--icon-tile-blue-fg);font-size:var(--font-size-sm);font-weight:850}
+.site-icon{position:relative;width:42px;height:42px;display:grid;place-items:center;border-radius:var(--radius-md);background:var(--icon-tile-blue-bg);color:var(--icon-tile-blue-fg);font-size:var(--font-size-sm);font-weight:850}
+.icon-update-badge{position:absolute;bottom:-3px;right:-3px;width:15px;height:15px;border-radius:50%;background:var(--warning);color:var(--on-warning);border:2px solid var(--panel);font-size:10px;font-weight:800;line-height:1;display:grid;place-items:center;padding:0;cursor:pointer}
+.icon-update-badge:hover{filter:brightness(1.08)}
 .site-card h2{margin:27px 0 5px;font-size:1.15rem}
 .address{margin:0;color:var(--muted);font-family:ui-monospace,monospace;font-size:var(--font-size-md)}
 .card-footer{position:absolute;left:20px;right:20px;bottom:20px}

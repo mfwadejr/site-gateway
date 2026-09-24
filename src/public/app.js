@@ -8,7 +8,7 @@
 
 // --- Shared DOM shortcut and app state ----------------------------------------
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], usersLoaded: false, user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, passwordTarget: null, healthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [] };
+const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], usersLoaded: false, user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, staleIcons: new Set(), passwordTarget: null, healthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [] };
 
 // One-time DOM patches: move the Access List field into the create/settings
 // forms (features.js owns the Access List data, this file owns these forms).
@@ -285,7 +285,16 @@ function initials(name) {
   if (!words.length) return "??";
   return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2).padEnd(2, words[0][0])).toUpperCase();
 }
-function iconMarkup(item) { return item.icon ? `<img src="${escapeHtml(item.icon)}" alt="" data-fallback="${escapeHtml(initials(item.name))}" onerror="this.onerror=null;this.replaceWith(document.createTextNode(this.dataset.fallback));">` : escapeHtml(initials(item.name)); }
+function iconMarkup(item, kind) {
+  const img = item.icon ? `<img src="${escapeHtml(item.icon)}" alt="" data-fallback="${escapeHtml(initials(item.name))}" onerror="this.onerror=null;this.replaceWith(document.createTextNode(this.dataset.fallback));">` : escapeHtml(initials(item.name));
+  // A stale-icon badge only ever appears for a saved *mirror* reference (iconSlug set) whose
+  // upstream file has since changed -- see findIconUpdates() server-side and the staleIcons
+  // REFRESH_ENDPOINTS entry above. Never shown for custom-uploaded/URL icons, which have no
+  // upstream to drift from. Clicking it re-runs the same save-from-slug path the picker uses.
+  const stale = kind && item.iconSlug && state.staleIcons?.has(`${kind}:${item.id}`);
+  const badge = stale ? `<button type="button" class="icon-update-badge" data-action="refresh-icon" title="A newer version of this icon is available upstream -- click to update" aria-label="Update available icon">!</button>` : "";
+  return img + badge;
+}
 document.addEventListener('error', event => { const image = event.target; if (!(image instanceof HTMLImageElement) || !image.closest('.site-icon') || image.dataset.fallback) return; image.dataset.fallback = 'true'; const fallback = document.createElement('span'); fallback.textContent = initials(image.closest('[data-id]')?.querySelector('h2')?.textContent || '?'); image.replaceWith(fallback); }, true);
 function canManage() { return ["administrator", "standard"].includes(state.user?.role); }
 function canAdmin() { return state.user?.role === "administrator"; }
@@ -301,7 +310,7 @@ function hostedCard(site) {
   const upstream = !site.enabled ? "Monitoring paused" : site.upstream?.status === "unmonitored" ? "Monitoring disabled" : !site.upstream || site.upstream.status === "pending" ? "Upstream check pending" : site.upstream.status === "healthy" ? `Upstream ${site.upstream.httpStatus} · ${site.upstream.responseMs} ms` : `Upstream unavailable · ${escapeHtml(site.upstream.error || "check failed")}`;
   const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Site options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Domain & TLS</button><button data-action="icon">Change icon</button><button data-action="caddy-config">View Caddy config</button><button data-action="replace">Replace files</button><button data-action="delete" class="danger-text">Delete site</button></div></div>` : "";
   const toggle = canManage() ? `<button class="toggle ${site.enabled ? "on" : ""}" data-action="toggle" aria-label="${site.enabled ? "Disable" : "Enable"} ${escapeHtml(site.name)}"><span></span></button>` : "";
-  return `<article class="site-card" data-id="${site.id}" data-kind="hosted"><div class="card-top"><div class="site-icon">${iconMarkup(site)}</div>${menu}</div><h2>${escapeHtml(site.name)}</h2><p class="address">${escapeHtml(site.domain || `Port ${site.port}`)}</p>${site.domain ? `<p class="gateway-address ${site.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(site))}</p>` : ""}<p class="upstream-copy ${upstreamStateClass(site.enabled, site.upstream)}">${upstream}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(site)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(site.name)}">↗</a></div></div></article>`;
+  return `<article class="site-card" data-id="${site.id}" data-kind="hosted"><div class="card-top"><div class="site-icon">${iconMarkup(site, "sites")}</div>${menu}</div><h2>${escapeHtml(site.name)}</h2><p class="address">${escapeHtml(site.domain || `Port ${site.port}`)}</p>${site.domain ? `<p class="gateway-address ${site.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(site))}</p>` : ""}<p class="upstream-copy ${upstreamStateClass(site.enabled, site.upstream)}">${upstream}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(site)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(site.name)}">↗</a></div></div></article>`;
 }
 function proxyCard(proxy) {
   const status = proxy.status === "running" ? "running" : proxy.status === "error" ? "error" : "disabled";
@@ -309,7 +318,7 @@ function proxyCard(proxy) {
   const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="icon">Change icon</button><button data-action="caddy-config">View Caddy config</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div>` : "";
   const toggle = canManage() ? `<button class="toggle ${proxy.enabled ? "on" : ""}" data-action="toggle" aria-label="${proxy.enabled ? "Disable" : "Enable"} ${escapeHtml(proxy.name)}"><span></span></button>` : "";
   const access = proxy.accessListId ? (state.accessLists.find(item => item.id === proxy.accessListId)?.name || "Access List") : "Public · no Access List";
-  return `<article class="site-card proxy" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy)}</div>${menu}</div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><p class="upstream-copy ${upstreamStateClass(proxy.enabled, proxy.upstream)}">${upstream}</p><p class="access-summary">${escapeHtml(access)}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
+  return `<article class="site-card proxy" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy, "proxies")}</div>${menu}</div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><p class="upstream-copy ${upstreamStateClass(proxy.enabled, proxy.upstream)}">${upstream}</p><p class="access-summary">${escapeHtml(access)}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
 }
 
 
@@ -612,6 +621,10 @@ const REFRESH_ENDPOINTS = {
   groups: () => canAdmin() ? api("/api/groups") : Promise.resolve([]),
   dashboard: () => api("/api/dashboard"),
   certificates: () => api("/api/certificates"),
+  // Which saved icon references (site/proxy) have drifted from their source's current mirrored
+  // file -- see findIconUpdates() server-side. Never auto-applied (icons are frozen by design),
+  // this only powers a visible "update available" badge with a manual one-click refresh.
+  staleIcons: () => api("/api/icons/updates").then(result => new Set((result.items || []).map(entry => `${entry.kind}:${entry.id}`))).catch(() => new Set()),
 };
 // Which of the keys above each view actually renders. A view not listed here (certificates, logs,
 // performance, administration, account, documentation) already loads its own data separately via
@@ -620,8 +633,8 @@ const REFRESH_ENDPOINTS = {
 // gateway, not one section of it, so a scoped fetch there would defeat the point of the page.
 const VIEW_REFRESH_KEYS = {
   overview: Object.keys(REFRESH_ENDPOINTS),
-  hosted: ["sites"],
-  proxies: ["proxies"],
+  hosted: ["sites", "staleIcons"],
+  proxies: ["proxies", "staleIcons"],
   streaming: ["streams"],
   redirects: ["redirects"],
   access: ["accessLists", "groups"],
@@ -877,6 +890,11 @@ $("#site-grid").addEventListener("click", async event => {
   if (action === "delete") { state.pendingDelete = { kind, id: card.dataset.id }; $("#confirm-title").textContent = kind === "proxy" ? "Delete this proxy host?" : "Delete this hosted site?"; $("#confirm-copy").textContent = kind === "proxy" ? "Its domain route will be removed from the gateway." : "Its route and uploaded files will be permanently removed."; $("#confirm-dialog").showModal(); }
   if (action === "replace") { state.pendingReplace = card.dataset.id; $("#replace-files").click(); }
   if (action === "icon") openIconPicker(kind, card.dataset.id);
+  if (action === "refresh-icon") {
+    const base = kind === "proxy" ? "proxies" : "sites";
+    const target = (kind === "proxy" ? state.proxies : state.sites).find(entry => entry.id === card.dataset.id);
+    if (target?.iconSlug) { try { await api(`/api/${base}/${card.dataset.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug: target.iconSlug }) }); await refreshCurrentView(); toast("Icon updated to the latest upstream version."); } catch (error) { toast(error.message || "Could not update the icon.", "error"); } }
+  }
   if (action === "caddy-config") openCaddyConfig(kind === "proxy" ? "proxies" : "sites", card.dataset.id);
 });
 
