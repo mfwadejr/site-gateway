@@ -54,7 +54,12 @@ function openErrorDetail(error) {
   const logLink = $("#error-detail-log-link");
   if (error?.eventId) {
     logLink.classList.remove("hidden");
-    logLink.onclick = event => { event.preventDefault(); $("#error-detail-dialog").close(); state.view = "logs"; render(); loadFeatureView().catch(err => toast(err.message)); };
+    logLink.onclick = async event => {
+      event.preventDefault(); const targetEventId = error.eventId; $("#error-detail-dialog").close(); state.view = "logs"; render();
+      try { await loadFeatureView(); } catch (err) { toast(err); return; }
+      const row = document.querySelector(`#gateway-log-list [data-event-id="${targetEventId}"]`);
+      if (row) { row.scrollIntoView({ behavior: "smooth", block: "center" }); row.classList.add("log-row-highlight"); setTimeout(() => row.classList.remove("log-row-highlight"), 2600); }
+    };
   } else logLink.classList.add("hidden");
   $("#error-detail-dialog").showModal();
 }
@@ -356,7 +361,7 @@ function renderLogs() {
   const categoryOf = message => /cert|tls|https/i.test(message) ? "certificate" : /health|upstream|response|fetch/i.test(message) ? "health" : /login|user|password|access/i.test(message) ? "authentication" : /backup|restore/i.test(message) ? "backup" : /config|route|host|gateway|reload/i.test(message) ? "configuration" : "system";
   const severity = $("#event-severity").value, category = $("#event-category").value;
   const activity = data.activity.filter(item => (!severity || item.status === severity) && (!category || categoryOf(item.message) === category));
-  $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const eventCategory = categoryOf(item.message); const indicatorClass = item.status === "error" ? "disabled" : item.status === "warning" ? "error" : "running"; const severityLabel = item.status === "error" ? "Error" : item.status === "warning" ? "Warning" : "Normal"; return `<tr><td>${escapeHtml(formatTime(item.at))}</td><td><span class="status-dot ${indicatorClass}"></span>${severityLabel}</td><td>${escapeHtml(eventCategory)}</td><td>${escapeHtml(item.message)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching gateway events. Try a different severity or category filter.</td></tr>';
+  $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const eventCategory = categoryOf(item.message); const indicatorClass = item.status === "error" ? "disabled" : item.status === "warning" ? "error" : "running"; const severityLabel = item.status === "error" ? "Error" : item.status === "warning" ? "Warning" : "Normal"; return `<tr${item.id ? ` data-event-id="${item.id}"` : ""}><td>${escapeHtml(formatTime(item.at))}</td><td><span class="status-dot ${indicatorClass}"></span>${severityLabel}</td><td>${escapeHtml(eventCategory)}</td><td>${escapeHtml(item.message)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching gateway events. Try a different severity or category filter.</td></tr>';
 }
 
 
@@ -730,10 +735,10 @@ $("#update-banner-dismiss").addEventListener("click", () => { $("#update-banner"
 
 
 // --- Login, MFA login, first-run setup, and logout -----------------------------------------
-$("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { const result = await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); if (result?.mfaRequired) { $("#login-form").classList.add("hidden"); $("#mfa-login-form").classList.remove("hidden"); $("#mfa-login-form [name=code]").focus(); return; } event.target.reset(); history.replaceState(null, "", `${location.pathname}${location.search}`); await boot(); } catch (error) { $("#login-error").textContent = error.message; } });
-$("#mfa-login-form").addEventListener("submit", async event => { event.preventDefault(); $("#mfa-login-error").textContent = ""; try { const response = await fetch("/api/login/mfa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || "That code didn't match. Try again."); event.target.reset(); history.replaceState(null, "", `${location.pathname}${location.search}`); await boot(); } catch (error) { $("#mfa-login-error").textContent = error.message; } });
+$("#login-form").addEventListener("submit", async event => { event.preventDefault(); $("#login-error").textContent = ""; try { const result = await api("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); if (result?.mfaRequired) { $("#login-form").classList.add("hidden"); $("#mfa-login-form").classList.remove("hidden"); $("#mfa-login-form [name=code]").focus(); return; } event.target.reset(); history.replaceState(null, "", `${location.pathname}${location.search}`); await boot(); } catch (error) { showError("#login-error", error); } });
+$("#mfa-login-form").addEventListener("submit", async event => { event.preventDefault(); $("#mfa-login-error").textContent = ""; try { const response = await fetch("/api/login/mfa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || "That code didn't match. Try again."); event.target.reset(); history.replaceState(null, "", `${location.pathname}${location.search}`); await boot(); } catch (error) { showError("#mfa-login-error", error); } });
 $("#mfa-login-cancel").addEventListener("click", () => { $("#mfa-login-form").reset(); $("#mfa-login-error").textContent = ""; $("#mfa-login-form").classList.add("hidden"); $("#login-form").classList.remove("hidden"); $("#login-form").elements.password.value = ""; setTimeout(() => $("#login-form").elements.password.focus(), 0); });
-$("#setup-form").addEventListener("submit", async event => { event.preventDefault(); $("#setup-error").textContent = ""; try { await api("/api/setup/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); $("#setup-dialog").close(); event.target.reset(); await boot(); showLogin("Administrator account saved. Sign in with your finalized credentials."); } catch (error) { $("#setup-error").textContent = error.message; } });
+$("#setup-form").addEventListener("submit", async event => { event.preventDefault(); $("#setup-error").textContent = ""; try { await api("/api/setup/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); $("#setup-dialog").close(); event.target.reset(); await boot(); showLogin("Administrator account saved. Sign in with your finalized credentials."); } catch (error) { showError("#setup-error", error); } });
 $("#setup-dialog").addEventListener("cancel", event => event.preventDefault());
 $("#logout").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); showLogin(); });
 
@@ -962,7 +967,7 @@ async function saveIcon(slug) {
   try {
     await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug }) });
     $("#icon-dialog").close(); await refreshIconTargetView(); toast(slug ? "Icon saved locally." : "Two-letter fallback restored.");
-  } catch (error) { $("#icon-error").textContent = error.message; }
+  } catch (error) { showError("#icon-error", error); }
 }
 $("#icon-results").addEventListener("click", event => { const choice = event.target.closest("[data-slug]"); if (choice) saveIcon(choice.dataset.slug); });
 $("#reset-icon").addEventListener("click", event => { event.preventDefault(); saveIcon(""); });
@@ -970,13 +975,13 @@ $("#icon-upload").addEventListener("change", async event => {
   const file = event.target.files[0]; if (!file || !state.iconTarget) return;
   const data = new FormData(); data.append("icon", file); $("#icon-error").textContent = "";
   try { const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "streams" ? "streams" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : state.iconTarget.kind === "groups" ? "groups" : state.iconTarget.kind === "tokens" ? "tokens" : "sites"; await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "POST", body: data }); $("#icon-dialog").close(); await refreshIconTargetView(); toast("Custom icon saved locally."); }
-  catch (error) { $("#icon-error").textContent = error.message; }
+  catch (error) { showError("#icon-error", error); }
 });
 $("#save-icon-url").addEventListener("click", async () => {
   const value = $("#icon-url").value.trim(); if (!/^https:\/\//i.test(value)) { $("#icon-error").textContent = "Enter a trusted HTTPS image URL."; return; }
   if (!state.iconTarget) return; const base = state.iconTarget.kind === "proxy" ? "proxies" : state.iconTarget.kind === "redirect" ? "redirects" : state.iconTarget.kind === "streams" ? "streams" : state.iconTarget.kind === "access" ? "access-lists" : state.iconTarget.kind === "users" ? "users" : state.iconTarget.kind === "groups" ? "groups" : state.iconTarget.kind === "tokens" ? "tokens" : "sites";
   try { await api(`/api/${base}/${state.iconTarget.id}/icon`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: value }) }); $("#icon-dialog").close(); await refreshIconTargetView(); toast("Icon URL saved."); }
-  catch (error) { $("#icon-error").textContent = error.message; }
+  catch (error) { showError("#icon-error", error); }
 });
 
 // --- User management: create, edit (role/status), password reset, delete --------------------
@@ -985,7 +990,7 @@ $("#user-form").addEventListener("submit", async event => {
   try {
     await api("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) });
     $("#user-dialog").close(); await loadFeatureView(); toast("User created.");
-  } catch (error) { $("#user-error").textContent = error.message; }
+  } catch (error) { showError("#user-error", error); }
   finally { button.disabled = false; }
 });
 
@@ -1028,7 +1033,7 @@ $("#password-form").addEventListener("submit", async event => {
   try {
     await api(`/api/users/${state.passwordTarget}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: new FormData(event.target).get("password") }) });
     $("#password-dialog").close(); state.passwordTarget = null; await loadFeatureView(); toast("Password reset.");
-  } catch (error) { $("#password-error").textContent = error.message; }
+  } catch (error) { showError("#password-error", error); }
   finally { button.disabled = false; }
 });
 
@@ -1085,7 +1090,7 @@ $("#account-password-form").addEventListener("submit", async event => {
   try {
     await api("/api/account/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword: body.currentPassword, newPassword: body.newPassword }) });
     form.reset(); toast("Password changed.");
-  } catch (error) { $("#account-password-error").textContent = error.message; }
+  } catch (error) { showError("#account-password-error", error); }
 });
 
 
@@ -1134,7 +1139,7 @@ $("#mfa-setup-confirm-form").addEventListener("submit", async event => {
     $("#mfa-recovery-codes").textContent = result.recoveryCodes.join("\n");
     requestAnimationFrame(() => $("#mfa-recovery-dialog").showModal());
     toast("Two-factor authentication enabled.");
-  } catch (error) { $("#mfa-setup-error").textContent = error.message; }
+  } catch (error) { showError("#mfa-setup-error", error); }
 });
 $("#mfa-recovery-done").addEventListener("click", () => { $("#mfa-recovery-dialog").close(); });
 

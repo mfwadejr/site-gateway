@@ -90,6 +90,7 @@ function recordActivity(message, status = "ok") {
   recentActivity.splice(20);
   let eventId;
   try { eventId = storage?.recordActivity(message, status); } catch (error) { console.warn("Could not record SQLite activity event:", error.message); }
+  if (eventId) entry.id = eventId;
   fsp.appendFile(activityLogPath, `${JSON.stringify(entry)}\n`).catch(() => {});
   try { storage?.recordAudit(message, status, null, currentAuditActor); } catch (error) { console.warn("Could not record SQLite audit event:", error.message); }
   return eventId;

@@ -1031,3 +1031,7 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .icon-mirror-source { display: inline-flex; align-items: center; gap: 0.35rem; }
 .link-button { background: none; border: none; padding: 0; margin: 0; color: inherit; text-decoration: underline; font: inherit; cursor: pointer; opacity: 0.85; }
 .link-button:hover { opacity: 1; }
+
+/* Gateway Events deep link target highlight (v0.16.85) */
+@keyframes log-row-highlight-fade { from { background: var(--accent-soft, rgba(99,102,241,0.18)); } to { background: transparent; } }
+.log-row-highlight { animation: log-row-highlight-fade 2.4s ease-out; }
