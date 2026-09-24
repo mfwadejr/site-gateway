@@ -37,6 +37,11 @@ const accessLogPath = path.join(logsDir, "access.json");
 const activityLogPath = path.join(logsDir, "activity.jsonl");
 const certificateDir = path.join(managedCertificatesDir, "certificates");
 const iconMirrorRoot = path.join(iconsDir, "mirror");
+// Where a *saved* (in-use) mirror-sourced icon file lives, and where a mirror file goes once its
+// upstream source removes it -- see migrateIconsToUsedFolder() below for the one-time migration
+// that moves pre-existing saved icons here and rewrites their stored URLs to match.
+const iconsUsedDir = path.join(iconsDir, "used");
+const iconsArchiveDir = path.join(iconsDir, "archive");
 function iconMirrorSourceDir(source) { return path.join(iconMirrorRoot, source); }
 const caddyfilePath = path.join(caddyDir, "Caddyfile");
 const execFileAsync = promisify(execFile);
@@ -440,7 +445,7 @@ async function clearDirectoryContents(directory) {
 }
 
 async function loadSites() {
-  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(iconMirrorRoot, { recursive: true }), fsp.mkdir(logsDir, { recursive: true }), fsp.mkdir(backupsDir, { recursive: true }), fsp.mkdir(defaultSiteDir, { recursive: true }), fsp.mkdir(customCertificatesDir, { recursive: true }), fsp.mkdir(managedCertificatesDir, { recursive: true }), fsp.mkdir(certificateExportsDir, { recursive: true })]);
+  await Promise.all([fsp.mkdir(sitesDir, { recursive: true }), fsp.mkdir(uploadDir, { recursive: true }), fsp.mkdir(caddyDir, { recursive: true }), fsp.mkdir(iconsDir, { recursive: true }), fsp.mkdir(iconMirrorRoot, { recursive: true }), fsp.mkdir(iconsUsedDir, { recursive: true }), fsp.mkdir(iconsArchiveDir, { recursive: true }), fsp.mkdir(logsDir, { recursive: true }), fsp.mkdir(backupsDir, { recursive: true }), fsp.mkdir(defaultSiteDir, { recursive: true }), fsp.mkdir(customCertificatesDir, { recursive: true }), fsp.mkdir(managedCertificatesDir, { recursive: true }), fsp.mkdir(certificateExportsDir, { recursive: true })]);
   if (!storage) storage = await openStorage(dataDir, backupsDir);
   storage.humanizeGatewayErrors?.();
   if (storage.snapshot) { recordActivity(`Legacy JSON migrated to SQLite. Safety backup: ${storage.snapshot.filename}.`); storage.snapshot = null; }
@@ -484,6 +489,69 @@ async function loadSites() {
   const storedSettings = storage.loadSettings() || defaultSettings;
   settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) }, certificateHealth: { ...defaultSettings.certificateHealth, ...(storedSettings.certificateHealth || {}) }, logsRetention: { ...defaultSettings.logsRetention, ...(storedSettings.logsRetention || {}) } };
   await saveSettings();
+  try { await migrateIconsToUsedFolder(); } catch (error) { recordActivity(`Icon storage migration failed and was left for a future restart: ${error.message}`, "error"); }
+}
+
+// One-time (idempotent -- a fast no-op on every subsequent boot) migration: moves each
+// already-saved, mirror-sourced icon file out of the flat icons/ directory into icons/used/, and
+// rewrites every collection record's icon URL to match. This is the used/archive folder structure
+// from the icon picker's original design, deliberately deferred earlier this session as too risky
+// to build blind (rewriting a stored reference on every existing record, live, with no do-over).
+// Built now with an explicit safety net: a full database backup is taken and verified restorable
+// (a real, separate SQLite handle opened against the backup file and integrity-checked) before a
+// single record is rewritten. Only mirror-sourced references (iconSlug set) are touched -- a
+// custom-uploaded or URL-sourced icon has no upstream to track and is left exactly where it is.
+async function migrateIconsToUsedFolder() {
+  const collections = [
+    ["sites", sites], ["proxies", proxies], ["redirects", redirects], ["streams", streams],
+    ["access-lists", accessLists], ["groups", groups], ["users", users],
+  ];
+  const isUnmigratedMirrorIcon = item => item.iconSlug && typeof item.icon === "string" && item.icon.startsWith("/site-icons/") && !item.icon.startsWith("/site-icons/used/");
+  const pendingByKind = new Map();
+  for (const [kind, list] of collections) {
+    const items = list.filter(isUnmigratedMirrorIcon);
+    if (items.length) pendingByKind.set(kind, items);
+  }
+  const tokens = storage?.listApiTokens ? storage.listApiTokens() : [];
+  const pendingTokens = tokens.filter(isUnmigratedMirrorIcon);
+  const totalPending = [...pendingByKind.values()].reduce((sum, items) => sum + items.length, 0) + pendingTokens.length;
+  if (!totalPending) return { migrated: 0 };
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const snapshot = path.join(backupsDir, `pre-icon-migration-${stamp}.sqlite`);
+  storage.backupTo(snapshot);
+  const { DatabaseSync } = await import("node:sqlite");
+  const verifyDb = new DatabaseSync(snapshot, { readOnly: true });
+  const integrityResult = verifyDb.prepare("PRAGMA integrity_check").all().map(row => Object.values(row)[0]);
+  verifyDb.close();
+  if (integrityResult.length !== 1 || integrityResult[0] !== "ok") {
+    throw new Error(`backup verification failed before any record was touched (${integrityResult.join(", ")}) -- snapshot at ${snapshot}, migration aborted`);
+  }
+
+  const moveIconFile = async iconUrl => {
+    const filename = iconUrl.replace(/^\/site-icons\//, "").split("?")[0];
+    try { await fsp.rename(path.join(iconsDir, filename), path.join(iconsUsedDir, filename)); return true; }
+    catch (error) { if (error.code === "ENOENT") return false; throw error; } // already moved or missing -- URL still gets corrected below
+  };
+
+  let migratedFiles = 0, migratedRecords = 0;
+  for (const [, items] of pendingByKind) {
+    for (const item of items) {
+      if (await moveIconFile(item.icon)) migratedFiles += 1;
+      item.icon = item.icon.replace(/^\/site-icons\//, "/site-icons/used/");
+      migratedRecords += 1;
+    }
+  }
+  for (const token of pendingTokens) {
+    if (await moveIconFile(token.icon)) migratedFiles += 1;
+    storage.setApiTokenIcon(token.id, { icon: token.icon.replace(/^\/site-icons\//, "/site-icons/used/"), iconSlug: token.iconSlug });
+    migratedRecords += 1;
+  }
+  const saveByKind = { sites: saveSites, proxies: saveProxies, redirects: saveRedirects, streams: saveStreams, "access-lists": saveAccessLists, groups: saveGroups, users: saveUsers };
+  await Promise.all([...pendingByKind.keys()].map(kind => saveByKind[kind]()));
+
+  recordActivity(`Icon storage migration: moved ${migratedFiles} icon file(s) into icons/used/ and updated ${migratedRecords} saved reference(s). Backup verified and kept at ${path.basename(snapshot)}.`);
+  return { migrated: migratedRecords, snapshot };
 }
 
 
@@ -1306,10 +1374,10 @@ async function cacheIcon(rawRef) {
     if (svg.length > 512 * 1024 || !/<svg[\s>]/i.test(svg) || /<(?:script|foreignObject)\b|\son\w+\s*=|(?:href|xlink:href)\s*=\s*["'](?:https?:|\/\/)/i.test(svg)) {
       throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
     }
-    await fsp.writeFile(path.join(iconsDir, filename), svg);
+    await fsp.writeFile(path.join(iconsUsedDir, filename), svg);
   } else {
     if (buffer.length > 2 * 1024 * 1024) throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
-    await fsp.writeFile(path.join(iconsDir, filename), buffer);
+    await fsp.writeFile(path.join(iconsUsedDir, filename), buffer);
   }
   // Cache-bust with the actual saved content's own hash, not the mirror row's -- this file
   // gets reused in place under the same filename on every future save of this source:slug
@@ -1317,7 +1385,7 @@ async function cacheIcon(rawRef) {
   // served immutable with a 30-day max-age, so without this a browser that already loaded
   // the old bytes at this exact URL would keep serving them from cache indefinitely.
   const savedContentHash = crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 10);
-  return { icon: `/site-icons/${filename}?v=${savedContentHash}`, iconSlug: `${source}:${slug}` };
+  return { icon: `/site-icons/used/${filename}?v=${savedContentHash}`, iconSlug: `${source}:${slug}` };
 }
 
 
