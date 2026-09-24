@@ -200,7 +200,7 @@ export async function openStorage(dataDir, backupsDir) {
     const rows = db.prepare(
       "SELECT source, slug, format, label, search_text AS searchText FROM icon_mirror " +
       "WHERE instance_id=? AND status='mirrored' AND (search_text LIKE ? OR slug LIKE ?) " +
-      "ORDER BY CASE WHEN source='dashboard-icons' THEN 0 ELSE 1 END, slug"
+      "ORDER BY CASE source WHEN 'dashboard-icons' THEN 0 WHEN 'selfhst' THEN 1 ELSE 2 END, slug"
     ).all(instanceId, needle, needle);
     // One source-priority pass to dedupe by slug (dashboard-icons already sorted first above),
     // then a relevance sort matching the existing search-tier convention (exact/startsWith/contains).

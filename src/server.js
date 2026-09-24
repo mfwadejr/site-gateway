@@ -1133,11 +1133,14 @@ function iconLabel(slug) {
 // second catalog source can be added later without a schema change. A bare slug with no
 // colon is treated as dashboard-icons for backward compatibility with icons saved before
 // this namespacing existed.
-const ICON_SOURCE_BASE_URLS = { "dashboard-icons": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons", "selfhst": "https://cdn.jsdelivr.net/gh/selfhst/icons" };
+const ICON_SOURCE_BASE_URLS = { "dashboard-icons": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons", "selfhst": "https://cdn.jsdelivr.net/gh/selfhst/icons", "lucide": "https://cdn.jsdelivr.net/gh/lucide-icons/lucide" };
 // GitHub repo (owner/name) backing each icon source, used only by the background mirror job to pull a full tarball snapshot.
-const ICON_SOURCE_REPOS = { "dashboard-icons": "homarr-labs/dashboard-icons", "selfhst": "selfhst/icons" };
-// In-memory state for the two background mirror jobs, surfaced via /api/icons/mirror/status and folded into system.jobs.
-const iconMirrorJobs = { "dashboard-icons": { status: "idle", lastRunAt: null, lastError: null, total: 0 }, "selfhst": { status: "idle", lastRunAt: null, lastError: null, total: 0 } };
+const ICON_SOURCE_REPOS = { "dashboard-icons": "homarr-labs/dashboard-icons", "selfhst": "selfhst/icons", "lucide": "lucide-icons/lucide" };
+// lucide ships flat (icons/<slug>.svg, no per-format subdirectory) and svg-only, unlike the other two
+// sources -- this drives both the live-fallback URL shape (fetchIconAsset) and the mirror-sync extraction path.
+const ICON_SOURCE_FORMATS = { "dashboard-icons": ["svg", "png", "webp"], "selfhst": ["svg", "png", "webp"], "lucide": ["svg"] };
+// In-memory state for the background mirror jobs, surfaced via /api/icons/mirror/status and folded into system.jobs.
+const iconMirrorJobs = { "dashboard-icons": { status: "idle", lastRunAt: null, lastError: null, total: 0 }, "selfhst": { status: "idle", lastRunAt: null, lastError: null, total: 0 }, "lucide": { status: "idle", lastRunAt: null, lastError: null, total: 0 } };
 
 function parseIconRef(raw) {
   const value = String(raw || "").trim();
@@ -1147,11 +1150,14 @@ function parseIconRef(raw) {
     : { source: value.slice(0, colonIndex), slug: value.slice(colonIndex + 1) };
 }
 
+function iconAssetPath(source, slug, format) {
+  return source === "lucide" ? `icons/${slug}.svg` : `${format}/${slug}.${format}`;
+}
 async function fetchIconAsset(source, slug, format) {
   const baseUrl = ICON_SOURCE_BASE_URLS[source];
   if (!baseUrl) return null;
   try {
-    const response = await fetch(`${baseUrl}/${format}/${slug}.${format}`, { signal: AbortSignal.timeout(7000) });
+    const response = await fetch(`${baseUrl}/${iconAssetPath(source, slug, format)}`, { signal: AbortSignal.timeout(7000) });
     return response.ok ? response : null;
   } catch { return null; }
 }
@@ -1184,28 +1190,52 @@ async function runIconMirrorSync(source, { initial = false } = {}) {
     const extractedRoot = (await fsp.readdir(tmpRoot, { withFileTypes: true })).find(entry => entry.isDirectory());
     if (!extractedRoot) throw new Error("Tarball did not contain a source directory.");
     const extractedPath = path.join(tmpRoot, extractedRoot.name);
-    const metadata = await fetchIconMetadata(source);
     // A Set, not an array: the same icon commonly ships in more than one format (svg + png +
     // webp), and job.total / the removed-icon diff both need the count of distinct icons, not
     // the count of files copied -- counting files here previously inflated the jobs-panel total
     // to roughly 3x the picker's own "N icons mirrored" count for the same sync.
     const seenSlugs = new Set();
-    for (const format of ["svg", "png", "webp"]) {
-      const formatDir = path.join(extractedPath, format);
-      let entries;
-      try { entries = await fsp.readdir(formatDir); } catch { continue; }
+    async function mirrorEntry(slug, format, buffer, entryMeta) {
+      if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) return;
       const destDir = path.join(iconMirrorSourceDir(source), format);
       await fsp.mkdir(destDir, { recursive: true });
+      const contentHash = crypto.createHash("sha256").update(buffer).digest("hex");
+      await fsp.writeFile(path.join(destDir, `${slug}.${format}`), buffer);
+      storage?.upsertIconMirror({ source, slug, format, contentHash, label: entryMeta?.label, searchText: entryMeta?.searchText });
+      seenSlugs.add(slug);
+    }
+    if (source === "lucide") {
+      // Flat layout (icons/<slug>.svg + a sibling icons/<slug>.json carrying tags/categories) --
+      // metadata lives right next to each icon in the same tarball already downloaded above, so
+      // no separate live metadata fetch is needed here (unlike dashboard-icons/selfhst below).
+      const lucideIconsDir = path.join(extractedPath, "icons");
+      let entries;
+      try { entries = await fsp.readdir(lucideIconsDir); } catch { entries = []; }
       for (const filename of entries) {
-        if (!filename.endsWith(`.${format}`)) continue;
-        const slug = filename.slice(0, -(format.length + 1));
+        if (!filename.endsWith(".svg")) continue;
+        const slug = filename.slice(0, -4);
         if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) continue;
-        const buffer = await fsp.readFile(path.join(formatDir, filename));
-        const contentHash = crypto.createHash("sha256").update(buffer).digest("hex");
-        await fsp.writeFile(path.join(destDir, filename), buffer);
-        const entryMeta = metadata.get(slug);
-        storage?.upsertIconMirror({ source, slug, format, contentHash, label: entryMeta?.label, searchText: entryMeta?.searchText });
-        seenSlugs.add(slug);
+        const buffer = await fsp.readFile(path.join(lucideIconsDir, filename));
+        let label = iconLabel(slug), searchText = slug;
+        try {
+          const meta = JSON.parse(await fsp.readFile(path.join(lucideIconsDir, `${slug}.json`), "utf8"));
+          searchText = [slug, ...(meta.tags || []), ...(meta.categories || [])].join(" ").toLowerCase();
+        } catch { /* no sidecar metadata for this icon -- fall back to the slug alone */ }
+        await mirrorEntry(slug, "svg", buffer, { label, searchText });
+      }
+    } else {
+      const metadata = await fetchIconMetadata(source);
+      for (const format of ICON_SOURCE_FORMATS[source] || ["svg", "png", "webp"]) {
+        const formatDir = path.join(extractedPath, format);
+        let entries;
+        try { entries = await fsp.readdir(formatDir); } catch { continue; }
+        for (const filename of entries) {
+          if (!filename.endsWith(`.${format}`)) continue;
+          const slug = filename.slice(0, -(format.length + 1));
+          if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) continue;
+          const buffer = await fsp.readFile(path.join(formatDir, filename));
+          await mirrorEntry(slug, format, buffer, metadata.get(slug));
+        }
       }
     }
     const removedCount = storage?.markIconMirrorRemoved(source, [...seenSlugs]) || 0;

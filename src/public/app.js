@@ -927,7 +927,7 @@ function openIconPicker(kind, id) {
 }
 
 function iconMirrorStatusLine(source, info) {
-  const label = { "dashboard-icons": "Dashboard Icons", "selfhst": "selfh.st Icons" }[source] || source;
+  const label = { "dashboard-icons": "Dashboard Icons", "selfhst": "selfh.st Icons", "lucide": "Symbols" }[source] || source;
   const statusText = info.status === "running" ? "syncing\u2026" : info.status === "error" ? `sync failed${info.lastError ? ` (${info.lastError})` : ""}` : info.mirrored ? `${info.mirrored.toLocaleString()} icons mirrored` : "not yet mirrored";
   return `<span class="icon-mirror-source"><strong>${label}:</strong> ${statusText}${info.status !== "running" ? ` <button type="button" class="link-button" data-sync-source="${source}">Sync now</button>` : ""}</span>`;
 }
