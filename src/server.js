@@ -2177,7 +2177,7 @@ app.get("/api/icons/mirror/status", (req, res) => {
   res.json({ sources });
 });
 
-app.post("/api/icons/mirror/:source/sync", requireAuth, (req, res) => {
+app.post("/api/icons/mirror/:source/sync", (req, res) => {
   const source = String(req.params.source || "");
   if (!ICON_SOURCE_REPOS[source]) return res.status(404).json({ error: "Unknown icon source." });
   if (iconMirrorJobs[source].status === "running") return res.status(409).json({ error: "A sync for this source is already running." });
