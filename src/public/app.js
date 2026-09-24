@@ -948,10 +948,13 @@ async function loadIconMirrorStatus() {
     $("#icon-search").disabled = !iconLibraryReady;
     if (!iconLibraryReady) {
       $("#icon-results").innerHTML = '<p class="quiet-state">Building the icon library for the first time \u2014 this can take a few minutes. Search will work once at least one source finishes syncing.</p>';
-      if ($("#icon-dialog").open) setTimeout(loadIconMirrorStatus, 4000);
     } else if ($("#icon-search").value.trim().length < 2) {
       $("#icon-results").innerHTML = '<p class="quiet-state">Enter at least two characters to search.</p>';
     }
+    // Keep polling as long as ANY source is still running, not just until search unlocks --
+    // otherwise a source that's still syncing after the first one finishes gets stuck showing
+    // "syncing..." in the status line until the dialog is closed and reopened.
+    if (Object.values(sources).some(info => info.status === "running") && $("#icon-dialog").open) setTimeout(loadIconMirrorStatus, 4000);
   } catch { el.innerHTML = ""; }
 }
 

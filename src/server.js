@@ -1129,6 +1129,16 @@ function iconLabel(slug) {
   return slug.split("-").map(word => word ? word[0].toUpperCase() + word.slice(1) : "").join(" ");
 }
 
+// Lucide icons are stroke="currentColor" outline glyphs meant to inherit a surrounding text
+// color -- but the picker renders every preview as a plain <img src>, and a browser loading an
+// SVG through <img> cannot resolve currentColor against the page's CSS at all (it silently falls
+// back to black). Bake in a fixed light color that matches the app's own (dark-only) text token
+// so these render correctly wherever they're displayed, with no CSS dependency needed.
+const LUCIDE_ICON_COLOR = "#c7d0de";
+function recolorLucideSvg(buffer) {
+  return Buffer.from(buffer.toString("utf8").replace(/currentColor/g, LUCIDE_ICON_COLOR), "utf8");
+}
+
 // Icon references are namespaced as "source:slug" (e.g. "dashboard-icons:jellyfin") so a
 // second catalog source can be added later without a schema change. A bare slug with no
 // colon is treated as dashboard-icons for backward compatibility with icons saved before
@@ -1215,7 +1225,7 @@ async function runIconMirrorSync(source, { initial = false } = {}) {
         if (!filename.endsWith(".svg")) continue;
         const slug = filename.slice(0, -4);
         if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) continue;
-        const buffer = await fsp.readFile(path.join(lucideIconsDir, filename));
+        const buffer = recolorLucideSvg(await fsp.readFile(path.join(lucideIconsDir, filename)));
         let label = iconLabel(slug), searchText = slug;
         try {
           const meta = JSON.parse(await fsp.readFile(path.join(lucideIconsDir, `${slug}.json`), "utf8"));
@@ -1278,6 +1288,10 @@ async function cacheIcon(rawRef) {
     if (!response) throw Object.assign(new Error("The selected icon could not be downloaded."), { status: 502 });
     buffer = format === "svg" ? Buffer.from(await response.text(), "utf8") : Buffer.from(await response.arrayBuffer());
   }
+  // A mirrored lucide file is already recolored at sync time (see recolorLucideSvg), but a live
+  // fallback fetch (not yet mirrored, or a stale pre-fix mirror file) still has the original
+  // stroke="currentColor" -- recolor unconditionally here too so this path can't regress it.
+  if (source === "lucide" && format === "svg") buffer = recolorLucideSvg(buffer);
   const filename = `${source}-${slug}.${format}`;
   if (format === "svg") {
     const svg = buffer.toString("utf8");
