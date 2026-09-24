@@ -36,7 +36,6 @@ const certificateExportsDir = path.join(certificatesRoot, "exports");
 const accessLogPath = path.join(logsDir, "access.json");
 const activityLogPath = path.join(logsDir, "activity.jsonl");
 const certificateDir = path.join(managedCertificatesDir, "certificates");
-const iconCatalogPath = path.join(iconsDir, "catalog.json");
 const iconMirrorRoot = path.join(iconsDir, "mirror");
 function iconMirrorSourceDir(source) { return path.join(iconMirrorRoot, source); }
 const caddyfilePath = path.join(caddyDir, "Caddyfile");
@@ -79,7 +78,6 @@ const rateLimitBuckets = new Map();
 let dockerSocketMounted = false;
 let currentAuditActor = null;
 const probeFailures = { gateway: 0, http: 0, https: 0 };
-let iconCatalog = null;
 let storage;
 
 
@@ -1097,21 +1095,34 @@ function stableProbe(name, responding) {
 }
 
 
-// --- Icon catalog (searchable dashboard-icons list) & icon caching -------------------------------
-async function loadIconCatalog() {
-  if (iconCatalog) return iconCatalog;
+// --- Icon metadata (aliases/categories/tags), fetched once per mirror sync and written
+//     straight into the icon_mirror table -- search and labeling read only from SQLite,
+//     never from a cached JSON file on disk.
+async function fetchIconMetadata(source) {
+  const metadata = new Map();
   try {
-    const response = await fetch("https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/metadata.json", { signal: AbortSignal.timeout(5000) });
-    if (!response.ok) throw new Error(`Icon catalogue returned ${response.status}.`);
-    const text = await response.text();
-    if (text.length > 8 * 1024 * 1024) throw new Error("Icon catalogue is unexpectedly large.");
-    iconCatalog = JSON.parse(text);
-    await fsp.writeFile(iconCatalogPath, text);
-  } catch (error) {
-    try { iconCatalog = JSON.parse(await fsp.readFile(iconCatalogPath, "utf8")); }
-    catch { throw Object.assign(new Error("The icon catalogue is temporarily unavailable."), { status: 503 }); }
-  }
-  return iconCatalog;
+    if (source === "dashboard-icons") {
+      const response = await fetch("https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/metadata.json", { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) return metadata;
+      const catalog = JSON.parse(await response.text());
+      for (const [slug, entry] of Object.entries(catalog)) {
+        const aliases = entry.aliases || [];
+        const categories = entry.categories || [];
+        metadata.set(slug, { label: iconLabel(slug), searchText: [slug, ...aliases, ...categories].join(" ").toLowerCase() });
+      }
+    } else if (source === "selfhst") {
+      const response = await fetch("https://raw.githubusercontent.com/selfhst/icons/main/index.json", { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) return metadata;
+      const entries = JSON.parse(await response.text());
+      for (const entry of entries) {
+        const slug = String(entry.Reference || "").toLowerCase();
+        if (!slug) continue;
+        const name = entry.Name || iconLabel(slug);
+        metadata.set(slug, { label: name, searchText: [slug, name, entry.Category || "", entry.Tags || ""].join(" ").toLowerCase() });
+      }
+    }
+  } catch (error) { console.warn(`Could not fetch icon metadata for ${source}:`, error.message); }
+  return metadata;
 }
 
 function iconLabel(slug) {
@@ -1173,8 +1184,12 @@ async function runIconMirrorSync(source, { initial = false } = {}) {
     const extractedRoot = (await fsp.readdir(tmpRoot, { withFileTypes: true })).find(entry => entry.isDirectory());
     if (!extractedRoot) throw new Error("Tarball did not contain a source directory.");
     const extractedPath = path.join(tmpRoot, extractedRoot.name);
-    let total = 0;
-    const seenSlugs = [];
+    const metadata = await fetchIconMetadata(source);
+    // A Set, not an array: the same icon commonly ships in more than one format (svg + png +
+    // webp), and job.total / the removed-icon diff both need the count of distinct icons, not
+    // the count of files copied -- counting files here previously inflated the jobs-panel total
+    // to roughly 3x the picker's own "N icons mirrored" count for the same sync.
+    const seenSlugs = new Set();
     for (const format of ["svg", "png", "webp"]) {
       const formatDir = path.join(extractedPath, format);
       let entries;
@@ -1188,16 +1203,16 @@ async function runIconMirrorSync(source, { initial = false } = {}) {
         const buffer = await fsp.readFile(path.join(formatDir, filename));
         const contentHash = crypto.createHash("sha256").update(buffer).digest("hex");
         await fsp.writeFile(path.join(destDir, filename), buffer);
-        storage?.upsertIconMirror({ source, slug, format, contentHash });
-        seenSlugs.push(slug);
-        total += 1;
+        const entryMeta = metadata.get(slug);
+        storage?.upsertIconMirror({ source, slug, format, contentHash, label: entryMeta?.label, searchText: entryMeta?.searchText });
+        seenSlugs.add(slug);
       }
     }
-    const removedCount = storage?.markIconMirrorRemoved(source, seenSlugs) || 0;
-    job.total = total;
+    const removedCount = storage?.markIconMirrorRemoved(source, [...seenSlugs]) || 0;
+    job.total = seenSlugs.size;
     job.status = "idle";
     job.lastRunAt = new Date().toISOString();
-    recordActivity(`Icon mirror sync (${source}): ${total} icons synced${removedCount ? `, ${removedCount} removed upstream` : ""}.`, "ok");
+    recordActivity(`Icon mirror sync (${source}): ${seenSlugs.size} icons synced${removedCount ? `, ${removedCount} removed upstream` : ""}.`, "ok");
   } catch (error) {
     job.status = "error";
     job.lastError = error.message;
@@ -1213,11 +1228,14 @@ async function cacheIcon(rawRef) {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(source)) throw Object.assign(new Error("Invalid icon selection."), { status: 400 });
   if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) throw Object.assign(new Error("Invalid icon selection."), { status: 400 });
   if (!ICON_SOURCE_BASE_URLS[source]) throw Object.assign(new Error("Unknown icon source."), { status: 400 });
-  const catalog = await loadIconCatalog();
-  const metadata = catalog[slug];
-  if (!metadata) throw Object.assign(new Error("Icon not found."), { status: 404 });
-  const preferredFormat = metadata.base === "png" ? "png" : "svg";
-  const formatOrder = preferredFormat === "png" ? ["png", "webp", "svg"] : ["svg", "png", "webp"];
+  // No flat catalog lookup: an already-mirrored icon's preferred format comes straight from its
+  // icon_mirror row; anything not yet mirrored just tries all three formats live (the previous
+  // "known-good format first" ordering was a minor optimization, not a correctness requirement --
+  // a live fetch of the wrong format simply 404s and falls through to the next one). This also
+  // fixes a real bug: cacheIcon() previously 404'd on every selfhst icon, because the old catalog
+  // lookup only ever had dashboard-icons entries in it.
+  const mirrorRow = storage?.findIconMirror ? storage.findIconMirror(source, slug) : null;
+  const formatOrder = mirrorRow?.format ? [mirrorRow.format, ...["svg", "png", "webp"].filter(candidate => candidate !== mirrorRow.format)] : ["svg", "png", "webp"];
   let format = null, buffer = null;
   const mirrored = await readMirroredIcon(source, slug, formatOrder);
   if (mirrored) { format = mirrored.format; buffer = mirrored.buffer; }
@@ -1653,6 +1671,8 @@ app.get(["/", "/index.html"], (req, res) => {
 });
 app.use(express.static(publicDir, { setHeaders: (res, filePath) => { if (/\/(app|features)\.js$/.test(filePath)) res.setHeader("Cache-Control", "no-cache"); } }));
 app.use("/site-icons", express.static(iconsDir, { immutable: true, maxAge: "30d", setHeaders: res => res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'") }));
+// Note: /site-icons/mirror/<source>/<format>/<slug>.<format> already resolves through the mount
+// above -- iconMirrorRoot is a subdirectory of iconsDir, so no separate static route is needed.
 
 
 // --- Session / login / MFA login / logout ------------------------------------------------------------
@@ -2185,18 +2205,20 @@ app.post("/api/icons/mirror/:source/sync", (req, res) => {
   res.status(202).json({ ok: true });
 });
 
-app.get("/api/icons/search", async (req, res, next) => {
+app.get("/api/icons/search", (req, res, next) => {
   try {
     const query = String(req.query.q || "").trim().toLowerCase().slice(0, 80);
     if (query.length < 2) return res.json([]);
-    const catalog = await loadIconCatalog();
-    const results = Object.entries(catalog).map(([slug, metadata]) => {
-      const aliases = metadata.aliases || [];
-      const searchText = [slug, ...aliases, ...(metadata.categories || [])].join(" ").toLowerCase();
-      const score = slug === query ? 0 : slug.startsWith(query) ? 1 : aliases.some(alias => alias.toLowerCase() === query) ? 2 : searchText.includes(query) ? 3 : 99;
-      return { slug, metadata, aliases, score };
-    }).filter(item => item.score < 99).sort((left, right) => left.score - right.score || left.slug.localeCompare(right.slug)).slice(0, 30)
-      .map(({ slug, metadata, aliases }) => { const format = metadata.base === "png" ? "png" : "svg"; return { slug: `dashboard-icons:${slug}`, label: iconLabel(slug), aliases: aliases.slice(0, 3), preview: `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/${format}/${slug}.${format}` }; });
+    // Pure SQL against the icon_mirror table -- no flat catalog file, no live upstream fetch.
+    // Both sources are searched together, deduped by slug (dashboard-icons wins on a shared
+    // slug), and only icons that have actually completed a mirror sync are searchable at all.
+    const rows = storage.searchIconMirror ? storage.searchIconMirror(query, 30) : [];
+    const results = rows.map(row => ({
+      slug: `${row.source}:${row.slug}`,
+      label: row.label || iconLabel(row.slug),
+      aliases: [],
+      preview: `/site-icons/mirror/${row.source}/${row.format}/${row.slug}.${row.format}`,
+    }));
     res.json(results);
   } catch (error) { next(error); }
 });

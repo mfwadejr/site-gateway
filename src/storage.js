@@ -79,6 +79,8 @@ export async function openStorage(dataDir, backupsDir) {
   try { db.exec("ALTER TABLE activity_events ADD COLUMN category TEXT NOT NULL DEFAULT 'activity'"); } catch { /* Column already exists. */ }
   try { db.exec("ALTER TABLE api_tokens ADD COLUMN icon TEXT"); } catch { /* Column already exists. */ }
   try { db.exec("ALTER TABLE api_tokens ADD COLUMN icon_slug TEXT"); } catch { /* Column already exists. */ }
+  try { db.exec("ALTER TABLE icon_mirror ADD COLUMN label TEXT"); } catch { /* Column already exists. */ }
+  try { db.exec("ALTER TABLE icon_mirror ADD COLUMN search_text TEXT"); } catch { /* Column already exists. */ }
   const timestamp = now();
   db.prepare("INSERT OR IGNORE INTO instances(id,name,kind,status,created_at,updated_at) VALUES(?,?,?,?,?,?)").run(LOCAL_INSTANCE_ID, "Local Gateway", "local", "active", timestamp, timestamp);
   db.prepare("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(1,?)").run(timestamp);
@@ -189,10 +191,30 @@ export async function openStorage(dataDir, backupsDir) {
   function touchApiToken(id, instanceId = LOCAL_INSTANCE_ID) { db.prepare("UPDATE api_tokens SET last_used_at=? WHERE instance_id=? AND id=?").run(now(), instanceId, id); }
   function setApiTokenIcon(id, { icon, iconSlug }, instanceId = LOCAL_INSTANCE_ID) { const changes = db.prepare("UPDATE api_tokens SET icon=?, icon_slug=? WHERE instance_id=? AND id=?").run(icon || null, iconSlug || null, instanceId, id).changes; return changes > 0 ? listApiTokens(instanceId).find(item => item.id === id) || null : null; }
 
-  function upsertIconMirror({ source, slug, format, contentHash }, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO icon_mirror(instance_id,source,slug,format,status,content_hash,last_synced_at,upstream_removed_at) VALUES(?,?,?,?,'mirrored',?,?,NULL) ON CONFLICT(instance_id,source,slug) DO UPDATE SET format=excluded.format, status='mirrored', content_hash=excluded.content_hash, last_synced_at=excluded.last_synced_at, upstream_removed_at=NULL").run(instanceId, source, slug, format, contentHash, now()); }
+  function upsertIconMirror({ source, slug, format, contentHash, label, searchText }, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO icon_mirror(instance_id,source,slug,format,status,content_hash,last_synced_at,upstream_removed_at,label,search_text) VALUES(?,?,?,?,'mirrored',?,?,NULL,?,?) ON CONFLICT(instance_id,source,slug) DO UPDATE SET format=excluded.format, status='mirrored', content_hash=excluded.content_hash, last_synced_at=excluded.last_synced_at, upstream_removed_at=NULL, label=excluded.label, search_text=excluded.search_text").run(instanceId, source, slug, format, contentHash, now(), label || slug, searchText || slug); }
   function markIconMirrorRemoved(source, slugsStillPresent, instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT slug FROM icon_mirror WHERE instance_id=? AND source=? AND status='mirrored'").all(instanceId, source); const present = new Set(slugsStillPresent); const update = db.prepare("UPDATE icon_mirror SET status='removed', upstream_removed_at=? WHERE instance_id=? AND source=? AND slug=?"); let removed = 0; for (const row of rows) if (!present.has(row.slug)) { update.run(now(), instanceId, source, row.slug); removed += 1; } return removed; }
   function iconMirrorStats(instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT source, status, COUNT(*) AS count, MAX(last_synced_at) AS last_synced_at FROM icon_mirror WHERE instance_id=? GROUP BY source, status").all(instanceId); }
   function findIconMirror(source, slug, instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT * FROM icon_mirror WHERE instance_id=? AND source=? AND slug=?").get(instanceId, source, slug) || null; }
+  function searchIconMirror(query, limit = 30, instanceId = LOCAL_INSTANCE_ID) {
+    const needle = `%${String(query).toLowerCase()}%`;
+    const rows = db.prepare(
+      "SELECT source, slug, format, label, search_text AS searchText FROM icon_mirror " +
+      "WHERE instance_id=? AND status='mirrored' AND (search_text LIKE ? OR slug LIKE ?) " +
+      "ORDER BY CASE WHEN source='dashboard-icons' THEN 0 ELSE 1 END, slug"
+    ).all(instanceId, needle, needle);
+    // One source-priority pass to dedupe by slug (dashboard-icons already sorted first above),
+    // then a relevance sort matching the existing search-tier convention (exact/startsWith/contains).
+    const seen = new Set();
+    const deduped = [];
+    for (const row of rows) { if (seen.has(row.slug)) continue; seen.add(row.slug); deduped.push(row); }
+    const lowerQuery = String(query).toLowerCase();
+    const scored = deduped.map(row => ({
+      ...row,
+      score: row.slug === lowerQuery ? 0 : row.slug.startsWith(lowerQuery) ? 1 : (row.label || "").toLowerCase().startsWith(lowerQuery) ? 2 : 3,
+    }));
+    scored.sort((left, right) => left.score - right.score || left.slug.localeCompare(right.slug));
+    return scored.slice(0, Math.max(1, Math.min(Number(limit) || 30, 100)));
+  }
   // --- Backup history. Independent of what is on disk, so deleted backups and failed
   // attempts stay visible in the timeline.
   function recordBackupEvent(event, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO backup_events(instance_id,type,filename,backup_type,size_bytes,actor_user_id,created_at,safety_backup_filename,status,error_message) VALUES(?,?,?,?,?,?,?,?,?,?)").run(instanceId, String(event.type), event.filename || null, event.backupType || null, event.sizeBytes ?? null, event.actorUserId || null, event.createdAt || now(), event.safetyBackupFilename || null, event.status === "failed" ? "failed" : "success", event.errorMessage ? String(event.errorMessage).slice(0, 500) : null); }
@@ -222,5 +244,5 @@ export async function openStorage(dataDir, backupsDir) {
   }
   function humanizeGatewayErrors(instanceId = LOCAL_INSTANCE_ID) { const friendly = "Gateway configuration rejected: HTTP upstream cannot use HTTPS transport. Disable upstream TLS verification or change the upstream URL to HTTPS."; const activity = db.prepare("SELECT id FROM activity_events WHERE instance_id=? AND message LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const updateActivity = db.prepare("UPDATE activity_events SET message=? WHERE id=?"); for (const row of activity) updateActivity.run(friendly, row.id); const audit = db.prepare("SELECT id FROM audit_events WHERE instance_id=? AND action LIKE '%upstream address scheme is HTTP but transport is configured for HTTP+TLS%'").all(instanceId); const updateAudit = db.prepare("UPDATE audit_events SET action=? WHERE id=?"); for (const row of audit) updateAudit.run(friendly, row.id); return activity.length + audit.length; }
   const result = integrity(); if (result.length !== 1 || result[0] !== "ok") { db.close(); throw new Error(`SQLite integrity check failed: ${result.join(", ")}`); }
-  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, performanceLiveCount, performanceRoutes, performanceErrorBreakdown, performanceTrend, performancePercentiles, performanceTopPaths, performanceSlowest, listApiTokens, createApiToken, findApiTokenByHash, revokeApiToken, touchApiToken, setApiTokenIcon, upsertIconMirror, markIconMirrorRemoved, iconMirrorStats, findIconMirror, recordBackupEvent, listBackupEvents, close: () => db.close() };
+  return { db, databasePath, isNew, snapshot, loadCollection, saveCollection, loadSettings, saveSettings, integrity, recordAudit, listAudit, recordActivity, listActivity, humanizeGatewayErrors, recordAccessEvents, listAccessEvents, pruneEvents, previewPruneEvents, backupTo, performanceLiveCount, performanceRoutes, performanceErrorBreakdown, performanceTrend, performancePercentiles, performanceTopPaths, performanceSlowest, listApiTokens, createApiToken, findApiTokenByHash, revokeApiToken, touchApiToken, setApiTokenIcon, upsertIconMirror, markIconMirrorRemoved, iconMirrorStats, findIconMirror, searchIconMirror, recordBackupEvent, listBackupEvents, close: () => db.close() };
 }

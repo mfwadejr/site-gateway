@@ -932,12 +932,26 @@ function iconMirrorStatusLine(source, info) {
   return `<span class="icon-mirror-source"><strong>${label}:</strong> ${statusText}${info.status !== "running" ? ` <button type="button" class="link-button" data-sync-source="${source}">Sync now</button>` : ""}</span>`;
 }
 
+let iconLibraryReady = true;
+
+// The icon library search endpoint only sees icons that have actually completed a mirror sync
+// (no live upstream fallback, no flat catalog file). On a brand-new install that means search is
+// briefly unusable until the first sync finishes -- so gate the field and explain why instead of
+// silently returning empty results, and re-check every few seconds until it's ready.
 async function loadIconMirrorStatus() {
   const el = $("#icon-mirror-status");
   if (!el) return;
   try {
     const { sources } = await api("/api/icons/mirror/status");
     el.innerHTML = Object.entries(sources).map(([source, info]) => iconMirrorStatusLine(source, info)).join(" \u00b7 ");
+    iconLibraryReady = Object.values(sources).some(info => info.mirrored > 0);
+    $("#icon-search").disabled = !iconLibraryReady;
+    if (!iconLibraryReady) {
+      $("#icon-results").innerHTML = '<p class="quiet-state">Building the icon library for the first time \u2014 this can take a few minutes. Search will work once at least one source finishes syncing.</p>';
+      if ($("#icon-dialog").open) setTimeout(loadIconMirrorStatus, 4000);
+    } else if ($("#icon-search").value.trim().length < 2) {
+      $("#icon-results").innerHTML = '<p class="quiet-state">Enter at least two characters to search.</p>';
+    }
   } catch { el.innerHTML = ""; }
 }
 
@@ -951,6 +965,7 @@ $("#icon-mirror-status")?.addEventListener("click", async event => {
 let iconSearchTimer;
 $("#icon-search").addEventListener("input", event => {
   clearTimeout(iconSearchTimer); const query = event.target.value.trim(); $("#icon-error").textContent = "";
+  if (!iconLibraryReady) return;
   if (query.length < 2) { $("#icon-results").innerHTML = '<p class="quiet-state">Enter at least two characters to search.</p>'; return; }
   $("#icon-results").innerHTML = '<p class="quiet-state">Searching…</p>';
   iconSearchTimer = setTimeout(async () => {
