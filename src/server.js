@@ -1260,9 +1260,21 @@ async function runIconMirrorSync(source, { initial = false } = {}) {
   // meaning every deploy/restart re-triggered a full resync of all three sources within a
   // minute of boot, regardless of whether they already had a fresh mirror. Skip it when a
   // recent-enough mirror already exists; the daily setInterval schedule still keeps it current.
+  // The in-memory `job` object (surfaced to the Dashboard "Scheduled jobs" tile and the
+  // Administration System panel via system.jobs) previously stayed untouched on this skip
+  // path -- it reset to lastRunAt: null on every restart and never got updated again unless
+  // this exact process happened to run a real sync, so those two panels kept showing "No run
+  // recorded yet" even though a sync had genuinely completed (just in an earlier process).
+  // Populate it from the same persisted row the freshness check already looked up, so all
+  // three surfaces (this panel, the Dashboard tile, and the icon picker's own status line,
+  // which already read the real SQLite-backed count) agree.
   if (initial && storage?.iconMirrorStats) {
     const recentRow = storage.iconMirrorStats().find(row => row.source === source && row.status === "mirrored" && row.count > 0);
-    if (recentRow?.last_synced_at && Date.now() - new Date(recentRow.last_synced_at).getTime() < 20 * 60 * 60000) return;
+    if (recentRow?.last_synced_at && Date.now() - new Date(recentRow.last_synced_at).getTime() < 20 * 60 * 60000) {
+      job.lastRunAt = recentRow.last_synced_at;
+      job.total = recentRow.count;
+      return;
+    }
   }
   job.status = "running";
   job.lastError = null;
