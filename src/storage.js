@@ -84,6 +84,22 @@ export async function openStorage(dataDir, backupsDir) {
   const timestamp = now();
   db.prepare("INSERT OR IGNORE INTO instances(id,name,kind,status,created_at,updated_at) VALUES(?,?,?,?,?,?)").run(LOCAL_INSTANCE_ID, "Local Gateway", "local", "active", timestamp, timestamp);
   db.prepare("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(1,?)").run(timestamp);
+  // Migration 2: Gateway Events used to classify each row into one of only three categories
+  // (activity/certificate/security) at write time, purely for retention pruning. The UI's own
+  // filter dropdown separately re-derived a richer six-way category from the same message text
+  // client-side, on every render, using a different regex -- the two could disagree. Now that
+  // classifyActivity() (above) is the single source of truth computed once at write time,
+  // every pre-existing row still carries its old 3-way category and needs recomputing under the
+  // new 6-way scheme so historical and new events filter consistently. Guarded by its own
+  // schema_migrations row so this bulk UPDATE runs exactly once, not on every boot.
+  if (!db.prepare("SELECT 1 FROM schema_migrations WHERE version=2").get()) {
+    const legacyRows = db.prepare("SELECT id,message FROM activity_events").all();
+    if (legacyRows.length) {
+      const updateCategory = db.prepare("UPDATE activity_events SET category=? WHERE id=?");
+      transaction(() => { for (const row of legacyRows) updateCategory.run(classifyActivity(row.message), row.id); });
+    }
+    db.prepare("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(2,?)").run(timestamp);
+  }
 
   function transaction(work) { db.exec("BEGIN IMMEDIATE"); try { const result = work(); db.exec("COMMIT"); return result; } catch (error) { db.exec("ROLLBACK"); throw error; } }
   function loadCollection(kind, instanceId = LOCAL_INSTANCE_ID) { const table = entityTables[kind]; if (!table) throw new Error(`Unsupported collection ${kind}`); return db.prepare(`SELECT payload FROM ${table} WHERE instance_id=? ORDER BY created_at,id`).all(instanceId).map(row => JSON.parse(row.payload)); }
@@ -114,8 +130,17 @@ export async function openStorage(dataDir, backupsDir) {
   function saveSettings(value, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO settings(instance_id,payload,updated_at) VALUES(?,?,?) ON CONFLICT(instance_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at").run(instanceId, JSON.stringify(value), now()); }
   function integrity() { return db.prepare("PRAGMA integrity_check").all().map(row => Object.values(row)[0]); }
   function recordAudit(action, status = "ok", details = null, actorId = null, instanceId = LOCAL_INSTANCE_ID) { db.prepare("INSERT INTO audit_events(instance_id,actor_id,action,status,details,created_at) VALUES(?,?,?,?,?,?)").run(instanceId, actorId, action, status, details ? JSON.stringify(details) : null, now()); }
-  function recordActivity(message, status = "ok", instanceId = LOCAL_INSTANCE_ID) { const text = String(message); const category = /cert|tls|acme|certificate/i.test(text) ? "certificate" : /login|password|security|access list|credential/i.test(text) ? "security" : "activity"; const result = db.prepare("INSERT INTO activity_events(instance_id,message,status,category,created_at) VALUES(?,?,?,?,?)").run(instanceId, text, status, category, now()); return result.lastInsertRowid; }
-  function listActivity(limit = 100, instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT message,status,category,created_at AS at FROM activity_events WHERE instance_id=? ORDER BY id DESC LIMIT ?").all(instanceId, Math.max(1, Math.min(Number(limit) || 100, 500))); }
+  // The single source of truth for a Gateway Event's category. Previously this coarse 3-way
+  // split (activity/certificate/security, used only for retention pruning) and a separate,
+  // richer 6-way split computed independently client-side by categoryOf() in app.js (used only
+  // for the UI's filter dropdown) classified the same message text with two different regexes
+  // that could disagree. classifyActivity() is now the one place this decision is made, at
+  // write time, and both the UI filter and retention pruning read the stored result instead of
+  // re-deriving it. See mapActivityCategoryToRetentionBucket() below for how these six values
+  // map back onto the three retention buckets the Logs & Retention policy still tracks.
+  function classifyActivity(text) { return /cert|tls|https|acme/i.test(text) ? "certificate" : /health|upstream|response|fetch/i.test(text) ? "health" : /login|user|password|access|credential|security/i.test(text) ? "authentication" : /backup|restore/i.test(text) ? "backup" : /config|route|host|gateway|reload/i.test(text) ? "configuration" : "system"; }
+  function recordActivity(message, status = "ok", instanceId = LOCAL_INSTANCE_ID) { const text = String(message); const category = classifyActivity(text); const result = db.prepare("INSERT INTO activity_events(instance_id,message,status,category,created_at) VALUES(?,?,?,?,?)").run(instanceId, text, status, category, now()); return result.lastInsertRowid; }
+  function listActivity(limit = 100, instanceId = LOCAL_INSTANCE_ID) { return db.prepare("SELECT id,message,status,category,created_at AS at FROM activity_events WHERE instance_id=? ORDER BY id DESC LIMIT ?").all(instanceId, Math.max(1, Math.min(Number(limit) || 100, 500))); }
   function recordAccessEvents(events, instanceId = LOCAL_INSTANCE_ID) { const insert = db.prepare("INSERT OR IGNORE INTO access_events(instance_id,at,host,method,uri,status,size,duration_ms,remote_ip,source) VALUES(?,?,?,?,?,?,?,?,?,?)"); transaction(() => { for (const event of events) insert.run(instanceId, event.at || null, event.host || null, event.method || null, event.uri || null, event.status ?? null, event.size ?? null, event.durationMs ?? null, event.remoteIp || null, event.source); }); }
   function listAccessEvents(limit = 100, host = "", instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT at,host,method,uri,status,size,duration_ms AS durationMs,remote_ip AS remoteIp FROM access_events WHERE instance_id=? AND (?='' OR host=?) ORDER BY id DESC LIMIT ?").all(instanceId, host, host, Math.max(1, Math.min(Number(limit) || 100, 500))); return rows; }
   function performanceLiveCount(windowSeconds = 60, instanceId = LOCAL_INSTANCE_ID) { const cutoff = new Date(Date.now() - Math.max(5, Number(windowSeconds) || 60) * 1000).toISOString(); return db.prepare("SELECT COUNT(*) AS count FROM access_events WHERE instance_id=? AND at>=?").get(instanceId, cutoff).count; }
@@ -157,8 +182,15 @@ export async function openStorage(dataDir, backupsDir) {
     for (let bucket = startBucket; bucket <= endBucket; bucket += bucketMs) { const entry = buckets.get(bucket); points.push({ at: new Date(bucket).toISOString(), count: entry?.count || 0, errors: entry?.errors || 0 }); }
     return points;
   }
-  function pruneEvents(policy = {}, instanceId = LOCAL_INSTANCE_ID) { const cutoff = days => new Date(Date.now() - Math.max(7, Number(days) || 30) * 86400000).toISOString(); return transaction(() => { const counts = {}; const jobs = [["access", "access_events", "at", policy.accessDays, ""], ["activity", "activity_events", "created_at", policy.activityDays, "category='activity'"], ["certificate", "activity_events", "created_at", policy.certificateDays, "category='certificate'"], ["security", "activity_events", "created_at", policy.securityDays, "category='security'"], ["audit", "audit_events", "created_at", policy.auditDays, ""]]; for (const [name, table, column, days, filter] of jobs) { const result = db.prepare(`DELETE FROM ${table} WHERE instance_id=? AND ${column} < ?${filter ? ` AND ${filter}` : ""}`).run(instanceId, cutoff(days)); counts[name] = Number(result.changes || 0); } return counts; }); }
-  function previewPruneEvents(policy = {}, instanceId = LOCAL_INSTANCE_ID) { const cutoff = days => new Date(Date.now() - Math.max(7, Number(days) || 30) * 86400000).toISOString(); const counts = {}; const jobs = [["access", "access_events", "at", policy.accessDays, ""], ["activity", "activity_events", "created_at", policy.activityDays, "category='activity'"], ["certificate", "activity_events", "created_at", policy.certificateDays, "category='certificate'"], ["security", "activity_events", "created_at", policy.securityDays, "category='security'"], ["audit", "audit_events", "created_at", policy.auditDays, ""]]; for (const [name, table, column, days, filter] of jobs) counts[name] = Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE instance_id=? AND ${column} < ?${filter ? ` AND ${filter}` : ""}`).get(instanceId, cutoff(days)).count || 0); return counts; }
+  // Retention still tracks three buckets for Gateway Events (activity/certificate/security),
+  // matching the Logs & Retention policy's own three day-count fields -- but the stored
+  // category column now holds one of six values (see classifyActivity above), so each bucket
+  // maps onto a set of those six rather than a single exact match: "certificate" is unchanged,
+  // "security" now matches the "authentication" category (closest equivalent to the old
+  // security bucket), and "activity" is everything else (health/backup/configuration/system).
+  const ACTIVITY_RETENTION_FILTERS = { activity: "category NOT IN ('certificate','authentication')", certificate: "category='certificate'", security: "category='authentication'" };
+  function pruneEvents(policy = {}, instanceId = LOCAL_INSTANCE_ID) { const cutoff = days => new Date(Date.now() - Math.max(7, Number(days) || 30) * 86400000).toISOString(); return transaction(() => { const counts = {}; const jobs = [["access", "access_events", "at", policy.accessDays, ""], ["activity", "activity_events", "created_at", policy.activityDays, ACTIVITY_RETENTION_FILTERS.activity], ["certificate", "activity_events", "created_at", policy.certificateDays, ACTIVITY_RETENTION_FILTERS.certificate], ["security", "activity_events", "created_at", policy.securityDays, ACTIVITY_RETENTION_FILTERS.security], ["audit", "audit_events", "created_at", policy.auditDays, ""]]; for (const [name, table, column, days, filter] of jobs) { const result = db.prepare(`DELETE FROM ${table} WHERE instance_id=? AND ${column} < ?${filter ? ` AND ${filter}` : ""}`).run(instanceId, cutoff(days)); counts[name] = Number(result.changes || 0); } return counts; }); }
+  function previewPruneEvents(policy = {}, instanceId = LOCAL_INSTANCE_ID) { const cutoff = days => new Date(Date.now() - Math.max(7, Number(days) || 30) * 86400000).toISOString(); const counts = {}; const jobs = [["access", "access_events", "at", policy.accessDays, ""], ["activity", "activity_events", "created_at", policy.activityDays, ACTIVITY_RETENTION_FILTERS.activity], ["certificate", "activity_events", "created_at", policy.certificateDays, ACTIVITY_RETENTION_FILTERS.certificate], ["security", "activity_events", "created_at", policy.securityDays, ACTIVITY_RETENTION_FILTERS.security], ["audit", "audit_events", "created_at", policy.auditDays, ""]]; for (const [name, table, column, days, filter] of jobs) counts[name] = Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE instance_id=? AND ${column} < ?${filter ? ` AND ${filter}` : ""}`).get(instanceId, cutoff(days)).count || 0); return counts; }
   function listAudit(filters = {}, instanceId = LOCAL_INSTANCE_ID) { const rows = db.prepare("SELECT id,actor_id,action,status,details,created_at FROM audit_events WHERE instance_id=? ORDER BY id DESC LIMIT 500").all(instanceId); return rows.filter(row => (!filters.user || row.actor_id === filters.user) && (!filters.action || row.action.toLowerCase().includes(filters.action.toLowerCase())) && (!filters.status || row.status === filters.status)).map(row => ({ ...row, details: row.details ? JSON.parse(row.details) : null })); }
   // 95th-percentile latency per host. SQLite has no percentile aggregate, so the
   // durations come back pre-sorted per host and the index is picked in JavaScript.

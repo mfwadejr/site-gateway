@@ -8,11 +8,11 @@
   <p><strong>Host. Proxy. Secure.</strong></p>
   <p>A friendly, self-hosted gateway for homelabs and small teams — publish static sites, reverse-proxy your apps, forward raw TCP/UDP streams, and manage TLS and access from one calm dashboard.</p>
   <p>
-    <a href="https://github.com/mfwadejr/site-gateway2/actions/workflows/container.yml"><img alt="Container build" src="https://github.com/mfwadejr/site-gateway2/actions/workflows/container.yml/badge.svg"></a>
+    <a href="https://github.com/mfwadejr/site-gateway/actions/workflows/container.yml"><img alt="Container build" src="https://github.com/mfwadejr/site-gateway/actions/workflows/container.yml/badge.svg"></a>
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.16.58-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.16.101-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -29,7 +29,13 @@
 
 ## Why Site Gateway
 
-Most homelabs end up with the same problem: a handful of self-hosted apps, a couple of static sites, maybe a game server, and no clean way to expose any of it without hand-editing Nginx or Caddy configs every time something changes. Site Gateway is a single container that gives that setup one dashboard: point a domain at it, pick what you're publishing, and it handles routing, certificates, and renewal behind the scenes with [Caddy](https://caddyserver.com/).
+Site Gateway didn't start as an attempt to build a reverse-proxy manager. It started with a much smaller problem: wanting something simple to self-host one website, without hand-editing Nginx or Caddy configs to get a domain and a certificate pointed at it. Most of the existing options were either too raw (edit a Caddyfile or Nginx config directly, reload, hope) or too heavy for a single site.
+
+Getting that one site working well surfaced the actual goal. Once hosting a static site was a solved, three-step problem, the same reasoning applied everywhere else: proxying Plex or Jellyfin, forwarding a raw TCP/UDP port for a game server, redirecting a domain, issuing and renewing a certificate. Each of those was its own manual chore in whatever reverse-proxy setup was already running. What was actually wanted wasn't "a nicer way to host a website" — it was a replacement for the entire existing reverse-proxy setup, one dashboard that handled all of it the same simple way.
+
+That's what Site Gateway is now: a single container that gives a homelab or small team one dashboard for static sites, proxy routes, redirects, raw streams, TLS, and access control, with [Caddy](https://caddyserver.com/) doing the actual routing and certificate work underneath. It's built for the novice and the homelabber alike — someone who has never touched a Caddyfile should be able to point a domain at an app in a couple of clicks, and someone who has run Nginx Proxy Manager or Traefik for years should find nothing missing.
+
+The mantra behind day-to-day use is **three steps**. Hosting a new static site should take about three steps. Standing up a new proxy host for an app should take about three steps. That rule is about the routine, day-to-day tasks you'll repeat dozens of times — it deliberately doesn't apply to the one-time install and first-run setup below, which is honestly closer to five steps, because getting Docker, your `.env`, and your first admin account right the first time matters more than shaving it down to match the mantra.
 
 It's intentionally narrower than a general-purpose proxy manager. You describe *what* you want (a site, a proxy target, a redirect, a raw port forward) and Site Gateway writes and safely reloads the underlying gateway configuration — no Caddyfile required.
 
@@ -103,7 +109,7 @@ At startup, the container creates the complete `/data` hierarchy, applies `PUID`
 
 ## Unraid
 
-1. Add the container from **Docker → Add Container** using the image `git.us2plus2.com/marvin/site-gateway:latest`, or search Community Applications once a template is published.
+1. Add the container from **Docker → Add Container** using the image `ghcr.io/mfwadejr/site-gateway:latest`, or search Community Applications once a template is published.
 2. Map ports `80`, `443` (TCP+UDP), `8080`, and `9000-9099` as above, plus any Streaming Host ports you plan to use.
 3. Map one path, e.g. `/mnt/user/appdata/site-gateway:/data`.
 4. Set `PUID=99` and `PGID=100` so the container writes to `/data` as the `nobody`/`users` account Unraid expects.

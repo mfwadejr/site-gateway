@@ -2287,7 +2287,13 @@ app.get("/api/logs", async (req, res, next) => {
   try {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 250);
     const host = normalizeDomain(req.query.host);
-    res.json({ entries: storage.listAccessEvents(limit, host), hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort(), activity: recentActivity });
+    // Gateway Events used to be served from `recentActivity`, an in-memory buffer capped at
+    // only the 20 most recent entries (see recordActivity above) -- meaning the Logs view's
+    // Gateway Events table, and any severity/category filtering over it, could only ever see
+    // the last 20 events since the process last started, regardless of how much real history
+    // storage.listActivity() actually has in SQLite. Switched to the same real, persisted
+    // history Access requests already uses, at the same 500-row ceiling.
+    res.json({ entries: storage.listAccessEvents(limit, host), hosts: [...new Set([...sites, ...proxies, ...redirects].flatMap(item => normalizeDomains(item.domain, item.domains)))].sort(), activity: storage.listActivity(500) });
   } catch (error) { next(error); }
 });
 app.get("/api/performance", (req, res, next) => {

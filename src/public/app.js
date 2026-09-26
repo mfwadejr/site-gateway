@@ -349,18 +349,78 @@ $("#certificate-list").addEventListener("keydown", event => { if (event.key !== 
 $("#cert-threshold-trigger").addEventListener("click", () => { renderHealthSettings(); $("#health-settings-dialog").showModal(); });
 
 
-// --- Logs view -------------------------------------------------------------------------
-function renderLogs() {
+// --- Logs view: a single combined page (Access requests / Gateway events / Audit log). ------
+// One type dropdown drives everything below it: which table is visible, what the cascading
+// filter dropdown(s) mean, and what the search box searches. Each type keeps its own render
+// function and table markup rather than one generic table, since the three shapes genuinely
+// differ (access has domain/status, gateway has severity/category, audit has user/result).
+const LOGS_TYPE_CONFIG = {
+  access: { heading: "Access requests", description: "Requests handled by configured domains. Sensitive headers are never displayed.", filterALabel: "Domain", filterBLabel: "Response status", filterBOptions: '<option value="">All responses</option><option value="2">Successful · 2xx</option><option value="3">Redirects · 3xx</option><option value="4">Client errors · 4xx</option><option value="5">Server errors · 5xx</option>', searchPlaceholder: "Search by domain or path" },
+  gateway: { heading: "Gateway events", description: "Configuration, certificate, and health events recorded by Site Gateway.", filterALabel: "Severity", filterAOptions: '<option value="">All severities</option><option value="ok">Normal</option><option value="warning">Warnings</option><option value="error">Errors</option>', filterBLabel: "Category", filterBOptions: '<option value="">All categories</option><option value="configuration">Configuration</option><option value="certificate">Certificates / TLS</option><option value="health">Upstream health</option><option value="authentication">Authentication</option><option value="backup">Backups</option><option value="system">System</option>', searchPlaceholder: "Search by message" },
+  audit: { heading: "Audit log", description: "A history of Site Gateway configuration changes. Audit records cannot be edited or deleted.", filterALabel: "Result", filterAOptions: '<option value="">All results</option><option value="ok">Success</option><option value="error">Failed</option>', hideFilterB: true, searchPlaceholder: "Search by user, action, or target" }
+};
+function currentLogsType() { return $("#logs-type") ? $("#logs-type").value : "access"; }
+// Applies the chrome (heading, filter labels/options, search placeholder, which table shows)
+// for the given type. Does not fetch or render rows -- callers do that afterward.
+function applyLogsTypeChrome(type) {
+  const config = LOGS_TYPE_CONFIG[type]; if (!config) return;
+  $("#logs-heading").textContent = config.heading; $("#logs-description").textContent = config.description;
+  document.querySelectorAll("[data-logs-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.logsPanel !== type));
+  $("#logs-filter-a-wrap").firstChild.textContent = config.filterALabel;
+  if (type === "access") { const selected = $("#logs-filter-a").value; $("#logs-filter-a").innerHTML = '<option value="">All domains</option>' + (state.logs?.hosts || []).map(host => `<option value="${escapeHtml(host)}">${escapeHtml(host)}</option>`).join(""); $("#logs-filter-a").value = selected; }
+  else { const selected = $("#logs-filter-a").value; $("#logs-filter-a").innerHTML = config.filterAOptions; if ([...$("#logs-filter-a").options].some(option => option.value === selected)) $("#logs-filter-a").value = selected; }
+  $("#logs-filter-b-wrap").classList.toggle("hidden", Boolean(config.hideFilterB));
+  if (!config.hideFilterB) { $("#logs-filter-b-wrap").firstChild.textContent = config.filterBLabel; const selected = $("#logs-filter-b").value; $("#logs-filter-b").innerHTML = config.filterBOptions; if ([...$("#logs-filter-b").options].some(option => option.value === selected)) $("#logs-filter-b").value = selected; }
+  $("#logs-search").placeholder = config.searchPlaceholder;
+}
+function renderLogsAccessAndGateway() {
   const data = state.logs; if (!data) return;
-  const selected = $("#log-host").value; $("#log-host").innerHTML = '<option value="">All domains</option>' + data.hosts.map(host => `<option value="${escapeHtml(host)}">${escapeHtml(host)}</option>`).join(""); $("#log-host").value = selected;
-  const statusClass = $("#log-status").value, entries = statusClass ? data.entries.filter(entry => String(entry.status || "").startsWith(statusClass)) : data.entries;
-  const errors = entries.filter(entry => entry.status >= 400).length, measured = entries.filter(entry => entry.durationMs != null), average = measured.length ? Math.round(measured.reduce((sum,entry) => sum + entry.durationMs,0) / measured.length) : null;
-  $("#log-summary").innerHTML = `${entries.length} request${entries.length === 1 ? "" : "s"} · ${errors} error response${errors === 1 ? "" : "s"} · ${average == null ? "no latency data" : `${average} ms average`} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
-  $("#log-rows").innerHTML = entries.length ? entries.map(entry => `<tr><td>${escapeHtml(formatTime(entry.at))}</td><td>${escapeHtml(entry.host || "—")}</td><td><code>${escapeHtml(entry.method || "")} ${escapeHtml(entry.uri || "")}</code></td><td><span class="http-status ${entry.status >= 500 ? "bad" : ""}">${entry.status ?? "—"}</span></td><td>${entry.durationMs == null ? "—" : `${entry.durationMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No matching requests have been logged yet.</td></tr>';
-  const categoryOf = message => /cert|tls|https/i.test(message) ? "certificate" : /health|upstream|response|fetch/i.test(message) ? "health" : /login|user|password|access/i.test(message) ? "authentication" : /backup|restore/i.test(message) ? "backup" : /config|route|host|gateway|reload/i.test(message) ? "configuration" : "system";
-  const severity = $("#event-severity").value, category = $("#event-category").value;
-  const activity = data.activity.filter(item => (!severity || item.status === severity) && (!category || categoryOf(item.message) === category));
-  $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const eventCategory = categoryOf(item.message); const indicatorClass = item.status === "error" ? "disabled" : item.status === "warning" ? "error" : "running"; const severityLabel = item.status === "error" ? "Error" : item.status === "warning" ? "Warning" : "Normal"; return `<tr${item.id ? ` data-event-id="${item.id}"` : ""}><td>${escapeHtml(formatTime(item.at))}</td><td><span class="status-dot ${indicatorClass}"></span>${severityLabel}</td><td>${escapeHtml(eventCategory)}</td><td>${escapeHtml(item.message)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching gateway events. Try a different severity or category filter.</td></tr>';
+  const type = currentLogsType(); if (type !== "access" && type !== "gateway") return;
+  const search = $("#logs-search").value.trim().toLowerCase();
+  if (type === "access") {
+    const statusClass = $("#logs-filter-b").value, host = $("#logs-filter-a").value;
+    let entries = statusClass ? data.entries.filter(entry => String(entry.status || "").startsWith(statusClass)) : data.entries;
+    if (host) entries = entries.filter(entry => entry.host === host);
+    if (search) entries = entries.filter(entry => (entry.host || "").toLowerCase().includes(search) || (entry.uri || "").toLowerCase().includes(search));
+    const errors = entries.filter(entry => entry.status >= 400).length, measured = entries.filter(entry => entry.durationMs != null), average = measured.length ? Math.round(measured.reduce((sum,entry) => sum + entry.durationMs,0) / measured.length) : null;
+    $("#log-summary").innerHTML = `${entries.length} request${entries.length === 1 ? "" : "s"} · ${errors} error response${errors === 1 ? "" : "s"} · ${average == null ? "no latency data" : `${average} ms average`} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
+    $("#log-rows").innerHTML = entries.length ? entries.map(entry => `<tr><td>${escapeHtml(formatTime(entry.at))}</td><td>${escapeHtml(entry.host || "—")}</td><td><code>${escapeHtml(entry.method || "")} ${escapeHtml(entry.uri || "")}</code></td><td><span class="http-status ${entry.status >= 500 ? "bad" : ""}">${entry.status ?? "—"}</span></td><td>${entry.durationMs == null ? "—" : `${entry.durationMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No matching requests have been logged yet.</td></tr>';
+  } else {
+    const severity = $("#logs-filter-a").value, category = $("#logs-filter-b").value;
+    // item.category now comes straight from the server's single classifyActivity() (storage.js),
+    // computed once at write time -- no longer re-derived here by a second, independent regex.
+    let activity = data.activity.filter(item => (!severity || item.status === severity) && (!category || item.category === category));
+    if (search) activity = activity.filter(item => item.message.toLowerCase().includes(search));
+    $("#log-summary").innerHTML = `${activity.length} event${activity.length === 1 ? "" : "s"} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
+    $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const indicatorClass = item.status === "error" ? "disabled" : item.status === "warning" ? "error" : "running"; const severityLabel = item.status === "error" ? "Error" : item.status === "warning" ? "Warning" : "Normal"; return `<tr${item.id ? ` data-event-id="${item.id}"` : ""}><td>${escapeHtml(formatTime(item.at))}</td><td><span class="status-dot ${indicatorClass}"></span>${severityLabel}</td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.message)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching gateway events. Try a different severity or category filter.</td></tr>';
+  }
+}
+async function renderLogsAudit() {
+  const result = $("#logs-filter-a").value, action = $("#logs-search").value;
+  const records = await api(`/api/audit?action=${encodeURIComponent(action)}&status=${encodeURIComponent(result)}`);
+  $("#log-summary").innerHTML = `${records.length} record${records.length === 1 ? "" : "s"} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
+  $("#logs-audit-list").innerHTML = records.length ? records.map(item => { const failed = item.status === "error"; return `<tr><td>${escapeHtml(formatTime(item.created_at))}</td><td>${escapeHtml(item.actor || "System")}</td><td><span class="status-dot ${failed ? "error" : "running"}"></span>${failed ? "Failed" : "Success"}</td><td>${escapeHtml(item.action)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching audit records.</td></tr>';
+}
+async function renderLogs() {
+  const type = currentLogsType();
+  if (type === "audit") { try { await renderLogsAudit(); } catch (error) { toast(error.message, "error"); } }
+  else renderLogsAccessAndGateway();
+}
+// Audit is only ever offered as a type when the signed-in user is an administrator -- the
+// same role check the standalone Audit log admin tab used before it was folded into this page.
+// The API route (/api/audit) is independently gated server-side regardless of what this
+// dropdown offers, so hiding the option here is a UX nicety on top of real enforcement, not
+// the only thing standing in the way of a non-administrator seeing audit data.
+function ensureLogsAuditOption() {
+  const select = $("#logs-type"); if (!select) return;
+  const hasOption = [...select.options].some(option => option.value === "audit");
+  if (state.user?.role === "administrator" && !hasOption) select.insertAdjacentHTML("beforeend", '<option value="audit">Audit log</option>');
+  else if (state.user?.role !== "administrator" && hasOption) { select.querySelector('option[value="audit"]').remove(); if (select.value === "audit") select.value = "access"; }
+}
+async function switchLogsType(type) {
+  applyLogsTypeChrome(type);
+  if (type === "audit") { try { await renderLogsAudit(); } catch (error) { toast(error.message, "error"); } }
+  else { try { state.logs = await api(`/api/logs?host=${encodeURIComponent(type === "access" ? $("#logs-filter-a").value : "")}`); renderLogsAccessAndGateway(); } catch (error) { toast(error.message, "error"); } }
 }
 
 
@@ -536,7 +596,7 @@ function renderAccount() {
 // --- View routing: what data to (re)load and what to show for state.view ------------------
 async function loadFeatureView() {
   if (state.view === "certificates") { [state.certificates, state.readiness] = await Promise.all([api("/api/certificates"), api("/api/readiness")]); renderCertificates(); }
-  if (state.view === "logs") { state.logs = await api(`/api/logs?host=${encodeURIComponent($("#log-host").value)}`); renderLogs(); }
+  if (state.view === "logs") { ensureLogsAuditOption(); const type = currentLogsType(); applyLogsTypeChrome(type); if (type === "audit") { try { await renderLogsAudit(); } catch (error) { toast(error.message, "error"); } } else { state.logs = await api(`/api/logs?host=${encodeURIComponent(type === "access" ? $("#logs-filter-a").value : "")}`); renderLogsAccessAndGateway(); } }
   if (state.view === "performance") { state.performance = await api(`/api/performance?host=${encodeURIComponent($("#performance-host").value)}&hours=${encodeURIComponent($("#performance-range").value || "6")}`); renderPerformance(); }
   if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); state.usersLoaded = true; renderUsers(); window.renderExtendedViews?.(); }
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
@@ -567,7 +627,7 @@ function render() {
     return;
   }
   if (!management) {
-    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Access Logs & Gateway Events","Recent requests, upstream responses, and gateway health events served through Caddy."], performance:["Performance","Live and historical request throughput across your gateway."], administration:["Administration","Users, gateway defaults, backups, and updates."], streaming:["Streaming hosts","Forward raw TCP/UDP traffic on a specific port straight to another host and port."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."], account:["My Account","Manage your profile, password, and two-factor authentication."] };
+    const headings = { certificates:["Certificates","Expiration, issuer, and certificate-detection status for automatic HTTPS."], logs:["Logs","Access requests, gateway events, and (for administrators) the audit log — pick a type, then filter and search within it."], performance:["Performance","Live and historical request throughput across your gateway."], administration:["Administration","Users, gateway defaults, backups, and updates."], streaming:["Streaming hosts","Forward raw TCP/UDP traffic on a specific port straight to another host and port."], redirects:["Redirect hosts","Send domains to a new destination with clear, predictable rules."], access:["Access Lists","Create reusable network and login protection for your hosts."], documentation:["Documentation","Plain-language guidance and real-world Site Gateway examples."], account:["My Account","Manage your profile, password, and two-factor authentication."] };
     const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
     $("#open-create").textContent = state.view === "administration" ? (adminGroupsActive ? "＋ Create group" : adminApiActive ? "＋ Create token" : "＋ Create user") : state.view === "streaming" ? "＋ New streaming host" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
     if (state.view === "streaming") $("#stream-empty").classList.toggle("hidden", !state.loaded || state.streams.length > 0);
@@ -783,7 +843,8 @@ $("#refresh-view").addEventListener("click", async () => {
   } catch (error) { toast(error.message, "error"); }
   finally { button.disabled = false; button.classList.remove("spinning"); }
 });
-$("#log-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
+$("#logs-type").addEventListener("change", event => { switchLogsType(event.target.value).catch(error => toast(error.message, "error")); });
+$("#logs-filter-a").addEventListener("change", () => { const type = currentLogsType(); if (type === "access") loadFeatureView().catch(error => toast(error.message, "error")); else renderLogs(); });
 $("#performance-host").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
 $("#performance-range").addEventListener("change", () => loadFeatureView().catch(error => toast(error.message, "error")));
 
@@ -817,9 +878,9 @@ $("#performance-rows").addEventListener("click", event => {
   if (pathsButton) { const paths = state.performanceTopPaths?.[pathsButton.dataset.pathsHost]; if (paths) showTopPaths(pathsButton.dataset.pathsHost, paths); }
 });
 $("#performance-hide-unconfigured").addEventListener("change", event => { state.performanceHideUnconfigured = event.target.checked; renderPerformance(); });
-$("#log-status").addEventListener("change", renderLogs);
-$("#event-severity").addEventListener("change", renderLogs);
-$("#event-category").addEventListener("change", renderLogs);
+$("#logs-filter-b").addEventListener("change", renderLogs);
+let logsSearchTimer;
+$("#logs-search").addEventListener("input", () => { clearTimeout(logsSearchTimer); logsSearchTimer = setTimeout(renderLogs, 300); });
 
 // --- "Create" dialog: opens the right create form/dialog for the current view --------------
 function openCreate() {
