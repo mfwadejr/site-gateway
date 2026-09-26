@@ -1,12 +1,13 @@
 {
   "name": "site-gateway",
-  "version": "0.16.104",
+  "version": "0.16.105",
   "private": true,
   "description": "Site Gateway: simple self-hosted website publishing, reverse proxying, and automatic HTTPS.",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/storage.js && node --check src/public/app.js && node --check src/public/features.js"
+    "check": "node --check src/server.js && node --check src/storage.js && node --check src/public/app.js && node --check src/public/features.js",
+    "check:versions": "node scripts/check-versions.mjs"
   },
   "dependencies": {
     "adm-zip": "0.5.16",
