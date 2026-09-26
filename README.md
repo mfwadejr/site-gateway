@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.16.101-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.16.102-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -29,15 +29,15 @@
 
 ## Why Site Gateway
 
-Site Gateway didn't start as an attempt to build a reverse-proxy manager. It started with a much smaller problem: wanting something simple to self-host one website, without hand-editing Nginx or Caddy configs to get a domain and a certificate pointed at it. Most of the existing options were either too raw (edit a Caddyfile or Nginx config directly, reload, hope) or too heavy for a single site.
+I didn't set out to build a reverse-proxy manager. I just wanted to host one website without hand-editing a Caddyfile or Nginx config every time I needed a domain and a certificate pointed at something. Every option I found was either too raw (edit the config, reload, hope it works) or way more than I needed for one site.
 
-Getting that one site working well surfaced the actual goal. Once hosting a static site was a solved, three-step problem, the same reasoning applied everywhere else: proxying Plex or Jellyfin, forwarding a raw TCP/UDP port for a game server, redirecting a domain, issuing and renewing a certificate. Each of those was its own manual chore in whatever reverse-proxy setup was already running. What was actually wanted wasn't "a nicer way to host a website" — it was a replacement for the entire existing reverse-proxy setup, one dashboard that handled all of it the same simple way.
+Once that one site was working — and it only took a few clicks — I realized the same thing applied to everything else I was running. Proxying Plex, forwarding a port for a hosted service, redirecting a domain, renewing a certificate — every one of those was its own manual chore in whatever proxy setup I already had. What I actually wanted wasn't a nicer way to host a website. It was a replacement for my whole reverse-proxy setup, with one dashboard that handled all of it the same easy way.
 
-That's what Site Gateway is now: a single container that gives a homelab or small team one dashboard for static sites, proxy routes, redirects, raw streams, TLS, and access control, with [Caddy](https://caddyserver.com/) doing the actual routing and certificate work underneath. It's built for the novice and the homelabber alike — someone who has never touched a Caddyfile should be able to point a domain at an app in a couple of clicks, and someone who has run Nginx Proxy Manager or Traefik for years should find nothing missing.
+That's Site Gateway now: one container, one dashboard, for static sites, proxy routes, redirects, raw TCP/UDP streams, TLS, and access control — with [Caddy](https://caddyserver.com/) doing the actual routing and certificates underneath. I built it so someone who's never touched a Caddyfile can point a domain at an app in a couple clicks, and someone who's run Nginx Proxy Manager or Traefik for years won't feel like anything's missing.
 
-The mantra behind day-to-day use is **three steps**. Hosting a new static site should take about three steps. Standing up a new proxy host for an app should take about three steps. That rule is about the routine, day-to-day tasks you'll repeat dozens of times — it deliberately doesn't apply to the one-time install and first-run setup below, which is honestly closer to five steps, because getting Docker, your `.env`, and your first admin account right the first time matters more than shaving it down to match the mantra.
+The goal for day-to-day use is three steps. Hosting a site, three steps. Setting up a proxy host, three steps. That's for the stuff you'll do over and over. It doesn't apply to the initial install below — that's honestly closer to five steps, because getting Docker, your `.env`, and your first admin account right matters more than hitting a number.
 
-It's intentionally narrower than a general-purpose proxy manager. You describe *what* you want (a site, a proxy target, a redirect, a raw port forward) and Site Gateway writes and safely reloads the underlying gateway configuration — no Caddyfile required.
+It's narrower than a general-purpose proxy manager on purpose. You tell it what you want — a site, a proxy target, a redirect, a port forward — and it writes and reloads the actual gateway config for you. No Caddyfile required.
 
 ## What you get
 

@@ -350,6 +350,14 @@ Icons stay frozen in place by design (an already-saved reference never silently 
 
 Verified with a full live `node src/server.js` round trip against a seeded SQLite instance: a saved icon reference matching its mirror's current hash reports no updates; overwriting the mirrored file (simulating an upstream change) and re-seeding `icon_mirror` with the new hash makes it report exactly one stale item; calling the refresh endpoint resolves it back to zero. Also caught and fixed a real bug during this verification, before shipping: `findIconMirror()` returns the raw SQLite row with snake_case columns (`content_hash`), unlike `searchIconMirror()` which aliases it to `contentHash` -- the first draft of `findIconUpdates()` read the wrong field name and silently reported zero updates for everything. `node --check` on `server.js`, a client-side parse check on `app.js`, and a full manual diff review.
 
+## v0.16.102
+
+Rewrites the "Why Site Gateway" origin story in `README.md` and its condensed counterpart in the in-app Introduction doc article, both introduced in v0.16.101. The original text was accurate but read like polished marketing copy rather than something the user had actually written -- overly tidy parallel-triad phrasing ("too raw... too heavy...") and stock transitions ("That's what X is now") gave it away. Rewritten in first person, with plainer sentences and contractions, following a voice profile now saved as the user's default writing style for this kind of content. Reference documentation, changelog entries, and marketing landing-page copy were deliberately left in their existing neutral/promotional registers -- that voice change applies specifically to first-person "why I built this" narrative content, not manuals or changelogs.
+
+Also swapped one example in that story per the user's request: "forwarding a raw TCP/UDP port for a game server" became "forwarding a port for a hosted service," a more general phrasing consistent with the rest of the passage's examples.
+
+No functional/code changes -- README.md and src/public/index.html only. Verified with a full manual diff review confirming both edits land exactly where intended with no other content disturbed.
+
 ## v0.16.101
 
 A combined batch: unifies how Gateway Events are categorized, rebuilds the Logs page around that single categorization, and refreshes the documentation, README, and marketing site to match.
