@@ -57,6 +57,7 @@ function openErrorDetail(error) {
 // --- Login/dashboard shell, toast, and small formatting helpers ------------------
 function showLogin(message = "") { state.user = null; state.users = []; state.usersLoaded = false; state.view = "overview"; const form = $("#login-form"); form.reset(); form.elements.username.value = ""; form.elements.password.value = ""; $("#login").classList.remove("hidden"); $("#dashboard").classList.add("hidden"); $("#login-error").textContent = message; $("#mfa-login-form").reset(); $("#mfa-login-form").classList.add("hidden"); $("#login-form").classList.remove("hidden"); $("#mfa-login-error").textContent = ""; setTimeout(() => form.elements.username.focus(), 0); }
 function showDashboard() { $("#login").classList.add("hidden"); $("#dashboard").classList.remove("hidden"); }
+let toastHideTimer = null, toastPopoverTimer = null;
 function toast(message, type = "success") {
   const el = $("#toast");
   const error = message instanceof Error ? message : null;
@@ -70,8 +71,19 @@ function toast(message, type = "success") {
     type = "error";
   }
   el.classList.toggle("toast-error", type === "error");
+  // Promote the toast into the top layer (same layer an open <dialog> uses) via the Popover
+  // API. Without this, a toast fired while a modal dialog is open (e.g. the Certificate
+  // detail popout's "Recheck now") renders BEHIND that dialog's own top-layer stacking and
+  // gets visually blurred by its `::backdrop{backdrop-filter:blur(5px)}` — no z-index can fix
+  // that, since z-index only orders elements within the same layer.
+  clearTimeout(toastPopoverTimer);
+  try { el.showPopover?.(); } catch { /* Popover API unsupported: falls back to prior in-flow behavior. */ }
   el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 2800);
+  clearTimeout(toastHideTimer);
+  toastHideTimer = setTimeout(() => {
+    el.classList.remove("show");
+    toastPopoverTimer = setTimeout(() => { try { el.hidePopover?.(); } catch { /* already closed */ } }, 250);
+  }, 2800);
 }
 function escapeHtml(value) { const el = document.createElement("div"); el.textContent = value ?? ""; return el.innerHTML; }
 function publicUrl(item) { return item.domain ? `${item.tls === "http" ? "http" : "https"}://${item.domain}` : `${location.protocol}//${location.hostname}:${item.port}`; }

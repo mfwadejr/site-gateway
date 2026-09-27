@@ -114,7 +114,7 @@ dialog::backdrop{background:rgba(var(--backdrop-rgb),.76);backdrop-filter:blur(5
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:var(--space-5)}
 #account-password-form .error{margin:0;min-height:.3em}
 #account-password-form .dialog-actions{margin-top:var(--space-2)}
-.toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,20px);opacity:0;background:var(--toast-bg);color:var(--toast-text);padding:11px var(--space-4);border-radius:var(--radius-sm);box-shadow:var(--shadow);transition:.2s;pointer-events:none;z-index:2147483647}
+.toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,20px);opacity:0;background:var(--toast-bg);color:var(--toast-text);padding:11px var(--space-4);border-radius:var(--radius-sm);box-shadow:var(--shadow);transition:.2s;pointer-events:none;z-index:2147483647;margin:0;border:none;inset:auto auto 30px 50%;overflow:visible}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .toast.toast-error{background:var(--toast-error-bg);color:var(--toast-error-text)}
 .update-banner{position:fixed;left:50%;bottom:30px;transform:translate(-50%,0);display:flex;align-items:center;gap:var(--space-4);background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius-md);padding:14px var(--space-4) 14px 20px;box-shadow:var(--shadow);z-index:5;color:var(--text);font-size:.88rem}
