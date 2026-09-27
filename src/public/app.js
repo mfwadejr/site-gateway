@@ -1024,9 +1024,41 @@ $("#replace-files").addEventListener("change", async event => { if (!event.targe
 
 // --- Icon picker dialog: search, upload, URL, and reset-to-fallback -------------------------
 function openIconPicker(kind, id) {
-  state.iconTarget = { kind, id }; $("#icon-search").value = ""; $("#icon-url").value = ""; $("#icon-upload").value = ""; $("#icon-error").textContent = ""; $("#icon-results").innerHTML = '<p class="quiet-state">Enter at least two characters to search.</p>'; $("#icon-dialog").showModal(); setTimeout(() => $("#icon-search").focus(), 0);
+  state.iconTarget = { kind, id }; $("#icon-search").value = ""; $("#icon-url").value = ""; $("#icon-upload").value = ""; $("#icon-error").textContent = ""; $("#icon-results").innerHTML = '<p class="quiet-state">Enter at least two characters to search.</p>';
+  renderIconReviewGate();
+  $("#icon-dialog").showModal();
+  if (!$("#icon-review-gate").classList.contains("hidden")) return; // Gated -- nothing else to load or focus yet.
+  setTimeout(() => $("#icon-search").focus(), 0);
   loadIconMirrorStatus();
 }
+// Blocks the picker's functional controls (search/upload/URL/results) until an administrator has
+// explicitly saved the Icon library storage setting at least once (state.config.iconLibraryReviewed,
+// set server-side by PATCH /api/settings only when an iconLibrary save actually happens -- see
+// renderIconLibraryPanel() in features.js). Administrators get a one-click link to the setting;
+// Standard/Viewer users can't act on it themselves, so they're pointed at asking an administrator
+// instead of being shown a settings link they have no access to use.
+function renderIconReviewGate() {
+  const gate = $("#icon-review-gate"), controls = $("#icon-picker-controls"), action = $("#icon-review-gate-action");
+  const reviewed = state.config?.iconLibraryReviewed !== false; // Default to "not gated" if /api/config hasn't loaded yet.
+  gate.classList.toggle("hidden", reviewed);
+  controls.classList.toggle("hidden", !reviewed);
+  $("#save-icon-url").classList.toggle("hidden", !reviewed);
+  $("#reset-icon").classList.toggle("hidden", !reviewed);
+  if (reviewed) return;
+  if (canAdmin()) {
+    $("#icon-review-gate-message").textContent = "Please review and set the icon library storage option in Administration → System before the icon picker can be used.";
+    action.classList.remove("hidden");
+  } else {
+    $("#icon-review-gate-message").textContent = "An administrator needs to review the icon library storage setting in Administration → System before the icon picker can be used. Ask an administrator to open it and save a choice.";
+    action.classList.add("hidden");
+  }
+}
+$("#icon-review-gate-action").addEventListener("click", () => {
+  $("#icon-dialog").close();
+  location.hash = "#administration/system";
+  state.view = "administration"; state.adminTab = "system";
+  render(); loadFeatureView().catch(error => toast(error.message, "error"));
+});
 
 function iconMirrorStatusLine(source, info) {
   const label = { "dashboard-icons": "Dashboard Icons", "selfhst": "selfh.st Icons", "lucide": "Symbols" }[source] || source;

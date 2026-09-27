@@ -1055,3 +1055,8 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .option-meta .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex:none}
 .option-meta .dot.on{background:var(--green)}
 .option-meta .dot.off{background:var(--status-dot-idle)}
+/* Icon picker's review-gate banner (blocks search/upload/URL until an administrator has saved
+   the Icon library storage setting at least once). Sits where the picker's normal intro copy
+   would, styled like other in-dialog callouts rather than a full error state. */
+.icon-review-gate{border:1px solid var(--line);border-radius:var(--radius-md);background:rgba(var(--warning-rgb),.08);padding:14px 16px;margin-bottom:var(--space-4)}
+.icon-review-gate .muted{margin:2px 0 12px}

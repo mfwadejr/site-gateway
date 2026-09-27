@@ -770,6 +770,10 @@ function renderIconLibraryPanel() {
     host.dataset.busy = "1";
     try {
       state.settings = await api("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ iconLibrary: { tier } }) });
+      // Saving here is what clears the icon picker's review gate (server sets iconLibrary.reviewed
+      // true on this same PATCH) -- refresh the cached /api/config value so that takes effect
+      // immediately for the rest of this session, not just after a full page reload.
+      state.config = await api("/api/config");
       toast("Icon library storage setting saved.");
       renderIconLibraryPanel();
       renderSystemStatus();

@@ -491,7 +491,11 @@ async function loadSites() {
     // route is still saved permanently via cacheIcon(), regardless of tier); "mirror-single" keeps
     // the existing daily mirror but writes one format per icon instead of every format a source
     // ships; "mirror-full" is the original, unconditional behavior. See iconLibraryTierAllowsMirror().
-    iconLibrary: { tier: "cached" }
+    // "reviewed" tracks whether an administrator has ever explicitly saved this setting (even
+    // re-saving the same default counts) -- it's what the icon picker's review gate checks below,
+    // separate from `tier` itself, so a fresh install can require a conscious choice before the
+    // picker does anything, rather than silently proceeding on an un-reviewed default.
+    iconLibrary: { tier: "cached", reviewed: false }
   };
   const storedSettings = storage.loadSettings() || defaultSettings;
   settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) }, certificateHealth: { ...defaultSettings.certificateHealth, ...(storedSettings.certificateHealth || {}) }, logsRetention: { ...defaultSettings.logsRetention, ...(storedSettings.logsRetention || {}) }, iconLibrary: { ...defaultSettings.iconLibrary, ...(storedSettings.iconLibrary || {}) } };
@@ -2096,7 +2100,7 @@ app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
 });
 
 // --- Config, Users, Audit log, Groups, Access List <-> Group assignment --------------------------------------
-app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) }, docker: { socketMounted: dockerSocketMounted, enabled: dockerSocketMounted && settings.dockerIntegration?.enabled === true } }));
+app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) }, docker: { socketMounted: dockerSocketMounted, enabled: dockerSocketMounted && settings.dockerIntegration?.enabled === true }, iconLibraryReviewed: Boolean(settings.iconLibrary?.reviewed) }));
 
 // --- System tab: storage usage, restart-policy check, and self-restart -----------------------------------
 // Read-only, non-destructive live resource stats (CPU/memory/swap/disk/network/throughput) --
@@ -2986,7 +2990,7 @@ app.patch("/api/settings", async (req, res, next) => {
       settings.defaultSite = { mode, redirectUrl: String(value.redirectUrl || "").trim(), redirectCode: [301,302,307,308].includes(Number(value.redirectCode)) ? Number(value.redirectCode) : 302, preservePath: value.preservePath !== false, title: String(value.title || "").slice(0, 100), message: String(value.message || "").slice(0, 500), customHtml: String(value.customHtml || "").slice(0, 250000) };
     }
     if (req.body.dockerIntegration) settings.dockerIntegration = { enabled: req.body.dockerIntegration.enabled === true && dockerSocketMounted };
-    if (req.body.iconLibrary) { const tier = ["search","cached","mirror-single","mirror-full"].includes(req.body.iconLibrary.tier) ? req.body.iconLibrary.tier : settings.iconLibrary?.tier || "cached"; settings.iconLibrary = { tier }; }
+    if (req.body.iconLibrary) { const tier = ["search","cached","mirror-single","mirror-full"].includes(req.body.iconLibrary.tier) ? req.body.iconLibrary.tier : settings.iconLibrary?.tier || "cached"; settings.iconLibrary = { tier, reviewed: true }; }
     if (req.body.backups) settings.backups = { ...settings.backups, ...req.body.backups, hour: Math.min(Math.max(Number(req.body.backups.hour) || 0, 0), 23), retention: Math.min(Math.max(Number(req.body.backups.retention) || 7, 1), 100) };
     if (req.body.certificateHealth) {
       const warningDays = Math.min(Math.max(Number(req.body.certificateHealth.warningDays) || 30, 8), 120);
