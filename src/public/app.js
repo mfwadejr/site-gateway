@@ -335,15 +335,37 @@ function renderCertificates() {
 
 
 // --- Certificate detail popup (deep fields for a single certificate row) ------------
+function renderCertificateDetailBody(cert, item) {
+  const banner = item?.diagnosis ? `<div class="readiness-diagnosis danger-text">${escapeHtml(item.diagnosis)}</div>` : "";
+  const certRows = `<div><dt>Status</dt><dd>${escapeHtml(cert.status)}</dd></div><div><dt>Valid from</dt><dd>${cert.validFrom ? escapeHtml(formatTime(cert.validFrom)) : "—"}</dd></div><div><dt>Expires</dt><dd>${cert.expiresAt ? escapeHtml(formatTime(cert.expiresAt)) : "—"}</dd></div><div><dt>Issuer</dt><dd>${escapeHtml(cert.issuer || "—")}</dd></div><div><dt>Covered domains</dt><dd>${escapeHtml((cert.coveredNames || []).join(", ") || "—")}</dd></div><div><dt>Serial number</dt><dd>${escapeHtml(cert.serialNumber || "—")}</dd></div><div><dt>SHA-256 fingerprint</dt><dd>${escapeHtml(cert.fingerprint || "—")}</dd></div><div><dt>Last detected update</dt><dd>${cert.updatedAt ? escapeHtml(formatTime(cert.updatedAt)) : "—"}</dd></div>`;
+  const divider = `<p class="eyebrow readiness-divider">Domain readiness</p>`;
+  const readinessRows = item ? `<div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}${item.tls.healthy === false ? `<br><span class="danger-text">${escapeHtml(item.tls.error || "Live handshake failed")}</span>` : ""}</dd></div>${item.upstream ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${item.upstream.httpStatus ?? "no response"}${item.upstream.responseMs != null ? ` · ${item.upstream.responseMs} ms` : ""} · ${item.upstream.attempts || 1} attempt${(item.upstream.attempts || 1) === 1 ? "" : "s"}</dd></div>${item.upstream.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(item.upstream.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>"}<div><dt>Last checked</dt><dd>${escapeHtml(formatTime(item.checkedAt || item.upstream?.checkedAt))}</dd></div>` : "<div><dt>Domain readiness</dt><dd>No readiness data available for this domain.</dd></div>";
+  return banner + certRows + divider + readinessRows;
+}
+
 function openCertificateDetail(row) {
   const cert = row.cert, item = row.readiness;
+  state.certDetailDomain = cert.domain;
   $("#cert-detail-title").textContent = cert.domain;
   $("#cert-detail-eyebrow").textContent = `${cert.kind} · ${cert.source}`;
-  const certRows = `<div><dt>Status</dt><dd>${escapeHtml(cert.status)}</dd></div><div><dt>Valid from</dt><dd>${cert.validFrom ? escapeHtml(formatTime(cert.validFrom)) : "—"}</dd></div><div><dt>Expires</dt><dd>${cert.expiresAt ? escapeHtml(formatTime(cert.expiresAt)) : "—"}</dd></div><div><dt>Issuer</dt><dd>${escapeHtml(cert.issuer || "—")}</dd></div><div><dt>Covered domains</dt><dd>${escapeHtml((cert.coveredNames || []).join(", ") || "—")}</dd></div><div><dt>Serial number</dt><dd>${escapeHtml(cert.serialNumber || "—")}</dd></div><div><dt>SHA-256 fingerprint</dt><dd>${escapeHtml(cert.fingerprint || "—")}</dd></div><div><dt>Last detected update</dt><dd>${cert.updatedAt ? escapeHtml(formatTime(cert.updatedAt)) : "—"}</dd></div>`;
-  const readinessRows = item ? `<div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}</dd></div>${item.upstream ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${item.upstream.httpStatus ?? "no response"}${item.upstream.responseMs != null ? ` · ${item.upstream.responseMs} ms` : ""} · ${item.upstream.attempts || 1} attempt${(item.upstream.attempts || 1) === 1 ? "" : "s"}</dd></div><div><dt>Last checked</dt><dd>${escapeHtml(formatTime(item.upstream.checkedAt))}</dd></div>${item.upstream.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(item.upstream.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>"}` : "<div><dt>Domain readiness</dt><dd>No readiness data available for this domain.</dd></div>";
-  $("#cert-detail-body").innerHTML = certRows + readinessRows;
+  $("#cert-detail-body").innerHTML = renderCertificateDetailBody(cert, item);
   $("#certificate-detail-dialog").showModal();
 }
+$("#cert-detail-recheck")?.addEventListener("click", async event => {
+  const button = event.currentTarget, domain = state.certDetailDomain; if (!domain) return;
+  button.disabled = true; const originalText = button.textContent; button.textContent = "Checking…";
+  try {
+    const fresh = await api(`/api/readiness/${encodeURIComponent(domain)}/recheck`, { method: "POST" });
+    const routes = state.readiness?.routes || [];
+    const index = routes.findIndex(route => route.domain === domain);
+    if (index === -1) routes.push(fresh); else routes[index] = fresh;
+    if (state.readiness) state.readiness.routes = routes;
+    const row = state.certRows?.find(entry => entry.cert.domain === domain);
+    if (row) { row.readiness = fresh; $("#cert-detail-body").innerHTML = renderCertificateDetailBody(row.cert, fresh); }
+    toast("Domain readiness rechecked.", "success");
+  } catch (error) { toast(error.message, "error"); }
+  finally { button.disabled = false; button.textContent = originalText; }
+});
 $("#certificate-list").addEventListener("click", event => { const row = event.target.closest(".cert-table-row"); if (!row) return; const data = state.certRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
 $("#certificate-list").addEventListener("keydown", event => { if (event.key !== "Enter" && event.key !== " ") return; const row = event.target.closest(".cert-table-row"); if (!row) return; event.preventDefault(); const data = state.certRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
 $("#cert-threshold-trigger").addEventListener("click", () => { renderHealthSettings(); $("#health-settings-dialog").showModal(); });
@@ -418,9 +440,8 @@ function ensureLogsAuditOption() {
   else if (state.user?.role !== "administrator" && hasOption) { select.querySelector('option[value="audit"]').remove(); if (select.value === "audit") select.value = "access"; }
 }
 async function switchLogsType(type) {
-  applyLogsTypeChrome(type);
-  if (type === "audit") { try { await renderLogsAudit(); } catch (error) { toast(error.message, "error"); } }
-  else { try { state.logs = await api(`/api/logs?host=${encodeURIComponent(type === "access" ? $("#logs-filter-a").value : "")}`); renderLogsAccessAndGateway(); } catch (error) { toast(error.message, "error"); } }
+  if (type === "audit") { applyLogsTypeChrome(type); try { await renderLogsAudit(); } catch (error) { toast(error.message, "error"); } }
+  else { try { state.logs = await api(`/api/logs?host=${encodeURIComponent(type === "access" ? $("#logs-filter-a").value : "")}`); applyLogsTypeChrome(type); renderLogsAccessAndGateway(); } catch (error) { toast(error.message, "error"); } }
 }
 
 
@@ -596,7 +617,7 @@ function renderAccount() {
 // --- View routing: what data to (re)load and what to show for state.view ------------------
 async function loadFeatureView() {
   if (state.view === "certificates") { [state.certificates, state.readiness] = await Promise.all([api("/api/certificates"), api("/api/readiness")]); renderCertificates(); }
-  if (state.view === "logs") { ensureLogsAuditOption(); const type = currentLogsType(); applyLogsTypeChrome(type); if (type === "audit") { try { await renderLogsAudit(); } catch (error) { toast(error.message, "error"); } } else { state.logs = await api(`/api/logs?host=${encodeURIComponent(type === "access" ? $("#logs-filter-a").value : "")}`); renderLogsAccessAndGateway(); } }
+  if (state.view === "logs") { ensureLogsAuditOption(); const type = currentLogsType(); if (type === "audit") { applyLogsTypeChrome(type); try { await renderLogsAudit(); } catch (error) { toast(error.message, "error"); } } else { state.logs = await api(`/api/logs?host=${encodeURIComponent(type === "access" ? $("#logs-filter-a").value : "")}`); applyLogsTypeChrome(type); renderLogsAccessAndGateway(); } }
   if (state.view === "performance") { state.performance = await api(`/api/performance?host=${encodeURIComponent($("#performance-host").value)}&hours=${encodeURIComponent($("#performance-range").value || "6")}`); renderPerformance(); }
   if (state.view === "administration") { [state.users, state.settings, state.backups] = await Promise.all([api("/api/users"), api("/api/settings"), api("/api/backups")]); state.usersLoaded = true; renderUsers(); window.renderExtendedViews?.(); }
   if (["redirects","access","documentation"].includes(state.view)) window.renderExtendedViews?.();
@@ -606,7 +627,7 @@ async function loadFeatureView() {
 // state.view, and for the Hosted/Proxy "management" view, renders the card grid,
 // empty state, and summary indicator bar directly.
 function render() {
-  const viewHash = state.view === "administration" ? `administration/${state.adminTab || "users"}` : state.view;
+  const viewHash = state.view === "administration" ? `administration/${state.adminTab || "system"}` : state.view;
   if (location.hash !== `#${viewHash}`) history.pushState(null, "", `${location.pathname}${location.search}#${viewHash}`);
   $("#hosted-count").textContent = state.sites.length; $("#proxy-count").textContent = state.proxies.length; $("#streaming-count").textContent = state.streams.length; $("#redirect-count").textContent = state.redirects.length; $("#access-count").textContent = state.accessLists.length; $("#certificate-count").textContent = state.certificates?.summary.total || 0;
   document.querySelectorAll("nav [data-view], .aside-utilities [data-view]").forEach(button => button.classList.toggle("nav-active", button.dataset.view === state.view));
@@ -615,7 +636,7 @@ function render() {
   const management = state.view === "hosted" || state.view === "proxies";
   $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "streaming" || state.view === "redirects" || state.view === "access"));
   $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#performance-view").classList.toggle("hidden", state.view !== "performance"); $("#users-view").classList.toggle("hidden", state.view !== "administration"); $("#account-view").classList.toggle("hidden", state.view !== "account");
-  if (state.view === "administration") { const adminTab = state.adminTab || "users"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
+  if (state.view === "administration") { const adminTab = state.adminTab || "system"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
   $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
   const activeAdminTab = state.view === "administration" ? document.querySelector("[data-admin-tab].tab-active")?.dataset.adminTab : null;
   const adminUsersActive = activeAdminTab === "users", adminGroupsActive = activeAdminTab === "groups", adminApiActive = activeAdminTab === "api";
@@ -762,9 +783,9 @@ async function refreshDashboardHero() {
 }
 
 // --- Boot: session check, initial routing, periodic health/update checks -------------------
-function restoreAdminTab() { if (state.view === "administration") document.querySelector(`[data-admin-tab="${state.adminTab || "users"}"]`)?.click(); }
+function restoreAdminTab() { if (state.view === "administration") document.querySelector(`[data-admin-tab="${state.adminTab || "system"}"]`)?.click(); }
 async function boot() {
-  const requestedHash = location.hash.slice(1); state.adminTab = requestedHash.startsWith("administration/") ? requestedHash.split("/")[1] || "users" : "users"; if (requestedHash.startsWith("administration/")) history.replaceState(null, "", `${location.pathname}${location.search}#administration`);
+  const requestedHash = location.hash.slice(1); state.adminTab = requestedHash.startsWith("administration/") ? requestedHash.split("/")[1] || "system" : "system"; if (requestedHash.startsWith("administration/")) history.replaceState(null, "", `${location.pathname}${location.search}#administration`);
   const session = await fetch("/api/session").then(response => response.json());
   $("#login-title").textContent = session.installationSetupPending ? "Welcome to Site Gateway" : "Welcome back";
   $("#login-copy").textContent = session.installationSetupPending ? "Sign in using the administrator credentials you configured during installation." : "Sign in to manage your sites.";
@@ -1128,7 +1149,7 @@ $("#password-form").addEventListener("submit", async event => {
 window.addEventListener("hashchange", () => {
   if (!state.user) return; // Not logged in yet; boot() handles initial routing.
   const requestedHash = location.hash.slice(1);
-  state.adminTab = requestedHash.startsWith("administration/") ? requestedHash.split("/")[1] || "users" : "users";
+  state.adminTab = requestedHash.startsWith("administration/") ? requestedHash.split("/")[1] || "system" : "system";
   if (requestedHash.startsWith("administration/")) history.replaceState(null, "", `${location.pathname}${location.search}#administration`);
   state.view = location.hash.slice(1) || "overview";
   render();

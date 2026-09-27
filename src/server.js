@@ -5,6 +5,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
+import tls from "node:tls";
 import os from "node:os";
 import dgram from "node:dgram";
 import path from "node:path";
@@ -1043,6 +1044,17 @@ async function pruneOrphanedCertificates(candidateDomains) {
 }
 
 
+// One-sentence diagnosis, priority-ordered DNS -> port -> TLS -> upstream: report the first
+// failing signal, since nothing downstream of e.g. a DNS failure can be trusted. Redirect hosts
+// have no backend to check, so the upstream leg is skipped for them rather than reported as a failure.
+function diagnoseReadiness({ dns: dnsResult, ports, tlsLive, upstream, kind }) {
+  if (!dnsResult.healthy) return "DNS isn't pointing here yet.";
+  if (ports.http === false && ports.https === false) return "Gateway ports 80/443 aren't reachable — is Site Gateway/Caddy running?";
+  if (tlsLive && !tlsLive.healthy) return `Certificate and DNS are fine, but the live HTTPS handshake is failing${tlsLive.error ? ` (${tlsLive.error})` : ""}.`;
+  if (kind !== "Redirect host" && upstream && (upstream.status === "unhealthy" || upstream.status === "error")) return "Certificate and DNS are fine — the backend isn't responding.";
+  return null;
+}
+
 async function domainReadiness(precomputedCertificates) {
   const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.enabled && item.domain).flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
   const [certs, httpResponding, httpsResponding] = await Promise.all([precomputedCertificates ? Promise.resolve(precomputedCertificates) : certificateInventory(), tcpProbe(80), tcpProbe(443)]);
@@ -1051,7 +1063,13 @@ async function domainReadiness(precomputedCertificates) {
     try { addresses = [...new Set((await dns.lookup(item.domain, { all: true })).map(value => value.address))]; } catch (error) { dnsError = error.code || error.message; }
     const certificate = certs.certificates.find(cert => cert.domain === item.domain) || null;
     const upstream = (item.kind === "Proxy host" || item.kind === "Hosted site") ? upstreamHealth.get(item.id) || null : null;
-    return { id: item.id, domain: item.domain, name: item.name, kind: item.kind, dns: { healthy: addresses.length > 0, addresses, error: dnsError }, ports: { http: httpResponding, https: item.tls === "http" ? null : httpsResponding }, tls: item.tls === "http" ? { status: "not-configured" } : { status: certificate?.status || "pending" }, upstream };
+    const dnsResult = { healthy: addresses.length > 0, addresses, error: dnsError };
+    const ports = { http: httpResponding, https: item.tls === "http" ? null : httpsResponding };
+    const tlsLive = item.tls === "http" ? null : (dnsResult.healthy && httpsResponding ? await tlsProbe(item.domain) : { healthy: false, error: !dnsResult.healthy ? "Skipped: DNS isn't resolving." : "Skipped: gateway port 443 isn't reachable." });
+    const tlsField = item.tls === "http" ? { status: "not-configured", healthy: null, error: null } : { status: certificate?.status || "pending", healthy: tlsLive?.healthy ?? null, error: tlsLive?.error ?? null };
+    const readiness = { id: item.id, domain: item.domain, name: item.name, kind: item.kind, dns: dnsResult, ports, tls: tlsField, upstream, checkedAt: new Date().toISOString() };
+    readiness.diagnosis = diagnoseReadiness({ dns: dnsResult, ports, tlsLive, upstream, kind: item.kind });
+    return readiness;
   }));
 }
 
@@ -1151,6 +1169,23 @@ function tcpProbeHost(host, port, timeoutMs = 4000) {
     socket.once("connect", () => finish(true));
     socket.once("timeout", () => finish(false));
     socket.once("error", () => finish(false));
+  });
+}
+
+// Live TLS handshake probe for a domain, distinct from the certificate-on-disk status above:
+// this catches a handshake/Caddy-reload problem (wrong cert served, hostname mismatch, refused
+// connection) that a healthy certificate file on disk would not reveal by itself.
+function tlsProbe(domain, port = 443, timeoutMs = 4000) {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = result => { if (settled) return; settled = true; try { socket.destroy(); } catch { /* already closed */ } resolve(result); };
+    let socket;
+    try {
+      socket = tls.connect({ host: "127.0.0.1", port, servername: domain, rejectUnauthorized: false, timeout: timeoutMs });
+    } catch (error) { return resolve({ healthy: false, error: error.message }); }
+    socket.once("secureConnect", () => finish({ healthy: true, error: null }));
+    socket.once("timeout", () => finish({ healthy: false, error: `Timed out after ${timeoutMs / 1000} seconds` }));
+    socket.once("error", error => finish({ healthy: false, error: error.message }));
   });
 }
 
@@ -2224,7 +2259,7 @@ app.get("/api/sites", (req, res) => res.json(sites.map(publicSite)));
 app.get("/api/proxies", (req, res) => res.json(proxies.map(proxy => publicProxy(proxy, req.user.role === "administrator"))));
 app.get("/api/redirects", (req, res) => res.json(redirects));
 app.get("/api/access-lists", (req, res) => res.json(accessLists.map(({ credentials, ...item }) => ({ ...item, credentials: (credentials || []).map(({ username }) => ({ username })), groups: item.groups || [] }))));
-app.get("/api/groups", (req, res) => req.user.role === "administrator" ? res.json(groups.map(group => ({ ...group, memberIds: [...(group.members || [])], members: (group.members || []).map(id => users.find(user => user.id === id)?.username).filter(Boolean) }))) : res.status(403).json({ error: "Administrator access is required." }));
+app.get("/api/groups", (req, res) => res.json(groups.map(group => ({ ...group, memberIds: [...(group.members || [])], members: (group.members || []).map(id => users.find(user => user.id === id)?.username).filter(Boolean) }))));
 app.post("/api/access-lists/:id/groups", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const list = accessLists.find(value => value.id === req.params.id); if (!list) return res.status(404).json({ error: "Access List not found." }); list.groups = Array.isArray(req.body.groups) ? [...new Set(req.body.groups)].filter(id => groups.some(group => group.id === id && group.enabled !== false)) : []; await saveAccessLists(); recordActivity("Groups updated for Access List “" + list.name + "”."); res.json({ groups: list.groups }); } catch (error) { next(error); } });
 app.post("/api/groups", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const name = String(req.body.name || "").trim().slice(0, 80); if (!name) return res.status(400).json({ error: "Group name is required." }); if (groups.some(group => group.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ error: "That group already exists." }); const group = { id: "group-" + crypto.randomBytes(4).toString("hex"), name, enabled: true, members: [], createdAt: new Date().toISOString() }; groups.push(group); await saveGroups(); recordActivity("Group “" + name + "” created."); res.status(201).json(group); } catch (error) { next(error); } });
 app.patch("/api/groups/:id", async (req, res, next) => { try { if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." }); const group = groups.find(value => value.id === req.params.id); if (!group) return res.status(404).json({ error: "Group not found." }); if (req.body.name !== undefined) { const name = String(req.body.name || "").trim().slice(0, 80); if (!name) return res.status(400).json({ error: "Group name is required." }); group.name = name; } if (req.body.enabled !== undefined) group.enabled = Boolean(req.body.enabled); if (Array.isArray(req.body.members)) group.members = [...new Set(req.body.members)].filter(id => users.some(user => user.id === id)); await saveGroups(); recordActivity("Group “" + group.name + "” updated."); res.json(group); } catch (error) { next(error); } });
@@ -2252,6 +2287,22 @@ app.post("/api/health/check", async (req, res, next) => {
   catch (error) { next(error); }
 });
 app.get("/api/readiness", async (req, res, next) => { try { res.json({ checkedAt: new Date().toISOString(), routes: await domainReadiness() }); } catch (error) { next(error); } });
+// On-demand, fresh recheck for one domain: forces a fresh upstream checkProxy() rather than
+// reading the possibly-stale cached upstreamHealth entry, so DNS/port/TLS/upstream are all
+// equally fresh when diagnosing, not just three of four.
+app.post("/api/readiness/:domain/recheck", async (req, res, next) => {
+  try {
+    const domain = String(req.params.domain || "");
+    const site = sites.find(item => item.enabled && normalizeDomains(item.domain, item.domains).includes(domain));
+    const proxy = !site && proxies.find(item => item.enabled && normalizeDomains(item.domain, item.domains).includes(domain));
+    if (site) await checkProxy({ ...site, target: `http://127.0.0.1:${site.port}`, healthPath: site.healthPath || "/", healthMethod: site.healthMethod || "GET", healthExpected: site.healthExpected || "200-499", healthTimeoutSeconds: site.healthTimeoutSeconds || 4, healthRetries: site.healthRetries || 0, healthEnabled: site.healthEnabled });
+    else if (proxy) await checkProxy(proxy);
+    const routes = await domainReadiness();
+    const row = routes.find(item => item.domain === domain);
+    if (!row) return res.status(404).json({ error: "That domain isn't part of an enabled route." });
+    res.json(row);
+  } catch (error) { next(error); }
+});
 
 // GET /api/support-report -- generates the downloadable diagnostics report (gateway
 // health, storage integrity, every route's config, certificate status, domain

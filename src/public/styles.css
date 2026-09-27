@@ -439,6 +439,8 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .certificate-row summary>span{display:grid;gap:var(--space-1)}
 .certificate-row small{color:var(--muted)}
 .certificate-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 22px;margin:0;padding:18px 54px 22px;background:rgba(var(--bg-rgb),.22);border-top:1px solid var(--line)}
+.readiness-diagnosis{grid-column:1/-1;font-weight:700;padding:10px 14px;border-radius:10px;background:rgba(255,90,90,.12)}
+.readiness-divider{grid-column:1/-1;margin:4px 0 -2px;padding-top:10px;border-top:1px solid var(--line)}
 .certificate-details dt{color:var(--muted);font-size:.7rem}
 .certificate-details dd{margin:5px 0 0;overflow-wrap:anywhere;font-size:.8rem}
 .readiness-panel{margin-top:18px}

@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.16.105-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.16.106-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -22,6 +22,7 @@
     <a href="#unraid">Unraid</a> ·
     <a href="#zimaos">ZimaOS</a> ·
     <a href="ROADMAP.md">Roadmap</a>
+    <a href="ROLES.md">Roles</a>
   </p>
 </div>
 
@@ -174,7 +175,7 @@ This recreates only the application container — your sites, certificates, and 
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for what's shipped and what's next, or [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+See [ROADMAP.md](ROADMAP.md) for what's shipped and what's next, [CHANGELOG.md](CHANGELOG.md) for the full per-release history, or [ROLES.md](ROLES.md) for the full Administrator/Standard User/Viewer permission matrix.
 
 ## License
 

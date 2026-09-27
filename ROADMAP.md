@@ -2,7 +2,7 @@
 
 ## Current release status
 
-`v0.16.105` is current. Site Gateway is a single container that gives a homelab or small team one dashboard for Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts, with Caddy handling routing and automatic HTTPS underneath. Authentication, roles (Administrator/Standard/Viewer), Groups, Access Lists, two-factor authentication, a REST API with issuable tokens, encrypted backups with scheduled runs and full restore history, a combined Logs page (access requests, gateway events, and an administrator-only audit log, all under one unified event categorization), configuration-drift detection, and a three-source icon mirror (dashboard-icons, selfh.st, and Lucide) are all implemented and shipped, not planned.
+`v0.16.106` is current. Site Gateway is a single container that gives a homelab or small team one dashboard for Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts, with Caddy handling routing and automatic HTTPS underneath. Authentication, roles (Administrator/Standard/Viewer), Groups, Access Lists, two-factor authentication, a REST API with issuable tokens, encrypted backups with scheduled runs and full restore history, a combined Logs page (access requests, gateway events, and an administrator-only audit log, all under one unified event categorization), configuration-drift detection, and a three-source icon mirror (dashboard-icons, selfh.st, and Lucide) are all implemented and shipped, not planned.
 
 Versioning has followed ordinary semantic versioning since `v0.12.0`: a minor bump for a real batch of changes, a patch bump for a targeted fix, rather than incrementing the same trailing number for every change regardless of size. Everything below this line is the full version history, oldest conventions first.
 
@@ -71,7 +71,6 @@ Roughly in priority order:
 
 - **Richer certificate diagnostics** — on-demand checks that distinguish DNS, inbound port, TLS, and upstream failures per domain.
 - **Wildcard/DNS-challenge certificates** — selected DNS-provider integrations for domains that can't use HTTP-01 validation. Needs encrypted secret storage for provider API credentials before it ships.
-- **Tailscale integration** — documented patterns exist today (host-level Tailscale for private dashboard access, a sidecar container for proxying to tailnet-only targets, `tailscale serve`/`funnel` for exposing a route without opening router ports), but nothing is built into Site Gateway itself yet.
 - **Dynamic DNS** and **deeper Caddy controls** for advanced users who outgrow the guided options.
 - **Rate limiting** and other specialist gateway controls.
 
