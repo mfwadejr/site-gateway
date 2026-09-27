@@ -378,3 +378,19 @@ Fixes a real bug the user caught immediately after v0.16.106 shipped: the Certif
 **Fix:** the toast element now also participates in the top layer, via the Popover API (`popover="manual"` plus `showPopover()`/`hidePopover()` calls bracketing its existing show/hide timing). This stacks it above any open dialog and its blurred backdrop, restoring crisp, readable text. Falls back to the prior behavior on any browser without Popover API support (feature-detected, no error). A few CSS properties (`margin`, `border`, `inset`) were pinned explicitly on `.toast` to override the Popover API's user-agent default styling, which would otherwise fight the toast's existing `position:fixed` layout.
 
 Verified with an isolated before/after reproduction (a minimal page with the exact same dialog+backdrop-blur+toast CSS): the "before" version visibly reproduces the same blur the user reported; the "after" version renders the toast sharp and readable while the dialog stays open. `node --check` on the touched JS file.
+
+## v0.16.108
+
+Adds a new **Icon library storage** setting (Administration → System, between Scheduled jobs and Disk usage) that controls how much of the icon search catalog (dashboard-icons, selfh.st, Lucide) is kept on disk — the daily full-repo mirror was previously unconditional and, for two of the three sources, stored svg+png+webp for every icon indefinitely, with no visibility into how much space it used and no way to turn it down.
+
+Four tiers, lightest to heaviest:
+- **Search-only** (~5 MB) — search results load thumbnails live from each source's CDN; nothing is stored in bulk. The daily mirror sync never runs.
+- **Search-only, with a local cache** (~200 MB cap) — same as above, but recently-viewed icons stay cached locally. Recommended default. The daily mirror sync never runs.
+- **Full nightly mirror, one format per icon** (~350 MB) — keeps the existing daily mirror, but writes only the best available format per icon (svg preferred) instead of every format a source publishes.
+- **Full nightly mirror, every format** (~1.1 GB) — today's original behavior, unchanged.
+
+Choosing either of the two lighter tiers turns off the "Icon mirror (…)" rows in the Scheduled jobs panel entirely, on both the Dashboard and Administration → System — there's no longer a daily sync behind them to report on. Switching tiers never touches or removes an icon that's already been assigned to a route; that promotion path (`cacheIcon()`) is unaffected by this setting. A manual "Sync now" from the icon picker still runs regardless of tier, since that's an explicit admin action rather than the automatic daily refresh.
+
+Also fixes a real, previously-invisible gap found while building this: `GET /api/system/storage`'s breakdown (the Disk usage panel) never included the icon mirror's own directory at all, alongside sites/backups/certificates/logs/database — so there was no way to see how much space icon mirroring was actually using. It's now itemized as `icons`.
+
+Verified: `node --check` on every touched JS file; a live `node src/server.js` run seeded through first-run admin setup, confirming `PATCH /api/settings` with each of the four tier values persists correctly and an invalid tier value is rejected in favor of the last valid one rather than corrupting settings; confirming the "Icon mirror (…)" job rows disappear from `GET /api/dashboard`'s `system.jobs` under the "search" tier and reappear under "mirror-full"; and confirming `GET /api/system/storage`'s breakdown now includes a real `icons` byte count.

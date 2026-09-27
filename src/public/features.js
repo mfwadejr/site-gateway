@@ -680,6 +680,11 @@ function renderSystemPanel() {
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Integrations</h2></div></div><div id="system-env-status" class="health-grid"></div><div class="system-integrations"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Security status</h2></div></div><div id="system-security" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div id="system-jobs" class="health-grid"></div></div>',
+      // Sits between Scheduled jobs and Disk usage on purpose: it changes what the jobs above run
+      // (the "search"/"cached" tiers below turn off the "Icon mirror (…)" rows entirely) and how
+      // much the Disk usage panel's own "Icons" line below reports, so it belongs between the two
+      // things it affects rather than as its own tab or folded into the icon picker.
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Storage</p><h2>Icon library storage</h2></div></div><p class="muted">Controls how much of the icon search catalog (dashboard-icons, selfh.st, Lucide) is kept on disk. Changing this takes effect on the next scheduled sync — icons already assigned to a route are never affected or removed by this setting.</p><div id="system-icon-library" class="option-list"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Storage</p><h2>Disk usage</h2></div></div><div id="system-storage" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Build</p><h2>Version</h2></div></div><div id="system-version" class="muted"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Sync & control</h2></div></div><p id="system-sync-status" class="muted"></p><p class="muted">Reloading re-applies the current configuration to Caddy with no downtime. Restarting stops and restarts the whole application \u2014 only available when a restart policy is set on the container.</p><div class="row-actions"><button type="button" id="system-resync" class="button secondary">Resync now</button><button type="button" id="system-reload" class="button secondary">Reload gateway config</button><button type="button" id="system-restart" class="button secondary danger-text" disabled>Restart application</button></div><p id="system-restart-status" class="muted"></p></div>',
@@ -738,6 +743,44 @@ function updateSystemVersionUptime(health) {
   if (!el) return;
   el.textContent = Number.isFinite(health?.uptimeSeconds) ? formatDuration(health.uptimeSeconds) : "Unavailable";
 }
+// The four "Icon library storage" tiers, lightest to heaviest. Sizes are indicative, not
+// measured live -- there's nowhere yet to pull a real per-tier estimate from, so these describe
+// the mechanism rather than promise an exact figure for this deployment's actual catalog.
+const ICON_LIBRARY_TIERS = [
+  { tier: "search", name: "Search-only", size: "~5 MB", recommended: false,
+    desc: "Search results load thumbnails live from each source's CDN. Nothing is stored in bulk — only icons you actually assign to a route are saved permanently.",
+    pros: "Smallest footprint", cons: "Needs internet while browsing icons" },
+  { tier: "cached", name: "Search-only, with a local cache", size: "~200 MB cap", recommended: true,
+    desc: "Same as Search-only, but icons you've viewed recently stay cached locally so repeat browsing doesn't keep re-fetching them. Oldest icons are dropped first once the cap is reached.",
+    pros: "Recommended", cons: "Still needs internet for icons never seen before" },
+  { tier: "mirror-single", name: "Full nightly mirror · one format per icon", size: "~350 MB", recommended: false,
+    desc: "Every icon from all three sources is downloaded and kept up to date automatically, storing only the best available format per icon instead of every format a source ships.",
+    pros: "Works fully offline", cons: "Largest of the offline-friendly options" },
+  { tier: "mirror-full", name: "Full nightly mirror · every format", size: "~1.1 GB", recommended: false,
+    desc: "Every icon from all three sources, in every format each source publishes (svg, png, and webp where available), refreshed daily.",
+    pros: "Works fully offline", cons: "Largest footprint, mostly redundant copies" },
+];
+function renderIconLibraryPanel() {
+  const host = document.querySelector("#system-icon-library");
+  if (!host || !state.settings) return;
+  const current = state.settings.iconLibrary?.tier || "cached";
+  host.innerHTML = ICON_LIBRARY_TIERS.map(option => `<div class="option-card${option.tier === current ? " selected" : ""}" data-tier="${option.tier}" role="radio" aria-checked="${option.tier === current}" tabindex="0"><div class="option-radio"></div><div class="option-body"><div class="option-top"><span class="option-name">${extendedEscape(option.name)}</span><span class="option-badge">${extendedEscape(option.size)}</span></div><p class="option-desc">${extendedEscape(option.desc)}</p><div class="option-meta"><span><span class="dot on"></span>${extendedEscape(option.pros)}</span><span><span class="dot off"></span>${extendedEscape(option.cons)}</span></div></div></div>`).join("");
+  const selectTier = async tier => {
+    if (tier === current || host.dataset.busy) return;
+    host.dataset.busy = "1";
+    try {
+      state.settings = await api("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ iconLibrary: { tier } }) });
+      toast("Icon library storage setting saved.");
+      renderIconLibraryPanel();
+      renderSystemStatus();
+    } catch (error) { toast(error.message, "error"); }
+    finally { delete host.dataset.busy; }
+  };
+  host.querySelectorAll(".option-card").forEach(card => {
+    card.addEventListener("click", () => selectTier(card.dataset.tier));
+    card.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectTier(card.dataset.tier); } });
+  });
+}
 async function renderSystemStatus(panel) {
   panel = panel || document.querySelector('[data-admin-panel="system"]');
   if (!panel) return;
@@ -745,6 +788,7 @@ async function renderSystemStatus(panel) {
     version = document.querySelector("#system-version"), jobs = document.querySelector("#system-jobs"),
     syncStatus = document.querySelector("#system-sync-status"), restartButton = document.querySelector("#system-restart"),
     restartStatus = document.querySelector("#system-restart-status");
+  renderIconLibraryPanel();
   if (jobs) jobs.innerHTML = (state.dashboard?.system?.jobs || []).map(job => {
     const status = job.enabled ? `Active \u00b7 ${extendedEscape(job.schedule)}` : "Disabled";
     const lastRun = job.lastRunAt ? `Last run ${extendedEscape(formatTime(job.lastRunAt))}${job.lastStatus && job.lastStatus !== "ok" ? ` \u00b7 ${extendedEscape(job.lastStatus)}` : ""}` : "No run recorded yet";

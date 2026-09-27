@@ -485,10 +485,16 @@ async function loadSites() {
     defaultSite: { mode: "themed404", redirectUrl: "", redirectCode: 302, preservePath: true, title: "Route not found", message: "The gateway is responding, but this address has not been configured.", customHtml: "" },
     backups: { enabled: false, frequency: "daily", hour: 2, retention: 7, type: "complete", includeLogs: false, encrypt: false, lastRunAt: null, lastStatus: null },
     certificateHealth: { warningDays: 30, criticalDays: 7, staleMinutes: 10 },
-    logsRetention: { accessDays: 30, activityDays: 90, auditDays: 365, certificateDays: 365, securityDays: 365, pruningEnabled: false }
+    logsRetention: { accessDays: 30, activityDays: 90, auditDays: 365, certificateDays: 365, securityDays: 365, pruningEnabled: false },
+    // Governs how much of the icon search catalog (dashboard-icons, selfh.st, Lucide) is kept on
+    // disk. "search" / "cached" skip the daily full-repo mirror entirely (an icon assigned to a
+    // route is still saved permanently via cacheIcon(), regardless of tier); "mirror-single" keeps
+    // the existing daily mirror but writes one format per icon instead of every format a source
+    // ships; "mirror-full" is the original, unconditional behavior. See iconLibraryTierAllowsMirror().
+    iconLibrary: { tier: "cached" }
   };
   const storedSettings = storage.loadSettings() || defaultSettings;
-  settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) }, certificateHealth: { ...defaultSettings.certificateHealth, ...(storedSettings.certificateHealth || {}) }, logsRetention: { ...defaultSettings.logsRetention, ...(storedSettings.logsRetention || {}) } };
+  settings = { ...defaultSettings, ...storedSettings, defaultSite: { ...defaultSettings.defaultSite, ...(storedSettings.defaultSite || {}) }, backups: { ...defaultSettings.backups, ...(storedSettings.backups || {}) }, certificateHealth: { ...defaultSettings.certificateHealth, ...(storedSettings.certificateHealth || {}) }, logsRetention: { ...defaultSettings.logsRetention, ...(storedSettings.logsRetention || {}) }, iconLibrary: { ...defaultSettings.iconLibrary, ...(storedSettings.iconLibrary || {}) } };
   await saveSettings();
   try { await migrateIconsToUsedFolder(); } catch (error) { recordActivity(`Icon storage migration failed and was left for a future restart: ${error.message}`, "error"); }
 }
@@ -1254,6 +1260,12 @@ const ICON_SOURCE_REPOS = { "dashboard-icons": "homarr-labs/dashboard-icons", "s
 const ICON_SOURCE_FORMATS = { "dashboard-icons": ["svg", "png", "webp"], "selfhst": ["svg", "png", "webp"], "lucide": ["svg"] };
 // In-memory state for the background mirror jobs, surfaced via /api/icons/mirror/status and folded into system.jobs.
 const iconMirrorJobs = { "dashboard-icons": { status: "idle", lastRunAt: null, lastError: null, total: 0 }, "selfhst": { status: "idle", lastRunAt: null, lastError: null, total: 0 }, "lucide": { status: "idle", lastRunAt: null, lastError: null, total: 0 } };
+// The four "Icon library storage" tiers (Administration > System > Icon library storage): the two
+// lightest ("search", "cached") never run the daily full-repo mirror at all -- icons load live from
+// each source's CDN, and only a route's assigned icon is ever saved permanently (via cacheIcon(),
+// unaffected by this setting). "mirror-single" and "mirror-full" both keep the daily mirror; the
+// difference is format count, handled separately where ICON_SOURCE_FORMATS is consulted below.
+function iconLibraryTierAllowsMirror() { return settings.iconLibrary?.tier === "mirror-single" || settings.iconLibrary?.tier === "mirror-full"; }
 
 function parseIconRef(raw) {
   const value = String(raw || "").trim();
@@ -1287,10 +1299,14 @@ async function readMirroredIcon(source, slug, formatOrder) {
   return null;
 }
 
-async function runIconMirrorSync(source, { initial = false } = {}) {
+async function runIconMirrorSync(source, { initial = false, force = false } = {}) {
   const job = iconMirrorJobs[source];
   const repo = ICON_SOURCE_REPOS[source];
   if (!job || !repo || job.status === "running") return;
+  // Scheduled/startup syncs respect the current storage tier; a manually-triggered "Sync now"
+  // (force: true, from the icon picker's per-source sync button) still runs regardless of tier,
+  // since that's an explicit admin action rather than the automatic daily refresh.
+  if (!force && !iconLibraryTierAllowsMirror()) return;
   // The "initial" startup kick-off previously fired unconditionally on every server start --
   // meaning every deploy/restart re-triggered a full resync of all three sources within a
   // minute of boot, regardless of whether they already had a fresh mirror. Skip it when a
@@ -1358,6 +1374,11 @@ async function runIconMirrorSync(source, { initial = false } = {}) {
       }
     } else {
       const metadata = await fetchIconMetadata(source);
+      // "mirror-single" keeps only the first available format per icon (svg preferred, since it's
+      // the smallest and scales cleanly) instead of every format the source publishes -- this is
+      // the entire difference between the "one format per icon" and "every format" storage tiers.
+      const singleFormatOnly = settings.iconLibrary?.tier === "mirror-single";
+      const singleFormatWritten = new Set();
       for (const format of ICON_SOURCE_FORMATS[source] || ["svg", "png", "webp"]) {
         const formatDir = path.join(extractedPath, format);
         let entries;
@@ -1366,8 +1387,13 @@ async function runIconMirrorSync(source, { initial = false } = {}) {
           if (!filename.endsWith(`.${format}`)) continue;
           const slug = filename.slice(0, -(format.length + 1));
           if (!/^[a-z0-9][a-z0-9-]{0,100}$/.test(slug)) continue;
+          // Under "mirror-single", once any format has been written for this slug, skip the same
+          // slug in every other format -- ICON_SOURCE_FORMATS lists svg first for both sources
+          // that have more than one format, so this naturally prefers svg without extra logic.
+          if (singleFormatOnly && singleFormatWritten.has(slug)) continue;
           const buffer = await fsp.readFile(path.join(formatDir, filename));
           await mirrorEntry(slug, format, buffer, metadata.get(slug));
+          singleFormatWritten.add(slug);
         }
       }
     }
@@ -1508,7 +1534,10 @@ async function dashboardSnapshot(precomputedCertificates) {
         { name: "Configuration drift check", enabled: true, schedule: "10m", lastRunAt: configDrift.checkedAt || null },
         { name: "Database integrity check", enabled: true, schedule: "30m", lastRunAt: databaseIntegrityCache.checkedAt || null },
         { name: "Disk usage refresh", enabled: true, schedule: "60s", lastRunAt: dataDirSizeCache.checkedAt || null },
-        ...Object.entries(iconMirrorJobs).map(([source, job]) => ({ name: `Icon mirror (${source})`, enabled: true, schedule: "24h", lastRunAt: job.lastRunAt, lastStatus: job.status === "error" ? "error" : job.total ? `${job.total} icons` : null })),
+        // Only listed when the current icon-library storage tier actually runs the daily mirror --
+        // the "search"/"cached" tiers never sync, so these rows would otherwise sit forever showing
+        // a stale or empty last-run with nothing behind them, on both this panel and the Dashboard's.
+        ...(iconLibraryTierAllowsMirror() ? Object.entries(iconMirrorJobs).map(([source, job]) => ({ name: `Icon mirror (${source})`, enabled: true, schedule: "24h", lastRunAt: job.lastRunAt, lastStatus: job.status === "error" ? "error" : job.total ? `${job.total} icons` : null })) : []),
       ]
     },
     activity: recentActivity
@@ -2081,7 +2110,7 @@ app.get("/api/system/health", async (req, res, next) => {
 app.get("/api/system/storage", async (req, res, next) => {
   if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
   try {
-    const breakdownDirs = { sites: sitesDir, backups: backupsDir, certificates: certificatesRoot, logs: logsDir, database: path.join(dataDir, "database") };
+    const breakdownDirs = { sites: sitesDir, backups: backupsDir, certificates: certificatesRoot, logs: logsDir, database: path.join(dataDir, "database"), icons: iconsDir };
     const breakdown = Object.fromEntries(await Promise.all(Object.entries(breakdownDirs).map(async ([key, dir]) => [key, await directorySize(dir)])));
     let capacity = null;
     try {
@@ -2396,7 +2425,7 @@ app.post("/api/icons/mirror/:source/sync", (req, res) => {
   const source = String(req.params.source || "");
   if (!ICON_SOURCE_REPOS[source]) return res.status(404).json({ error: "Unknown icon source." });
   if (iconMirrorJobs[source].status === "running") return res.status(409).json({ error: "A sync for this source is already running." });
-  runIconMirrorSync(source).catch(error => console.warn(`Manual icon mirror sync (${source}) failed:`, error.message));
+  runIconMirrorSync(source, { force: true }).catch(error => console.warn(`Manual icon mirror sync (${source}) failed:`, error.message));
   res.status(202).json({ ok: true });
 });
 
@@ -2957,6 +2986,7 @@ app.patch("/api/settings", async (req, res, next) => {
       settings.defaultSite = { mode, redirectUrl: String(value.redirectUrl || "").trim(), redirectCode: [301,302,307,308].includes(Number(value.redirectCode)) ? Number(value.redirectCode) : 302, preservePath: value.preservePath !== false, title: String(value.title || "").slice(0, 100), message: String(value.message || "").slice(0, 500), customHtml: String(value.customHtml || "").slice(0, 250000) };
     }
     if (req.body.dockerIntegration) settings.dockerIntegration = { enabled: req.body.dockerIntegration.enabled === true && dockerSocketMounted };
+    if (req.body.iconLibrary) { const tier = ["search","cached","mirror-single","mirror-full"].includes(req.body.iconLibrary.tier) ? req.body.iconLibrary.tier : settings.iconLibrary?.tier || "cached"; settings.iconLibrary = { tier }; }
     if (req.body.backups) settings.backups = { ...settings.backups, ...req.body.backups, hour: Math.min(Math.max(Number(req.body.backups.hour) || 0, 0), 23), retention: Math.min(Math.max(Number(req.body.backups.retention) || 7, 1), 100) };
     if (req.body.certificateHealth) {
       const warningDays = Math.min(Math.max(Number(req.body.certificateHealth.warningDays) || 30, 8), 120);
