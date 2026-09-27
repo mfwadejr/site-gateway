@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Site-Gateway</Name>
+  <Repository>ghcr.io/mfwadejr/site-gateway:latest</Repository>
+  <Registry>https://ghcr.io/mfwadejr/site-gateway</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <MyMAC/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/mfwadejr/site-gateway/issues</Support>
+  <Project>https://github.com/mfwadejr/site-gateway</Project>
+  <ReadMe/>
+  <Overview>Site Gateway is a self-hosted reverse proxy and site-management app built on top of Caddy. It gives you a web UI for the routing patterns most people actually need &#x2014; hosted sites, proxy hosts, redirects, and streaming hosts &#x2014; with automatic HTTPS certificate management, live DNS/port/TLS/upstream health checks, and detailed access and gateway-event logs. Advanced users can still drop in custom Caddy directives per route when they need something the UI doesn't cover.&#13;
+&#13;
+Data lives locally in SQLite inside your appdata folder &#x2014; no external database to run. Three built-in roles (Administrator, Standard, Viewer) let you share access with a team without giving everyone full control.</Overview>
+  <Category>Network:Proxy Network:Web Tools:Utilities</Category>
+  <WebUI>http://[IP]:[PORT:8080]</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/mfwadejr/site-gateway/main/icon.svg</Icon>
+  <!-- ExtraParams passes the restart policy "unless-stopped" to Docker, keeping Site Gateway running across Unraid reboots and Docker restarts. -->
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/site-gateway" Mode="rw" Description="Where Site Gateway stores its SQLite database, hosted files, backups, and certificates (including private keys). This is real, durable data, not a cache — point it at a protected array or pool location rather than an unprotected cache-only share." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/site-gateway</Config>
+  <Config Name="ADMIN_USERNAME" Target="ADMIN_USERNAME" Default="admin" Mode="" Description="Login name for the first-run admin account. Pre-filled with admin — used the first time you log in to the dashboard; you can create additional users afterward." Type="Variable" Display="always" Required="true" Mask="false">admin</Config>
+  <Config Name="ADMIN_PASSWORD" Target="ADMIN_PASSWORD" Default="" Mode="" Description="Password for the first-run admin account, used the first time you log in to the dashboard. Pre-filled with changeme as a placeholder — required, and you must replace it with a real password before starting the container." Type="Variable" Display="always" Required="true" Mask="true">changeme</Config>
+  <Config Name="SESSION_SECRET" Target="SESSION_SECRET" Default="" Mode="" Description="Required. A random secret (at least 32 characters recommended) used to sign login sessions — it is not a password and is never used to log in. Changing it later signs every logged-in user out." Type="Variable" Display="always" Required="true" Mask="true">changeme-too</Config>
+  <Config Name="BACKUP_PASSWORD" Target="BACKUP_PASSWORD" Default="" Mode="" Description="Encryption password used only when encrypted scheduled backups are enabled. Leave blank to disable backup encryption." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="ACME_EMAIL" Target="ACME_EMAIL" Default="" Mode="" Description="Optional, but recommended. Let's Encrypt uses this address to warn you if a certificate renewal is failing — without it you won't be notified until a site actually goes down." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="ADMIN_PORT" Target="ADMIN_PORT" Default="8080" Mode="" Description="Internal port the admin dashboard listens on. Must match the WebUI port mapping's target below if changed." Type="Variable" Display="advanced" Required="true" Mask="false">8080</Config>
+  <Config Name="SITE_PORT_MIN" Target="SITE_PORT_MIN" Default="9000" Mode="" Description="Start of the port range Hosted Sites use internally, and are reachable on directly (host-ip:port) for LAN-only access, in addition to through Caddy on 80/443. Must not overlap ADMIN_PORT, 80, 443, or any port you use for Streaming Hosts — the app reserves this whole range and will refuse to reuse a port already claimed elsewhere." Type="Variable" Display="advanced" Required="false" Mask="false">9000</Config>
+  <Config Name="SITE_PORT_MAX" Target="SITE_PORT_MAX" Default="9099" Mode="" Description="End of the port range Hosted Sites use internally, and are reachable on directly (host-ip:port) for LAN-only access, in addition to through Caddy on 80/443. Must not overlap ADMIN_PORT, 80, 443, or any port you use for Streaming Hosts — the app reserves this whole range and will refuse to reuse a port already claimed elsewhere." Type="Variable" Display="advanced" Required="false" Mask="false">9099</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User the container writes /data as. Unraid convention is 99 (nobody)." Type="Variable" Display="always" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group the container writes /data as. Unraid convention is 100 (users)." Type="Variable" Display="always" Required="false" Mask="false">100</Config>
+  <Config Name="DATA_DIR_LIMIT_GB" Target="DATA_DIR_LIMIT_GB" Default="" Mode="" Description="Optional, display-only. Tells the Dashboard/Administration > System resource panel how much space is actually assigned to this app's data (useful if your appdata share doesn't use the whole array/pool), so the Disk percentage shown is meaningful instead of comparing against total array capacity. Leave blank if you don't need that panel to be precise." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="WebUI" Target="8080" Default="8080" Mode="tcp" Description="Admin dashboard." Type="Port" Display="always" Required="false" Mask="false">8080</Config>
+  <Config Name="HTTP" Target="80" Default="80" Mode="tcp" Description="Plain HTTP — required for HTTP-01 ACME challenges and HTTP→HTTPS redirects." Type="Port" Display="always" Required="false" Mask="false">80</Config>
+  <Config Name="HTTPS" Target="443" Default="443" Mode="tcp" Description="HTTPS for every hosted site and proxy host." Type="Port" Display="always" Required="false" Mask="false">443</Config>
+  <Config Name="Hosted Sites range" Target="9000-9099" Default="9000-9099" Mode="tcp" Description="Publishes the Hosted Sites port range (see SITE_PORT_MIN/SITE_PORT_MAX above) so hosted sites are reachable directly at host-ip:port on your LAN, in addition to through Caddy on 80/443." Type="Port" Display="advanced" Required="false" Mask="false">9000-9099</Config>
+  <Config Name="Streaming Host Port Forward (example)" Target="25565" Default="25565" Mode="tcp" Description="Not required — shown only as an example. Add one line like this per Streaming Host you configure in the dashboard, matching whatever port you enter there (e.g. a game server on 25565). Must be a port outside the Hosted Sites range above and not 80/443/ADMIN_PORT. Delete this example if you're not using Streaming Hosts." Type="Port" Display="advanced" Required="false" Mask="false">25565</Config>
+  <Config Name="Docker Socket (optional)" Target="/var/run/docker.sock" Default="" Mode="ro" Description="Must be mounted to enable 'Pick from running containers' when configuring Proxy or Streaming host targets — without it, that feature stays unavailable and you'll enter targets by IP/hostname manually instead. Access to the Docker socket is effectively root on the host, so only mount it if you want this feature." Type="Path" Display="advanced" Required="false" Mask="false"/>
+</Container>

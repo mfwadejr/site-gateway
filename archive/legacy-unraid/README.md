@@ -1,8 +1,7 @@
-# Legacy Unraid Community Apps template (archived, unfinished)
+# Legacy Unraid Community Apps template (superseded, removed 2026-09-27)
 
-This is the Unraid Community Apps template (`site-gateway.xml`) as it existed in the original `mfwadejr/site-gateway` repo before that repo was retired. It is **not currently submittable as-is**:
+This folder used to hold `site-gateway.xml`, the Unraid Community Apps template as it existed in the original `mfwadejr/site-gateway` repo before that repo was retired. It pointed at the old image tag `ghcr.io/mfwadejr/site-gateway:0.11.28` and the old repo's `Support`/`Project`/`Icon` URLs, and was never finalized or submitted.
 
-- It points at the old image tag `ghcr.io/mfwadejr/site-gateway:0.11.28` and the old repo's `Support`/`Project`/`Icon` URLs — all of which need updating to reflect `site-gateway2`.
-- It was never finalized or submitted to the actual Unraid Community Apps store, and likely does not fully conform to that store's current submission requirements (see the open "Unraid Community Apps submission" backlog item in the project's build backlog for what's still missing: `ca_profile.xml`, correct `<Repository>`, etc.).
+**The file has been deleted.** Unraid's submission scanner walks the whole repository for any file with a `<Container>` root element, not just a `templates/` folder — so leaving this stale template archived here (rather than actually removed) caused a real submission failure: the scanner picked it up instead of the real template, surfacing the wrong (0.11.28) version and a broken icon reference.
 
-Kept here for historical reference and as a real head start if/when that backlog item is picked up — most of the port/volume/env-var scaffolding below is still structurally correct for site-gateway2, it just needs the identifying URLs and image reference updated.
+The real, finalized, submittable template now lives at `templates/site-gateway.xml`, alongside `icon.svg` and `ca_profile.xml` at the repo root. See the project's build backlog for the full history of decisions behind that template.

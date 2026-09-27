@@ -1,0 +1,6 @@
+<CommunityApplications>
+  <Profile>Site Gateway is a self-hosted reverse proxy and site-management app built on top of Caddy. It gives you a web UI for Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts, with automatic HTTPS certificate management, live DNS/port/TLS/upstream health checks, and detailed access and gateway-event logs. Roles (Administrator/Standard/Viewer), Groups, and Access Lists let you share admin access with a team without giving everyone full control. Data lives locally in SQLite inside your appdata folder — no external database to run.</Profile>
+  <Icon>https://raw.githubusercontent.com/mfwadejr/site-gateway/main/icon.svg</Icon>
+  <WebPage>https://github.com/mfwadejr/site-gateway</WebPage>
+  <Forum>https://github.com/mfwadejr/site-gateway/issues</Forum>
+</CommunityApplications>
