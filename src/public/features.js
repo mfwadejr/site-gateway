@@ -684,7 +684,7 @@ function renderSystemPanel() {
       // (the "search"/"cached" tiers below turn off the "Icon mirror (…)" rows entirely) and how
       // much the Disk usage panel's own "Icons" line below reports, so it belongs between the two
       // things it affects rather than as its own tab or folded into the icon picker.
-      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Storage</p><h2>Icon library storage</h2></div></div><p class="muted">Controls how much of the icon search catalog (dashboard-icons, selfh.st, Lucide) is kept on disk. Changing this takes effect on the next scheduled sync — icons already assigned to a route are never affected or removed by this setting.</p><div id="system-icon-library" class="option-list"></div></div>',
+      '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Storage</p><h2>Icon library storage</h2></div></div><p class="muted icon-library-intro">Controls how much of the icon search catalog (dashboard-icons, selfh.st, Lucide) is kept on disk. Changing this takes effect on the next scheduled sync — icons already assigned to a route are never affected or removed by this setting.</p><div id="system-icon-library" class="option-list"></div><p id="system-icon-library-status" class="muted icon-library-status"></p></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Storage</p><h2>Disk usage</h2></div></div><div id="system-storage" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Build</p><h2>Version</h2></div></div><div id="system-version" class="muted"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Gateway</p><h2>Sync & control</h2></div></div><p id="system-sync-status" class="muted"></p><p class="muted">Reloading re-applies the current configuration to Caddy with no downtime. Restarting stops and restarts the whole application \u2014 only available when a restart policy is set on the container.</p><div class="row-actions"><button type="button" id="system-resync" class="button secondary">Resync now</button><button type="button" id="system-reload" class="button secondary">Reload gateway config</button><button type="button" id="system-restart" class="button secondary danger-text" disabled>Restart application</button></div><p id="system-restart-status" class="muted"></p></div>',
@@ -752,7 +752,7 @@ const ICON_LIBRARY_TIERS = [
     pros: "Smallest footprint", cons: "Needs internet while browsing icons" },
   { tier: "cached", name: "Search-only, with a local cache", size: "~200 MB cap", recommended: true,
     desc: "Same as Search-only, but icons you've viewed recently stay cached locally so repeat browsing doesn't keep re-fetching them. Oldest icons are dropped first once the cap is reached.",
-    pros: "Recommended", cons: "Still needs internet for icons never seen before" },
+    pros: "Fast on repeat browsing", cons: "Still needs internet for icons never seen before" },
   { tier: "mirror-single", name: "Full nightly mirror · one format per icon", size: "~350 MB", recommended: false,
     desc: "Every icon from all three sources is downloaded and kept up to date automatically, storing only the best available format per icon instead of every format a source ships.",
     pros: "Works fully offline", cons: "Largest of the offline-friendly options" },
@@ -761,10 +761,15 @@ const ICON_LIBRARY_TIERS = [
     pros: "Works fully offline", cons: "Largest footprint, mostly redundant copies" },
 ];
 function renderIconLibraryPanel() {
-  const host = document.querySelector("#system-icon-library");
+  const host = document.querySelector("#system-icon-library"), status = document.querySelector("#system-icon-library-status");
   if (!host || !state.settings) return;
   const current = state.settings.iconLibrary?.tier || "cached";
-  host.innerHTML = ICON_LIBRARY_TIERS.map(option => `<div class="option-card${option.tier === current ? " selected" : ""}" data-tier="${option.tier}" role="radio" aria-checked="${option.tier === current}" tabindex="0"><div class="option-radio"></div><div class="option-body"><div class="option-top"><span class="option-name">${extendedEscape(option.name)}</span><span class="option-badge">${extendedEscape(option.size)}</span></div><p class="option-desc">${extendedEscape(option.desc)}</p><div class="option-meta"><span><span class="dot on"></span>${extendedEscape(option.pros)}</span><span><span class="dot off"></span>${extendedEscape(option.cons)}</span></div></div></div>`).join("");
+  const currentOption = ICON_LIBRARY_TIERS.find(option => option.tier === current);
+  host.innerHTML = ICON_LIBRARY_TIERS.map(option => `<div class="option-card${option.tier === current ? " selected" : ""}" data-tier="${option.tier}" role="radio" aria-checked="${option.tier === current}" tabindex="0"><div class="option-radio"></div><div class="option-body"><div class="option-top"><span class="option-name">${extendedEscape(option.name)}</span><span class="option-badges">${option.recommended ? '<span class="option-badge badge-recommended">Recommended</span>' : ""}<span class="option-badge">${extendedEscape(option.size)}</span></span></div><p class="option-desc">${extendedEscape(option.desc)}</p><div class="option-meta"><span><span class="dot on"></span>${extendedEscape(option.pros)}</span><span><span class="dot off"></span>${extendedEscape(option.cons)}</span></div></div></div>`).join("");
+  // A persistent, always-current line under the option list -- not just the transient toast --
+  // so it's clear which choice actually took effect without relying on spotting the green border
+  // (the user caught that the border alone wasn't a confident-enough confirmation).
+  if (status) status.innerHTML = `Currently active: <strong>${extendedEscape(currentOption?.name || current)}</strong>`;
   const selectTier = async tier => {
     if (tier === current || host.dataset.busy) return;
     host.dataset.busy = "1";
@@ -774,6 +779,13 @@ function renderIconLibraryPanel() {
       // true on this same PATCH) -- refresh the cached /api/config value so that takes effect
       // immediately for the rest of this session, not just after a full page reload.
       state.config = await api("/api/config");
+      // refreshDashboard() re-fetches /api/dashboard and re-renders the Dashboard page's own
+      // Scheduled jobs panel -- without this, only /api/config and /api/settings were refreshed,
+      // so the "Icon mirror (...)" job rows (on both this panel and the Dashboard's) kept showing
+      // stale data until a full browser reload re-fetched everything from scratch. This was a real
+      // bug, not just a nice-to-have: switching tiers is exactly the action that adds/removes those
+      // rows, so seeing them update immediately is the whole point.
+      await refreshDashboard();
       toast("Icon library storage setting saved.");
       renderIconLibraryPanel();
       renderSystemStatus();
