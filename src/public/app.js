@@ -272,9 +272,17 @@ function renderDashboard() {
   // swap/disk/network from /api/system/health instead of this endpoint's coarser numbers.
   $("#attention-panel").classList.toggle("is-clear", data.attention.length === 0);
   $("#dashboard-lower-columns").classList.toggle("attention-clear", data.attention.length === 0);
+  // Each item's severity ("critical" or "warning", set server-side -- see the attention.push()
+  // calls in server.js) now drives both the tile's border color and its status dot, instead of
+  // every item rendering identically regardless of how serious the underlying condition actually
+  // is. "bad" is the existing dot class that renders red (var(--danger)); "error" (despite the
+  // name) renders amber (var(--warning)) -- see upstreamStateClass()'s "bad" card-alert border for
+  // the same red/amber vocabulary already used elsewhere on the dashboard.
+  const severityDot = item => item.severity === "warning" ? "error" : "bad";
+  const severityClass = item => `severity-${item.severity === "warning" ? "warning" : "critical"}`;
   $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => item.kind === "drift"
-    ? `<div class="attention-tile drift-tile"><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span>${canAdmin() ? '<button type="button" class="button secondary" data-drift-resync>Resync now</button>' : ""}</div>`
-    : `<${item.target ? "button" : "div"} class="attention-tile ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot error"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`
+    ? `<div class="attention-tile drift-tile ${severityClass(item)}"><span class="status-dot ${severityDot(item)}"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span>${canAdmin() ? '<button type="button" class="button secondary" data-drift-resync>Resync now</button>' : ""}</div>`
+    : `<${item.target ? "button" : "div"} class="attention-tile ${severityClass(item)} ${item.target ? "issue-link" : ""}" ${item.target ? `data-issue-target="${escapeHtml(item.target)}"` : ""}><span class="status-dot ${severityDot(item)}"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span></${item.target ? "button" : "div"}>`
   ).join("") : '<div class="all-clear"><span class="status-dot running"></span><span>Everything looks good — no issues to review.</span></div>';
   $("#activity-list").innerHTML = data.activity.length ? data.activity.slice(0, 5).map(item => `<div class="activity-tile"><span class="activity-mark ${item.status === "error" ? "bad" : item.status === "warning" ? "warn" : ""}">${item.status === "error" || item.status === "warning" ? "!" : "✓"}</span><span class="activity-copy"><strong>${escapeHtml(item.message)}</strong><small title="${escapeHtml(formatTime(item.at))}">${escapeHtml(formatRelativeTime(item.at))}</small></span></div>`).join("") : '<p class="quiet-state">No recent activity.</p>';
 }

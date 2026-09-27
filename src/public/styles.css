@@ -239,9 +239,16 @@ header{align-items:flex-end}
 .activity-mark{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:rgba(var(--green-rgb),.12);color:var(--green);font-size:.7rem;font-weight:900}
 .quiet-state{color:var(--muted);font-size:var(--font-size-md);margin:3px 0}
 #attention-list.dashboard-list,#activity-list.dashboard-list{display:grid;gap:10px}
-.attention-tile{display:flex;align-items:center;gap:var(--space-3);min-width:0;padding:13px 14px;border:1px solid var(--line);border-left:3px solid var(--danger);border-radius:var(--radius-md);background:rgba(var(--bg-rgb),.28)}
+/* A full, uniform colored border (matching Recent Activity's own row weight) instead of a thin
+   left accent stripe that was too subtle to actually draw the eye when compared side by side with
+   Recent Activity's plain box. Color reflects the item's real severity -- see severityClass() in
+   app.js -- rather than treating every attention item as equally critical. */
+.attention-tile{display:flex;align-items:center;gap:var(--space-3);min-width:0;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgba(var(--bg-rgb),.28)}
+.attention-tile.severity-critical{border-color:var(--danger)}
+.attention-tile.severity-warning{border-color:var(--warning)}
 .issue-link.attention-tile{cursor:pointer;transition:.2s}
-.issue-link.attention-tile:hover{background:rgba(var(--danger-rgb),.08);border-color:var(--border-hover-alt)}
+.issue-link.attention-tile.severity-critical:hover{background:rgba(var(--danger-rgb),.08);border-color:var(--danger)}
+.issue-link.attention-tile.severity-warning:hover{background:rgba(var(--warning-rgb),.08);border-color:var(--warning)}
 .drift-tile .attention-copy{flex:1}
 .drift-tile .button{padding:var(--space-2) 12px;font-size:.72rem;flex-shrink:0}
 .attention-copy,.activity-copy{display:grid;gap:3px;min-width:0}
