@@ -269,7 +269,7 @@ function renderDashboard() {
   // Memory/Data/Storage/Version/Database/Public IP moved to the Administration > System tab's
   // Version panel -- the Dashboard's own Runtime/System panel is now the shared hero component
   // (see renderHeroPanel/refreshDashboardHero), which reads real container-scoped CPU/memory/
-  // swap/disk/network from /api/system/health instead of this endpoint's coarser numbers.
+  // disk I/O/disk/network from /api/system/health instead of this endpoint's coarser numbers.
   $("#attention-panel").classList.toggle("is-clear", data.attention.length === 0);
   $("#dashboard-lower-columns").classList.toggle("attention-clear", data.attention.length === 0);
   // Each item's severity ("critical" or "warning", set server-side -- see the attention.push()
@@ -786,7 +786,7 @@ async function refreshDashboard() {
   try { state.dashboard = await api("/api/dashboard"); renderDashboard(); }
   finally { /* no-op: the Live Health panel's own refresh icon was removed in favor of the page-level refresh button */ }
 }
-// Populates the Dashboard's hero panel (CPU/memory/swap/disk/network/uptime) directly from
+// Populates the Dashboard's hero panel (CPU/memory/disk I/O/disk/network/uptime) directly from
 // /api/system/health, the same call and the same renderHeroPanel() the Administration > System
 // tab's hero uses, so the two can never show different numbers for the same live stat again.
 // Uptime uses sixthSlot: "uptime" here (the System tab uses the default "throughput" slot instead,

@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.16.115-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.16.116-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -47,7 +47,7 @@ It's narrower than a general-purpose proxy manager on purpose. You tell it what 
 | Upload a ZIP or `index.html` and publish static files on a domain and/or a direct port | Point a domain at Plex, Jellyfin, Vaultwarden, or any HTTP app — TLS, HSTS, and headers included | Send one or more domains to a canonical destination with 301/302/307/308 | Forward raw TCP/UDP ports straight to a service — game servers, SSH, anything that isn't HTTP |
 
 - **Automatic HTTPS** — Caddy issues and renews public certificates; internal, HTTP-only, and uploaded custom-certificate modes are also supported.
-- **Live dashboard** — gateway/HTTP/HTTPS/storage health, hosted and proxy counts, certificate status, and throughput at a glance, plus a live resource panel (CPU, memory, swap, disk, network, uptime) reading real container-scoped cgroup v2 stats, not host-wide numbers, and auto-refreshing while the page is open.
+- **Live dashboard** — gateway/HTTP/HTTPS/storage health, hosted and proxy counts, certificate status, and throughput at a glance, plus a live resource panel (CPU, memory, disk I/O, disk, network, uptime) reading real container-scoped cgroup v2 stats, not host-wide numbers, and auto-refreshing while the page is open.
 - **Access Lists** — reusable login/network policies combining accounts, groups, and IP/CIDR rules across any host.
 - **Two-factor authentication** — TOTP-based MFA for administrator and user accounts, with recovery codes, plus an administrator-side override to disable a locked-out user's 2FA when they've lost their authenticator and used up their recovery codes.
 - **Users, groups, and roles** — Administrator and Standard User roles, with account lifecycle controls.

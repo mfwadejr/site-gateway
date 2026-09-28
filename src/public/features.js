@@ -652,9 +652,10 @@ function setHeroStat(prefix, key, { value, percent, detail, tone } = {}) {
   if (fillEl) { fillEl.style.width = `${Math.max(0, Math.min(100, percent ?? 0))}%`; fillEl.className = `system-hero-fill${tone ? ` ${tone}` : ""}`; }
   if (detailEl) detailEl.textContent = detail || "";
 }
-// Populates a hero panel's CPU/memory/swap/disk/network stats (shared by both the System tab and
-// the Dashboard) from /api/system/health. Each stat degrades gracefully to a dash when its source
-// isn't available (e.g. no cgroup v2, no readable network interfaces, swap disabled on the host).
+// Populates a hero panel's CPU/memory/disk-I/O/disk-usage/network stats (shared by both the
+// System tab and the Dashboard) from /api/system/health. Each stat degrades gracefully to a dash
+// when its source isn't available (e.g. no cgroup v2, no readable network interfaces, the "io"
+// controller not delegated to this container's cgroup).
 // Throughput is System-tab-only -- the Dashboard already shows live requests/min in its own chip,
 // so `includeThroughput: false` there skips it rather than showing the same number twice.
 function renderHeroPanel(prefix, health, { sixthSlot = "throughput" } = {}) {
@@ -662,13 +663,14 @@ function renderHeroPanel(prefix, health, { sixthSlot = "throughput" } = {}) {
   // that page has no other requests/min display) or "uptime" (the Dashboard, which already has
   // its own Throughput chip elsewhere -- showing it twice added nothing). Both come straight off
   // the same /api/system/health poll as everything else here, no separate ticker or anchor.
-  const keys = ["cpu", "memory", "swap", "disk", "network", sixthSlot];
+  const keys = ["cpu", "memory", "diskIo", "disk", "network", sixthSlot];
   if (!document.querySelector(`#${prefix}-${keys[0]}-value`)) return;
   if (!health) { keys.forEach(key => setHeroStat(prefix, key, { value: "\u2014", detail: "Unavailable" })); return; }
   const tone = percent => percent >= 90 ? "critical" : percent >= 75 ? "warning" : "";
   // Tracks the worst tone across the resource stats (not network/uptime/throughput, which don't
   // carry one) so the panel's own top accent bar can reflect it too, instead of always showing
-  // green regardless of whether CPU/memory/swap/disk are actually in a warning/critical state.
+  // green regardless of whether CPU/memory/disk are actually in a warning/critical state. Disk
+  // I/O is a rate, not a saturation percentage, so it never contributes a tone either.
   const toneRank = { "": 0, warning: 1, critical: 2 };
   let worstTone = "";
   const trackTone = value => { if (toneRank[value] > toneRank[worstTone]) worstTone = value; };
@@ -680,13 +682,12 @@ function renderHeroPanel(prefix, health, { sixthSlot = "throughput" } = {}) {
   else setHeroStat(prefix, "cpu", { value: "\u2014", detail: "cgroup CPU stats unavailable" });
   if (health.memory) { trackTone(tone(health.memory.percent)); setHeroStat(prefix, "memory", { value: `${health.memory.percent.toFixed(1)}%`, percent: health.memory.percent, tone: tone(health.memory.percent), detail: `${formatBytes(health.memory.usedBytes)} / ${formatBytes(health.memory.limitBytes)}` }); }
   else setHeroStat(prefix, "memory", { value: "\u2014", detail: "cgroup memory stats unavailable" });
-  // Swap only gets a real percentage when the container has an actual --memory-swap limit set
-  // (memory.swap.max is a real number). Without one it's unbounded and shares the host's swap,
-  // so a raw "0 B" would read like a hard cap that doesn't exist -- say so instead.
-  if (health.swap && health.swap.configured === false) setHeroStat(prefix, "swap", { value: "Off", percent: 0, detail: "Swap is not configured for this container" });
-  else if (health.swap && health.swap.limitBytes) { trackTone(tone(health.swap.percent)); setHeroStat(prefix, "swap", { value: `${health.swap.percent.toFixed(1)}%`, percent: health.swap.percent, tone: tone(health.swap.percent), detail: `${formatBytes(health.swap.usedBytes)} / ${formatBytes(health.swap.limitBytes)}` }); }
-  else if (health.swap) setHeroStat(prefix, "swap", { value: formatBytes(health.swap.usedBytes), percent: 0, detail: "Unlimited \u2014 shares host swap" });
-  else setHeroStat(prefix, "swap", { value: "\u2014", detail: "cgroup swap stats unavailable" });
+  // A rate stat, not a saturation percentage -- mirrors how Network is rendered just below, down
+  // to reusing the same "unavailable" language pattern rather than falling back to anything
+  // host-wide (see sampleCgroupIo() server-side for why that fallback is deliberately not there).
+  if (health.diskIo && health.diskIo.available === false) setHeroStat(prefix, "diskIo", { value: "\u2014", percent: 0, detail: "Disk I/O unavailable on this host" });
+  else if (health.diskIo && health.diskIo.available) setHeroStat(prefix, "diskIo", { value: formatRate(health.diskIo.readBytesPerSec + health.diskIo.writeBytesPerSec), percent: 0, detail: `R ${formatRate(health.diskIo.readBytesPerSec)} \u00b7 W ${formatRate(health.diskIo.writeBytesPerSec)}` });
+  else setHeroStat(prefix, "diskIo", { value: "\u2014", detail: "Sampling\u2026" });
   if (health.disk) {
     const overAssigned = health.disk.assignedLimitBytes && health.disk.percent > 100;
     const diskDetail = health.disk.assignedLimitBytes ? `${formatBytes(health.disk.usedBytes)} used of ${formatBytes(health.disk.assignedLimitBytes)} assigned \u00b7 ${formatBytes(health.disk.availableBytes)} free on host` : `${formatBytes(health.disk.usedBytes)} used \u00b7 ${formatBytes(health.disk.availableBytes)} free`;
@@ -699,7 +700,7 @@ function renderHeroPanel(prefix, health, { sixthSlot = "throughput" } = {}) {
   else setHeroStat(prefix, "network", { value: "\u2014", detail: "Sampling\u2026" });
   if (sixthSlot === "throughput") setHeroStat(prefix, "throughput", { value: String(health.throughput?.liveRequests ?? 0), percent: 0, detail: "requests in the last minute" });
   else if (sixthSlot === "uptime") setHeroStat(prefix, "uptime", Number.isFinite(health.uptimeSeconds) ? { value: formatDuration(health.uptimeSeconds), detail: "Since last restart" } : { value: "\u2014", detail: "Unavailable" });
-  // Reflect the worst CPU/memory/swap/disk tone on the panel's own top accent bar -- previously
+  // Reflect the worst CPU/memory/disk tone on the panel's own top accent bar -- previously
   // hardcoded green regardless of what the stats inside it were actually showing.
   const heroPanel = document.querySelector(`#${prefix}-grid`)?.closest(".system-panel");
   if (heroPanel) { heroPanel.classList.remove("tone-warning", "tone-critical"); if (worstTone) heroPanel.classList.add(`tone-${worstTone}`); }
@@ -717,7 +718,7 @@ function renderSystemPanel() {
     panel.dataset.ready = "1";
     panel.innerHTML = [
       '<div class="panel-heading"><div><h2>System</h2><p class="muted">What\u2019s configured, what\u2019s running, and what this deployment can do. Nothing here is customizable except the Docker toggle below and the action buttons \u2014 everything else is status.</p></div></div>',
-      `<div class="system-hero"><div class="system-hero-grid" id="system-hero-grid">${heroSlotsMarkup("system-hero", [["cpu", "CPU"], ["memory", "Memory"], ["swap", "Swap"], ["disk", "Disk"], ["network", "Network"], ["throughput", "Throughput"]])}</div></div>`,
+      `<div class="system-hero"><div class="system-hero-grid" id="system-hero-grid">${heroSlotsMarkup("system-hero", [["cpu", "CPU"], ["memory", "Memory"], ["diskIo", "Disk I/O"], ["disk", "Disk"], ["network", "Network"], ["throughput", "Throughput"]])}</div></div>`,
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Integrations</h2></div></div><div id="system-env-status" class="health-grid"></div><div class="system-integrations"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Environment</p><h2>Security status</h2></div></div><div id="system-security" class="health-grid"></div></div>',
       '<div class="dashboard-panel"><div class="panel-heading"><div><p class="eyebrow">Operations</p><h2>Scheduled jobs</h2></div></div><div id="system-jobs" class="health-grid"></div></div>',
@@ -859,7 +860,7 @@ async function renderSystemStatus(panel) {
   if (syncStatus) { const drift = (state.dashboard?.attention || []).some(item => item.kind === "drift"); syncStatus.textContent = drift ? "Configuration drift detected \u2014 the running gateway no longer matches the last known-good configuration." : `Gateway configuration is in sync. Last reload: ${state.dashboard?.gateway?.lastReload ? formatTime(state.dashboard.gateway.lastReload) : "unknown"}.`; syncStatus.className = drift ? "muted status-warning" : "muted"; }
   if (version) {
     // Caddy version, Database status, and Public IP used to live on the Dashboard's Runtime/System
-    // panel -- that panel is now the shared hero component (CPU/memory/swap/disk/network), so this
+    // panel -- that panel is now the shared hero component (CPU/memory/disk I/O/disk/network), so this
     // operational metadata moved here instead, reusing the same system.* fields from the global
     // dashboard snapshot rather than a separate fetch. Uptime is the one exception: it's wrapped in
     // its own #system-version-uptime span and kept current by updateSystemVersionUptime(), called

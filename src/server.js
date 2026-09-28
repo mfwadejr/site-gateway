@@ -126,7 +126,7 @@ async function directorySize(directory) {
   return sizes.reduce((sum, size) => sum + size, 0);
 }
 
-// --- System health: cgroup v2 CPU/memory/swap sampling + network throughput -------------------
+// --- System health: cgroup v2 CPU/memory/disk-I/O sampling + network throughput ----------------
 // All readings are container-scoped (cgroup v2), not host-wide, because Site Gateway usually
 // isn't the only thing running on the host and host-wide numbers would be misleading in a
 // per-container dashboard. Falls back to host-level approximations (with a flag the UI can use
@@ -183,15 +183,6 @@ async function cgroupMemory() {
   const usedBytes = Number(current);
   return { usedBytes, limitBytes, percent: limitBytes > 0 ? (usedBytes / limitBytes) * 100 : null };
 }
-async function cgroupSwap() {
-  const current = await readCgroupFile("memory.swap.current");
-  if (current === null) return null;
-  const maxRaw = await readCgroupFile("memory.swap.max");
-  const usedBytes = Number(current);
-  if (maxRaw === "0") return { usedBytes: 0, limitBytes: 0, percent: null, configured: false };
-  const limitBytes = maxRaw && maxRaw !== "max" ? Number(maxRaw) : null;
-  return { usedBytes, limitBytes, percent: limitBytes ? (usedBytes / limitBytes) * 100 : null, configured: true };
-}
 // Network counters are cumulative since the interface came up, so throughput needs a delta
 // between two samples too -- sampled on a fixed interval in the background (rather than on
 // each request) so the rate stays smooth regardless of how often the dashboard polls.
@@ -217,6 +208,37 @@ async function sampleNetworkInterfaces() {
 }
 setInterval(sampleNetworkInterfaces, 5000).unref();
 sampleNetworkInterfaces();
+// Container-scoped disk I/O, read from the same cgroup v2 hierarchy as CPU/memory -- requires the
+// "io" controller to actually be delegated to this container's cgroup, which isn't guaranteed the
+// way cpu/memory usually are (a lot of real-world Docker/Unraid setups only delegate cpu/memory/
+// pids by default). io.stat lists one line per block device this cgroup has touched (e.g. several
+// partitions of the same physical disk) -- summed the same way sampleNetworkInterfaces() sums
+// across every network interface, not just the first line. ioStatAvailable distinguishes "checked
+// and it's genuinely not there" (false) from "haven't checked yet" (null, still "Sampling...") so
+// the UI can say so plainly instead of ever falling back to /proc/diskstats, which is host-wide
+// and would silently mix in every other container's disk activity.
+let lastIoSample = null; // { totalReadBytes, totalWriteBytes, atMs }
+let ioRate = null; // { readBytesPerSec, writeBytesPerSec }
+let ioStatAvailable = null;
+async function sampleCgroupIo() {
+  const raw = await readCgroupFile("io.stat");
+  if (raw === null) { ioStatAvailable = false; return; }
+  ioStatAvailable = true;
+  let totalReadBytes = 0, totalWriteBytes = 0;
+  for (const line of raw.split("\n")) {
+    const read = line.match(/rbytes=(\d+)/), write = line.match(/wbytes=(\d+)/);
+    if (read) totalReadBytes += Number(read[1]);
+    if (write) totalWriteBytes += Number(write[1]);
+  }
+  const atMs = Date.now();
+  if (lastIoSample) {
+    const elapsedSeconds = (atMs - lastIoSample.atMs) / 1000;
+    if (elapsedSeconds > 0) ioRate = { readBytesPerSec: Math.max(0, (totalReadBytes - lastIoSample.totalReadBytes) / elapsedSeconds), writeBytesPerSec: Math.max(0, (totalWriteBytes - lastIoSample.totalWriteBytes) / elapsedSeconds) };
+  }
+  lastIoSample = { totalReadBytes, totalWriteBytes, atMs };
+}
+setInterval(sampleCgroupIo, 5000).unref();
+sampleCgroupIo();
 // A recursive walk of /data (directorySize()) is only needed when DATA_DIR_LIMIT_GB is set, and
 // only to compute one denominator-relative percentage -- disk usage doesn't change fast enough to
 // justify redoing that walk on every single hero-panel poll (every 7 seconds, times every
@@ -228,16 +250,16 @@ async function refreshDataDirSizeCache() {
   try { dataDirSizeCache = { checkedAt: new Date().toISOString(), bytes: await directorySize(dataDir) }; }
   catch (error) { console.warn("Could not compute data directory size:", error.message); }
 }
-// One combined snapshot for the System tab's hero panel -- CPU/memory/swap/network are all
-// container-scoped (cgroup v2 + this container's network namespace); disk reuses the same
-// statfs-on-the-data-volume approach as /api/system/storage.
+// One combined snapshot for the System tab's hero panel -- CPU/memory/network/disk I/O are all
+// container-scoped (cgroup v2 + this container's network namespace); disk *usage* reuses the same
+// statfs-on-the-data-volume approach as /api/system/storage. Disk I/O rate comes off the same
+// background sampler as network (see sampleCgroupIo() above), not awaited per-request.
 async function systemHealthSnapshot() {
   const assignedLimitGb = numberEnv("DATA_DIR_LIMIT_GB", null);
   const assignedLimitBytes = assignedLimitGb && assignedLimitGb > 0 ? assignedLimitGb * 1024 ** 3 : null;
-  const [cpu, memory, swap, disk] = await Promise.all([
+  const [cpu, memory, disk] = await Promise.all([
     cgroupCpuPercent(),
     cgroupMemory(),
-    cgroupSwap(),
     fsp.statfs(dataDir).catch(() => null),
   ]);
   // See refreshDataDirSizeCache() above -- this used to be a live directorySize() walk on every fetch.
@@ -245,7 +267,7 @@ async function systemHealthSnapshot() {
   return {
     cpu,
     memory,
-    swap,
+    diskIo: ioStatAvailable === false ? { available: false } : (ioRate ? { available: true, readBytesPerSec: ioRate.readBytesPerSec, writeBytesPerSec: ioRate.writeBytesPerSec } : null),
     disk: disk ? (() => {
       const totalBytes = disk.blocks * disk.bsize, freeBytes = disk.bfree * disk.bsize, availableBytes = disk.bavail * disk.bsize, volumeUsedBytes = totalBytes - freeBytes;
       // DATA_DIR_LIMIT_GB lets an operator tell the hero panel what's actually assigned to this
@@ -2109,7 +2131,7 @@ app.post("/api/account/mfa/recovery-codes", async (req, res, next) => {
 app.get("/api/config", (req, res) => res.json({ version: appVersion, minPort, maxPort, adminPort, storage: { engine: "sqlite", databasePath: storage.databasePath, instanceId: LOCAL_INSTANCE_ID, backupsPath: backupsDir, certificatesPath: certificatesRoot }, gateway: { enabled: true, error: gatewayError }, backup: { encryptionAvailable: Boolean(scheduledBackupPassword) }, docker: { socketMounted: dockerSocketMounted, enabled: dockerSocketMounted && settings.dockerIntegration?.enabled === true }, iconLibraryReviewed: Boolean(settings.iconLibrary?.reviewed) }));
 
 // --- System tab: storage usage, restart-policy check, and self-restart -----------------------------------
-// Read-only, non-destructive live resource stats (CPU/memory/swap/disk/network/throughput) --
+// Read-only, non-destructive live resource stats (CPU/memory/disk I/O/disk usage/network/throughput) --
 // shown on the Dashboard for every signed-in user, same as the rest of the Dashboard's health
 // panel, and additionally on the Administration > System tab's hero for administrators. Unlike
 // most /api/system/* routes this intentionally isn't administrator-gated, since there's nothing
