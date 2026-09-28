@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.16.113-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.16.114-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -143,7 +143,13 @@ Prefer a plain Compose file instead? `compose.yaml` (build from source) and `com
 
 ## Backup and update
 
-Open **Administration → Backup & restore** to create a Configuration or Complete backup. Manual backups download to the browser; scheduled backups are stored under `/data/backups` and can be AES-256-GCM encrypted when `BACKUP_PASSWORD` is set. A Complete backup contains a consistent SQLite snapshot, portable JSON recovery data, hosted files, local icons, custom fallback assets, and certificate storage. Because certificate backups contain private keys, encryption is strongly recommended.
+Open **Administration → Backup & restore** to create a Configuration or Complete backup, either manually or on a schedule. Every backup — manual or scheduled — is saved to `/data/backups`; a manual backup does not auto-download to your browser, use that entry's Download button in the list to save a local copy.
+
+A **Configuration** backup contains a consistent SQLite snapshot of every route, user, group, Access List, and setting, plus a portable JSON export of the same data. A **Complete** backup (the recommended default) adds hosted files, local icons (including the mirrored icon cache), custom fallback/default-site assets, and certificate storage. Because certificate backups contain private keys, encryption is strongly recommended.
+
+Both backup types always exclude previously created backup files themselves and the generated `caddy/Caddyfile` (a derived output, regenerated automatically from your stored configuration). Logs are excluded from both unless you explicitly turn on **Include logs** — either in the Scheduled backups settings for automatic runs, or as its own checkbox in the manual "Create backup" dialog for a one-off backup.
+
+Encryption is handled independently at each point of use, not from one shared field: the manual "Create backup" dialog has its own password field for the backup you're creating right now; restoring or importing an encrypted archive asks for its password directly in that action's own confirmation dialog; and scheduled backups are encrypted via the container's `BACKUP_PASSWORD` environment value, toggled with "Encrypt scheduled backups" in the Scheduled backups settings. No password is ever stored by Site Gateway.
 
 Before restoring, Site Gateway checks the archive manifest, creates a complete pre-restore safety backup, then reloads and validates the resulting configuration.
 
