@@ -450,7 +450,6 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .readiness-divider{grid-column:1/-1;margin:4px 0 -2px;padding-top:10px;border-top:1px solid var(--line)}
 .certificate-details dt{color:var(--muted);font-size:.7rem}
 .certificate-details dd{margin:5px 0 0;overflow-wrap:anywhere;font-size:.8rem}
-.readiness-panel{margin-top:18px}
 .issue-link{width:100%;border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer}
 .issue-link:hover{background:var(--panel2)}
 @media(max-width:900px){#certificates-view .feature-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -650,10 +649,6 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .event-filters label{min-width:180px;margin:0}
 .event-filters select{width:100%;height:44px;min-height:44px}
 .event-list{max-height:360px;overflow:auto}
-.event-row{display:flex;align-items:flex-start;gap:var(--space-3);padding:var(--space-3) 3px;border-top:1px solid var(--line)}
-.event-row:first-child{border-top:0}
-.event-row>span:last-child{display:grid;gap:3px}
-.event-row small{text-transform:capitalize;color:var(--muted);font-size:.7rem}
 .activity-mark.warn{background:rgba(var(--warning-rgb),.12);color:var(--warning)}
 
 /* Access List assignment editor */
@@ -826,26 +821,6 @@ label.check-control:has(input[name="upstreamTlsInsecure"]) small{position:absolu
 
 /* Shared diagnostic lists: Certificates, Access Logs, Gateway Events, Audit */
 select{appearance:none!important;-webkit-appearance:none!important;background-repeat:no-repeat!important;background-position:right 14px center!important;background-size:16px!important}
-#certificate-list,#readiness-list{max-height:min(52vh,620px);overflow:auto;border:1px solid var(--line);border-radius:var(--radius-2xl);background:var(--panel)}
-#certificate-list{scrollbar-gutter:stable}
-#readiness-list{scrollbar-gutter:stable}
-#gateway-log-list .event-row,#access-log-list .event-row{align-items:center}
-#gateway-log-list .event-row .activity-mark,#access-log-list .event-row .activity-mark{flex:0 0 20px}
-#gateway-log-list .event-row>span:last-child,#access-log-list .event-row>span:last-child{display:grid;gap:3px;min-width:0}
-.event-technical{margin-top:6px}
-.event-technical summary{padding:0;color:var(--blue);font-size:.7rem;cursor:pointer}
-.event-technical code{display:block;margin-top:5px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:var(--font-size-xs)}
-
-/* Diagnostic section headings & readiness panels */
-.diagnostic-section-heading{margin:20px 0 10px;padding:18px 20px;border:1px solid var(--line);border-bottom:0;border-radius:var(--radius-2xl) 15px 0 0;background:var(--panel)}
-.diagnostic-section-heading .eyebrow{margin-bottom:5px}
-.diagnostic-section-heading h2{margin:0;font-size:1.15rem}
-.diagnostic-section-heading p:last-child{margin:var(--space-1) 0 0}
-.diagnostic-section-heading{margin-bottom:0}
-.diagnostic-section-heading + .log-table-wrap{border-top:0;border-radius:0 0 15px 15px}
-.section-heading-row{display:flex;justify-content:space-between;align-items:baseline;gap:var(--space-4)}
-.section-heading-row .muted{margin:0}
-.diagnostic-section-heading + .cert-table-wrap{border-top:0;border-radius:0 0 15px 15px}
 .cert-table-row{cursor:pointer}
 .cert-table-row:hover{background:rgba(var(--green-rgb),.06)}
 .cert-table-row:focus{outline:none}
@@ -853,13 +828,8 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .cert-table td{vertical-align:middle}
 .cert-table td .status-dot{margin-right:6px;vertical-align:-1px}
 #cert-detail-body{padding:0;background:transparent;border-top:0;margin-top:var(--space-4)}
-#certificate-list.diagnostic-list,#readiness-list.diagnostic-list,#gateway-log-list.diagnostic-list,#audit-list.diagnostic-list{border-radius:0 0 15px 15px}
-.data-list>.quiet-state,.diagnostic-list>.quiet-state{padding:22px}
-.readiness-panel{background:transparent;border:0;padding:0}
-.readiness-panel .panel-heading{margin:20px 0 0;padding:18px 20px;border:1px solid var(--line);border-bottom:0;border-radius:var(--radius-2xl) 15px 0 0;background:var(--panel)}
+.data-list>.quiet-state{padding:22px}
 .dashboard-panel>.event-filters{margin-bottom:var(--space-4)}
-.event-row{gap:var(--space-4);padding:18px 20px;align-items:center}
-.event-row .status-dot{flex:0 0 8px}
 .gateway-empty-state{display:grid;justify-items:center;gap:6px;padding:34px 20px;text-align:center;color:var(--muted)}
 .gateway-empty-state .status-dot{width:9px;height:9px;margin-bottom:3px;background:var(--muted);box-shadow:0 0 0 4px rgba(var(--status-dot-idle-rgb),.1)}
 .gateway-empty-state strong{color:var(--text);font-size:.86rem}

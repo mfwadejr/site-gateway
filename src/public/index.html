@@ -164,8 +164,11 @@
         <div class="feature-summary">
           <div><strong id="cert-healthy">0</strong><span>Healthy</span></div><div><strong id="cert-30">0</strong><span>Within 30 days</span></div><div><strong id="cert-7">0</strong><span>Within 7 days</span></div><div><strong id="cert-warning">0</strong><span>Needs attention</span></div><div><strong id="cert-pending">0</strong><span>Not detected</span></div>
         </div>
-        <div class="diagnostic-section-heading"><p class="eyebrow">Certificate inventory</p><h2>Certificates</h2><div class="section-heading-row"><p class="muted">Managed certificates, TLS readiness, and renewal status for every configured domain. Select a row for full detail.</p><button type="button" id="cert-threshold-trigger" class="text-button">Configure thresholds →</button></div></div>
-        <div class="table-wrap performance-table-wrap cert-table-wrap"><table class="performance-table cert-table"><thead><tr><th>Domain</th><th>Status</th><th>Days remaining</th><th>Issuer</th><th>DNS</th><th>TLS</th><th>Upstream</th></tr></thead><tbody id="certificate-list"><tr><td colspan="7" class="quiet-state">Loading certificates…</td></tr></tbody></table></div>
+        <section class="dashboard-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Certificate inventory</p><h2>Certificates</h2></div></div>
+          <div class="feature-note-row"><p class="muted feature-note">Managed certificates, TLS readiness, and renewal status for every configured domain. Select a row for full detail.</p><button type="button" id="cert-threshold-trigger" class="text-button">Configure thresholds →</button></div>
+          <div class="table-wrap performance-table-wrap cert-table-wrap"><table class="performance-table cert-table"><thead><tr><th>Domain</th><th>Status</th><th>Days remaining</th><th>Issuer</th><th>DNS</th><th>TLS</th><th>Upstream</th></tr></thead><tbody id="certificate-list"><tr><td colspan="7" class="quiet-state">Loading certificates…</td></tr></tbody></table></div>
+        </section>
       </section>
 
       <dialog id="certificate-detail-dialog">
