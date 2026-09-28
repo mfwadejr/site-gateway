@@ -206,7 +206,7 @@ async function sampleNetworkInterfaces() {
     lastNetworkSample = { rxBytes, txBytes, atMs };
   } catch { /* No readable network interfaces (e.g. host networking with restricted /sys) -- the hero panel just omits the network stat. */ }
 }
-setInterval(sampleNetworkInterfaces, 5000).unref();
+setInterval(sampleNetworkInterfaces, 3000).unref();
 sampleNetworkInterfaces();
 // Container-scoped disk I/O, read from the same cgroup v2 hierarchy as CPU/memory -- requires the
 // "io" controller to actually be delegated to this container's cgroup, which isn't guaranteed the
@@ -237,7 +237,7 @@ async function sampleCgroupIo() {
   }
   lastIoSample = { totalReadBytes, totalWriteBytes, atMs };
 }
-setInterval(sampleCgroupIo, 5000).unref();
+setInterval(sampleCgroupIo, 3000).unref();
 sampleCgroupIo();
 // A recursive walk of /data (directorySize()) is only needed when DATA_DIR_LIMIT_GB is set, and
 // only to compute one denominator-relative percentage -- disk usage doesn't change fast enough to
@@ -3087,6 +3087,59 @@ app.delete("/api/backups/:filename", async (req, res, next) => {
     try { storage.recordBackupEvent({ type: "deleted", filename, backupType: existing?.type || (filename.startsWith("pre-restore") ? "safety" : "unknown"), sizeBytes: existing?.size ?? null, actorUserId: req.user.id, status: "success" }); } catch (error) { console.warn("Could not record backup history event:", error.message); }
     res.status(204).end();
   } catch (error) { next(error); }
+});
+
+// --- Backup storage cleanup: untracked/orphaned files in backupsDir ------------------------
+// listBackups() above only ever surfaces *.sgbackup files. Safety snapshots taken before a
+// log prune (pre-prune-*.sqlite) or an icon-library migration (pre-icon-migration-*.sqlite)
+// -- and any other stray file that ends up in this directory -- are invisible to that list and
+// (per the .sgbackup-only guard on DELETE /api/backups/:filename above) cannot be removed
+// through any existing route either. This is the intentionally narrow fix: list and delete
+// ONLY the non-.sgbackup files, so the real Backup & Restore list/routes above are untouched
+// and this new delete route can never be used to bypass or duplicate that flow.
+function classifyUntrackedBackupFile(filename) {
+  if (filename.startsWith("pre-prune-")) return { type: "log-prune-snapshot", label: "Log-pruning safety snapshot" };
+  if (filename.startsWith("pre-icon-migration-")) return { type: "icon-migration-snapshot", label: "Icon-migration safety snapshot" };
+  return { type: "unrecognized", label: "Unrecognized file" };
+}
+async function listUntrackedBackupFiles() {
+  let names;
+  try { names = await fsp.readdir(backupsDir); } catch { return []; }
+  const files = [];
+  for (const filename of names) {
+    if (filename.endsWith(".sgbackup")) continue;
+    const full = path.join(backupsDir, filename);
+    let stat;
+    try { stat = await fsp.stat(full); } catch { continue; }
+    if (!stat.isFile()) continue;
+    const { type, label } = classifyUntrackedBackupFile(filename);
+    files.push({ filename, size: stat.size, createdAt: stat.birthtime?.toISOString() || stat.mtime.toISOString(), type, label });
+  }
+  files.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return files;
+}
+app.get("/api/backups/untracked", async (req, res, next) => { try { res.json(await listUntrackedBackupFiles()); } catch (error) { next(error); } });
+app.get("/api/backups/untracked/:filename/download", async (req, res, next) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    if (filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Invalid file." });
+    const target = path.resolve(path.join(backupsDir, filename));
+    if (!target.startsWith(path.resolve(backupsDir) + path.sep)) return res.status(400).json({ error: "Invalid file." });
+    await fsp.access(target);
+    res.download(target, filename);
+  } catch (error) { next(Object.assign(new Error("File not found."), { status: 404 })); }
+});
+app.delete("/api/backups/untracked/:filename", async (req, res, next) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    if (filename.endsWith(".sgbackup")) return res.status(400).json({ error: "Use the Backup & Restore delete action for .sgbackup files." });
+    const target = path.resolve(path.join(backupsDir, filename));
+    if (!target.startsWith(path.resolve(backupsDir) + path.sep)) return res.status(400).json({ error: "Invalid file." });
+    await fsp.access(target);
+    await fsp.rm(target);
+    recordActivity(`Untracked backup-storage file ${filename} deleted.`);
+    res.status(204).end();
+  } catch (error) { if (error.code === "ENOENT") return res.status(404).json({ error: "File not found." }); next(error); }
 });
 
 function humanizeGatewayError(message) {

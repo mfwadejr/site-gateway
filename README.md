@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.16.116-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.17.0-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -152,6 +152,8 @@ Both backup types always exclude previously created backup files themselves and 
 Encryption is handled independently at each point of use, not from one shared field: the manual "Create backup" dialog has its own password field for the backup you're creating right now; restoring or importing an encrypted archive asks for its password directly in that action's own confirmation dialog; and scheduled backups are encrypted via the container's `BACKUP_PASSWORD` environment value, toggled with "Encrypt scheduled backups" in the Scheduled backups settings. No password is ever stored by Site Gateway.
 
 Before restoring, Site Gateway checks the archive manifest, creates a complete pre-restore safety backup, then reloads and validates the resulting configuration.
+
+Site Gateway also creates its own automatic safety snapshots outside your regular backups — before a log prune, and before an icon-library migration. These aren't restorable backups and were previously invisible and undeletable. **Administration → System → Backup storage cleanup** lists them, with a type filter and per-file Download/Delete actions, so you can review and clear them out without touching the filesystem directly.
 
 To upgrade:
 

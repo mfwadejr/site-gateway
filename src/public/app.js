@@ -8,7 +8,16 @@
 
 // --- Shared DOM shortcut and app state ----------------------------------------
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], usersLoaded: false, user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, staleIcons: new Set(), passwordTarget: null, healthTimer: null, viewHealthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [] };
+const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], usersLoaded: false, user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, staleIcons: new Set(), passwordTarget: null, healthTimer: null, viewHealthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [], search: { management: "", streaming: "", redirects: "", access: "", certificates: "", users: "", groups: "", apiTokens: "" }, backupStorageTimer: null };
+// Generic client-side search filter shared by every list/search toolbar (Hosted/Proxy,
+// Streaming, Redirects, Access Lists, Certificates, Users, Groups, API tokens). Matches
+// against name-like fields only, per the settled design (no sort, name-only search).
+function matchesSearch(term, ...fields) {
+  if (!term) return true;
+  const needle = term.trim().toLowerCase();
+  if (!needle) return true;
+  return fields.some(field => String(field ?? "").toLowerCase().includes(needle));
+}
 
 // One-time DOM patches: move the Access List field into the create/settings
 // forms (features.js owns the Access List data, this file owns these forms).
@@ -340,13 +349,16 @@ function proxyCard(proxy) {
 // --- Certificates view --------------------------------------------------------------
 function renderCertificates() {
   const data = state.certificates; if (!data) return;
+  const certSearchInput = $("#certificate-search"); if (certSearchInput && document.activeElement !== certSearchInput) certSearchInput.value = state.search.certificates || "";
   $("#certificate-count").textContent = data.summary.total;
   $("#cert-healthy").textContent = data.summary.healthy; $("#cert-30").textContent = data.summary.within30Days; $("#cert-7").textContent = data.summary.within7Days; $("#cert-warning").textContent = data.summary.warning + data.summary.critical + data.summary.expired + data.summary.mismatch; $("#cert-pending").textContent = data.summary.pending;
   const ageMinutes = (Date.now() - new Date(data.checkedAt).getTime()) / 60000, stale = ageMinutes > (data.thresholds?.staleMinutes || 10);
   $("#cert-last-checked").textContent = `Last checked ${formatTime(data.checkedAt)} · ${stale ? "data may be stale" : "current"}`;
   const routes = state.readiness?.routes || [];
   state.certRows = data.certificates.map(cert => ({ cert, readiness: routes.find(item => item.domain === cert.domain) || null }));
-  $("#certificate-list").innerHTML = state.certRows.length ? state.certRows.map((row, index) => {
+  const certTerm = state.search.certificates;
+  const visibleCertRows = state.certRows.filter(row => matchesSearch(certTerm, row.cert.domain));
+  $("#certificate-list").innerHTML = !state.certRows.length ? '<tr><td colspan="7" class="quiet-state">No HTTPS domains are configured.</td></tr>' : !visibleCertRows.length ? '<tr><td colspan="7" class="quiet-state">No matches.</td></tr>' : visibleCertRows.map((row, index) => {
     const cert = row.cert, item = row.readiness;
     const dnsOk = item ? item.dns.healthy : null;
     const tlsOk = item ? ["healthy", "warning", "critical", "not-configured"].includes(item.tls.status) : null;
@@ -355,7 +367,7 @@ function renderCertificates() {
     const upstreamCell = !item ? `<span class="status-dot idle"></span>—` : !item.upstream ? `<span class="status-dot idle"></span>Monitoring paused` : item.upstream.status === "unmonitored" ? `<span class="status-dot idle"></span>Monitoring disabled` : item.upstream.status === "pending" ? `<span class="status-dot idle"></span>Check pending` : item.upstream.status === "healthy" ? `<span class="status-dot running"></span>${item.upstream.httpStatus}` : `<span class="status-dot bad"></span>${escapeHtml(item.upstream.error || "Unavailable")}`;
     const statusLabel = cert.status === "mismatch" ? "Domain mismatch" : cert.status.charAt(0).toUpperCase() + cert.status.slice(1);
     return `<tr class="cert-table-row" data-index="${index}" tabindex="0"><td><strong>${escapeHtml(cert.domain)}</strong><br><small class="muted">${escapeHtml(cert.kind)} · ${escapeHtml(cert.source)}</small></td><td><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span>${escapeHtml(statusLabel)}</td><td>${cert.expiresAt ? `${cert.daysRemaining} days` : "—"}</td><td>${escapeHtml(cert.issuer || "—")}</td><td>${dnsCell}</td><td>${tlsCell}</td><td>${upstreamCell}</td></tr>`;
-  }).join("") : '<tr><td colspan="7" class="quiet-state">No HTTPS domains are configured.</td></tr>';
+  }).join("");
 }
 
 
@@ -607,9 +619,12 @@ $("#performance-sparkline")?.addEventListener("mouseleave", hidePerformanceToolt
 function renderUsers() {
   const counts = { administrator: 0, standard: 0, viewer: 0, disabled: 0, archived: 0 };
   state.users.forEach(user => { if (user.status === "active") counts[user.role] = (counts[user.role] || 0) + 1; else if (counts[user.status] !== undefined) counts[user.status] += 1; });
+  const userSearchInput = $("#user-search"); if (userSearchInput && document.activeElement !== userSearchInput) userSearchInput.value = state.search.users || "";
   const summary = $("#user-summary");
   if (summary) summary.innerHTML = [["Administrators", counts.administrator, "#62e6a7"], ["Standard Users", counts.standard, "#6ea8ff"], ["Viewers", counts.viewer, "#b58cff"], ["Disabled", counts.disabled, "#ff7185"], ["Archived", counts.archived, "#e6a04f"]].map(([label, count, color]) => `<div><span class="status-dot" style="${count ? `background:${color}` : ""}"></span><strong>${count}</strong><span>${label}</span></div>`).join("");
-  $("#user-list").innerHTML = state.users.length ? state.users.map(user => {
+  const userTerm = state.search.users;
+  const visibleUsers = state.users.filter(user => matchesSearch(userTerm, user.displayName, user.username));
+  $("#user-list").innerHTML = state.users.length ? (visibleUsers.length ? visibleUsers.map(user => {
     const isSelf = user.id === state.user?.id;
     const statusClass = user.status === "active" ? "running" : user.status === "disabled" ? "disabled" : "inactive";
     const roleAction = user.role === "administrator" ? "standard" : user.role === "standard" ? "viewer" : "administrator";
@@ -618,7 +633,7 @@ function renderUsers() {
     const statusToggle = user.status === "archived" ? "" : `<button class="toggle ${user.status === "active" ? "on" : ""}" data-user-action="status" data-value="${user.status === "active" ? "disabled" : "active"}" aria-label="${user.status === "active" ? "Disable" : "Enable"} ${escapeHtml(user.username)}"><span></span></button>`;
     const menu = `<div class="menu-wrap"><button class="icon-button menu-button" type="button" aria-label="User options" aria-expanded="false">•••</button><div class="menu"><button data-user-action="icon">Change icon</button>${!isSelf && user.mfaEnabled ? `<button data-user-action="mfa-disable">Disable 2FA</button>` : ""}${!isSelf ? `<button data-user-action="delete" class="danger-text">Delete</button>` : ""}</div></div>`;
     return `<article class="user-card" data-user-id="${user.id}"><div class="user-card-head"><div class="user-avatar">${escapeHtml(initials(user.displayName))}</div><div class="user-head-actions"><span class="status-pill"><span class="status-dot ${statusClass}"></span>${escapeHtml(user.status)}</span>${menu}</div></div><h2>${escapeHtml(user.displayName)}${isSelf ? ' <small>You</small>' : ""}</h2><p class="address">${escapeHtml(user.username)}</p><div class="user-meta"><span>${roleLabel}</span><span>${user.lastLoginAt ? `Last login ${escapeHtml(formatTime(user.lastLoginAt))}` : "Never signed in"}</span></div><div class="user-actions"><button class="button secondary" data-user-action="role" data-value="${roleAction}">Make ${roleAction === "administrator" ? "Administrator" : roleAction === "viewer" ? "Viewer" : "Standard"}</button><button class="button secondary" data-user-action="password">Reset password</button>${lifecycle}</div><div class="card-footer">${statusToggle}</div></article>`;
-  }).join("") : state.usersLoaded ? '<p class="quiet-state">No users found.</p>' : '<p class="quiet-state">Loading users…</p>';
+  }).join("") : '<p class="quiet-state">No matches.</p>') : state.usersLoaded ? '<p class="quiet-state">No users found.</p>' : '<p class="quiet-state">Loading users…</p>';
   document.querySelectorAll("#user-list .user-card").forEach(card => { card.style.position = "relative"; card.style.minHeight = "250px"; card.style.paddingBottom = "64px"; const head = card.querySelector(".user-card-head"), status = head?.querySelector(".status-pill"), footer = card.querySelector(".card-footer"); if (!head || !footer) return; if (status) footer.prepend(status); });
   document.querySelectorAll("#user-list .user-card").forEach(card => { const user = state.users.find(item => item.id === card.dataset.userId); const old = card.querySelector('[data-user-action="role"]'); if (!user || !old) return; const select = document.createElement("select"); select.className = "user-role-select"; select.setAttribute("aria-label", `Role for ${user.username}`); select.innerHTML = '<option value="administrator">Administrator</option><option value="standard">Standard User</option><option value="viewer">Viewer</option>'; select.value = user.role; select.addEventListener("change", async () => { try { await api(`/api/users/${user.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ role:select.value }) }); await loadFeatureView(); toast("User role updated."); } catch (error) { select.value = user.role; toast(error.message, "error"); } }); old.replaceWith(select); });
 }
@@ -659,7 +674,7 @@ function render() {
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);
   const management = state.view === "hosted" || state.view === "proxies";
-  $("#management-view").classList.toggle("hidden", !management); $("#management-summary").classList.toggle("hidden", !(management || state.view === "streaming" || state.view === "redirects" || state.view === "access"));
+  $("#management-view").classList.toggle("hidden", !management); const showManagementToolbar = management || state.view === "streaming" || state.view === "redirects" || state.view === "access"; $("#management-summary").classList.toggle("hidden", !showManagementToolbar); $("#management-toolbar").classList.toggle("hidden", !showManagementToolbar); if (showManagementToolbar) { const searchKey = management ? "management" : state.view; const searchInput = $("#management-search"); if (searchInput && document.activeElement !== searchInput) searchInput.value = state.search[searchKey] || ""; }
   $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#performance-view").classList.toggle("hidden", state.view !== "performance"); $("#users-view").classList.toggle("hidden", state.view !== "administration"); $("#account-view").classList.toggle("hidden", state.view !== "account");
   if (state.view === "administration") { const adminTab = state.adminTab || "system"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
   $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
@@ -684,9 +699,11 @@ function render() {
     if (state.view === "certificates") renderCertificates(); else if (state.view === "administration") renderUsers(); else if (state.view === "logs") renderLogs(); else if (state.view === "performance") renderPerformance(); else if (state.view === "account") renderAccount();
     return;
   }
-  const items = state.view === "hosted" ? state.sites : state.proxies;
-  $("#site-grid").innerHTML = items.map(state.view === "hosted" ? hostedCard : proxyCard).join("");
-  $("#empty").classList.toggle("hidden", !state.loaded || items.length > 0);
+  const allItems = state.view === "hosted" ? state.sites : state.proxies;
+  const managementTerm = state.search.management;
+  const items = allItems.filter(item => matchesSearch(managementTerm, item.name, item.domain));
+  $("#site-grid").innerHTML = items.length ? items.map(state.view === "hosted" ? hostedCard : proxyCard).join("") : (managementTerm ? '<p class="quiet-state">No matches.</p>' : "");
+  $("#empty").classList.toggle("hidden", !state.loaded || allItems.length > 0);
   $("#empty .empty-icon").textContent = state.view === "hosted" ? "↗" : "⇌";
   $("#empty h2").textContent = state.view === "hosted" ? "Publish your first site" : "Create your first proxy host";
   $("#empty p").textContent = state.view === "hosted" ? "Upload a ZIP and optionally connect a domain with automatic HTTPS." : "Connect a domain to another container, application, or LAN service.";
@@ -833,12 +850,12 @@ async function boot() {
   if (!state.viewHealthTimer) state.viewHealthTimer = setInterval(() => { if ((state.view === "proxies" || state.view === "hosted") && !$("#dashboard").classList.contains("hidden")) refreshCurrentView().catch(() => {}); }, 30000);
   if (!state.updateCheckTimer) state.updateCheckTimer = setInterval(() => { if (!$("#dashboard").classList.contains("hidden")) checkForUpdate().catch(() => {}); }, 60000);
   // Dashboard hero panel: one immediate load so it isn't sitting on dashes until the first
-  // 7-second tick, then the same lightweight poll-while-visible pattern as the System tab's
+  // 3-second tick, then the same lightweight poll-while-visible pattern as the System tab's
   // hero uses, gated on the Dashboard actually being the visible view. Available to every
   // signed-in user, not just administrators -- /api/system/health is read-only and shows
   // nothing a standard user couldn't already infer from the Dashboard running slow or fast.
   if (state.view === "overview") refreshDashboardHero().catch(() => {});
-  if (!state.dashboardHeroTimer) state.dashboardHeroTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboardHero().catch(() => {}); }, 7000);
+  if (!state.dashboardHeroTimer) state.dashboardHeroTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboardHero().catch(() => {}); }, 3000);
 }
 
 async function checkForUpdate() {
@@ -936,6 +953,25 @@ $("#performance-hide-unconfigured").addEventListener("change", event => { state.
 $("#logs-filter-b").addEventListener("change", renderLogs);
 let logsSearchTimer;
 $("#logs-search").addEventListener("input", () => { clearTimeout(logsSearchTimer); logsSearchTimer = setTimeout(renderLogs, 300); });
+let managementSearchTimer;
+$("#management-search")?.addEventListener("input", event => {
+  const key = state.view === "hosted" || state.view === "proxies" ? "management" : state.view;
+  state.search[key] = event.target.value;
+  clearTimeout(managementSearchTimer);
+  managementSearchTimer = setTimeout(() => render(), 300);
+});
+let userSearchTimer;
+$("#user-search")?.addEventListener("input", event => {
+  state.search.users = event.target.value;
+  clearTimeout(userSearchTimer);
+  userSearchTimer = setTimeout(() => renderUsers(), 300);
+});
+let certSearchTimer;
+$("#certificate-search")?.addEventListener("input", event => {
+  state.search.certificates = event.target.value;
+  clearTimeout(certSearchTimer);
+  certSearchTimer = setTimeout(() => renderCertificates(), 300);
+});
 
 // --- "Create" dialog: opens the right create form/dialog for the current view --------------
 function openCreate() {
