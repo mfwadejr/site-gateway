@@ -45,9 +45,10 @@ h2{letter-spacing:-.025em}
 
 /* Top summary bar & status dot indicator */
 .summary{display:flex;align-items:center;flex-wrap:wrap;gap:28px;margin:var(--space-7) 0 28px;padding:17px 20px;background:rgba(var(--panel-rgb),.75);border:1px solid var(--line);border-radius:var(--radius-2xl)}
-.summary>div{display:flex;align-items:center;flex-shrink:0;gap:9px;color:var(--muted);font-size:.88rem;white-space:nowrap}
-.summary strong{color:var(--text)}
-.port-note{margin-left:auto}
+.summary>div:not(.summary-search),.summary-counts{display:flex;align-items:center;flex-wrap:wrap;gap:28px}
+.summary-row{display:flex;align-items:center;flex-shrink:0;gap:9px;color:var(--muted);font-size:.88rem;white-space:nowrap}
+.summary strong,.summary-counts strong{color:var(--text)}
+.port-note{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:.88rem;white-space:nowrap}
 .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--status-dot-idle)}
 .status-dot.running{background:var(--green);box-shadow:0 0 0 4px rgba(var(--green-rgb),.1)}
 .status-dot.disabled{background:var(--danger);box-shadow:0 0 0 4px rgba(var(--danger-rgb),.09)}
@@ -120,7 +121,7 @@ dialog::backdrop{background:rgba(var(--backdrop-rgb),.76);backdrop-filter:blur(5
 .update-banner{position:fixed;left:50%;bottom:30px;transform:translate(-50%,0);display:flex;align-items:center;gap:var(--space-4);background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius-md);padding:14px var(--space-4) 14px 20px;box-shadow:var(--shadow);z-index:5;color:var(--text);font-size:.88rem}
 .update-banner-actions{display:flex;align-items:center;gap:var(--space-2)}
 .update-banner .button{padding:var(--space-2) 14px}
-@media(max-width:760px){.app-shell{display:block}aside{display:none}main{padding:var(--space-6) 18px}header{align-items:flex-start;flex-direction:column}.summary{gap:14px;flex-wrap:wrap}.port-note{width:100%;margin:0;padding-top:10px;border-top:1px solid var(--line)}.site-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.app-shell{display:block}aside{display:none}main{padding:var(--space-6) 18px}header{align-items:flex-start;flex-direction:column}.summary{gap:14px;flex-wrap:wrap}.site-grid{grid-template-columns:1fr}}
 /* Header account controls and state-aware summary indicators */
 .header-actions{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-3);flex-wrap:wrap}
 .account-control{display:flex;align-items:center;gap:10px;padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:var(--radius-2xs);background:var(--panel);color:var(--muted);font-size:var(--font-size-sm)}
@@ -128,7 +129,7 @@ dialog::backdrop{background:rgba(var(--backdrop-rgb),.76);backdrop-filter:blur(5
 .status-dot.inactive{background:var(--status-dot-inactive);box-shadow:0 0 0 4px rgba(var(--status-dot-inactive-rgb),.09)}
 
 /* Responsive layout tweaks & base form controls */
-@media(max-width:760px){.header-actions{width:100%}.account-control{order:3;width:100%;justify-content:space-between}.summary>div:not(.port-note){min-width:calc(50% - 10px)}}
+@media(max-width:760px){.header-actions{width:100%}.account-control{order:3;width:100%;justify-content:space-between}.summary>div:not(.port-note):not(.summary-search){min-width:calc(50% - 10px)}}
 nav{display:grid;gap:6px}
 nav .nav-planned{display:grid;grid-template-columns:1fr auto auto;gap:9px;cursor:default}
 nav .nav-planned::after{content:"Soon";color:var(--muted);font-size:.62rem;text-transform:uppercase;letter-spacing:.08em}
@@ -474,14 +475,14 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
    to the left of it in the same row, per the settled design. */
 .list-toolbar{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-3) 0;flex-wrap:wrap}
 .list-toolbar-start{display:flex;align-items:center;gap:var(--space-3);margin-right:auto;flex-wrap:wrap}
-.list-toolbar-search{max-width:260px;width:100%;margin:0 0 0 auto;height:44px;min-height:44px;box-sizing:border-box;padding:0 var(--space-3);line-height:42px;border-radius:var(--radius-sm)}
+.list-toolbar-search{max-width:260px;width:100%;margin:0 0 0 auto;height:32px;min-height:32px;box-sizing:border-box;padding:0 12px;line-height:30px;font-size:.88rem;border-radius:var(--radius-sm)}
 @media(max-width:760px){.list-toolbar{flex-direction:column;align-items:stretch}.list-toolbar-start{margin-right:0}.list-toolbar-search{max-width:none;margin-left:0}}
 
 /* Search nested directly into the shared indicator/summary bar (Hosted/Proxy/Streaming/
    Redirect/Access) rather than a separate row -- sits at the far right, same bar as the
    status counts and the Ports note, per the settled design. */
-.summary-search{margin-left:auto;flex-shrink:0}
-.summary-search .list-toolbar-search{margin:0;max-width:220px}
+.summary-search{margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:12px}
+.summary-search .list-toolbar-search{margin:0;max-width:200px}
 @media(max-width:760px){.summary-search{margin-left:0;width:100%}.summary-search .list-toolbar-search{max-width:none}}
 
 /* Collapsible dashboard panel -- generic mechanism, applied only to the Backup storage
@@ -1000,7 +1001,7 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
 .api-token-card{min-height:0}
 .api-token-card.revoked{opacity:.6}
 .api-token-card .address{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.api-token-hide-revoked{margin:0 0 0 auto;padding:0;border:0;background:transparent;font-size:.85rem;flex-shrink:0;white-space:nowrap}
+.api-token-hide-revoked{margin:0;padding:0;border:0;background:transparent;font-size:.85rem;flex-shrink:0;white-space:nowrap}
 .api-token-hide-revoked span{line-height:normal}
 .api-token-secret{display:block;margin-top:var(--space-3);padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--radius-sm);background:rgba(var(--bg-rgb),.4);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--font-size-sm);line-height:1.6;word-break:break-all}
 

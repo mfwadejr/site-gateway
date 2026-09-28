@@ -621,7 +621,7 @@ function renderUsers() {
   state.users.forEach(user => { if (user.status === "active") counts[user.role] = (counts[user.role] || 0) + 1; else if (counts[user.status] !== undefined) counts[user.status] += 1; });
   const userSearchInput = $("#user-search"); if (userSearchInput && document.activeElement !== userSearchInput) userSearchInput.value = state.search.users || "";
   const summary = $("#user-summary-counts");
-  if (summary) summary.innerHTML = [["Administrators", counts.administrator, "#62e6a7"], ["Standard Users", counts.standard, "#6ea8ff"], ["Viewers", counts.viewer, "#b58cff"], ["Disabled", counts.disabled, "#ff7185"], ["Archived", counts.archived, "#e6a04f"]].map(([label, count, color]) => `<div><span class="status-dot" style="${count ? `background:${color}` : ""}"></span><strong>${count}</strong><span>${label}</span></div>`).join("");
+  if (summary) summary.innerHTML = [["Administrators", counts.administrator, "#62e6a7"], ["Standard Users", counts.standard, "#6ea8ff"], ["Viewers", counts.viewer, "#b58cff"], ["Disabled", counts.disabled, "#ff7185"], ["Archived", counts.archived, "#e6a04f"]].map(([label, count, color]) => `<div class="summary-row"><span class="status-dot" style="${count ? `background:${color}` : ""}"></span><strong>${count}</strong><span>${label}</span></div>`).join("");
   const userTerm = state.search.users;
   const visibleUsers = state.users.filter(user => matchesSearch(userTerm, user.displayName, user.username));
   $("#user-list").innerHTML = state.users.length ? (visibleUsers.length ? visibleUsers.map(user => {
