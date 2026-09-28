@@ -393,6 +393,7 @@ textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(var(--green-r
 .callout span{color:var(--muted)}
 .row-actions{display:flex!important;grid-auto-flow:column!important;justify-content:end;gap:7px}
 .row-actions .button{padding:var(--space-2) 10px;font-size:.7rem;text-decoration:none}
+.action-row{display:flex;flex-wrap:wrap;justify-content:end;gap:var(--space-3)}
 .backup-row{grid-template-columns:auto minmax(220px,1.5fr) 1fr .7fr auto}
 .padded{padding:22px}
 
@@ -569,7 +570,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .retention-actions{justify-content:flex-end!important;align-items:center!important}
 .retention-actions [data-retention-action="download"]{order:1}
 .retention-actions [data-retention-action="prune"]{order:2;background:var(--green);border-color:var(--green);color:var(--on-green)}
-.retention-actions .button,[data-admin-panel="backups"] .panel-heading .row-actions .button{min-height:44px;height:44px;padding:11px 16px!important;border-radius:var(--radius-2xs);font-size:var(--font-size-md)!important;line-height:1.2;font-weight:720;text-transform:none}
+.retention-actions .button{min-height:44px;height:44px;padding:11px 16px!important;border-radius:var(--radius-2xs);font-size:var(--font-size-md)!important;line-height:1.2;font-weight:720;text-transform:none}
 .retention-run-status{grid-column:1/-1;margin:14px 0 0;padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--radius-2xs);background:var(--panel2);color:var(--muted);font-size:var(--font-size-sm);line-height:1.45}
 .retention-preview{grid-column:1/-1;margin:14px 0 0;padding:10px var(--space-4);border:1px solid var(--line);border-radius:var(--radius-2xs);background:var(--panel2);font-size:var(--font-size-sm);line-height:1.45}
 .retention-history{grid-column:1/-1;width:100%;margin:14px 0 0;padding:14px var(--space-4);border:1px solid var(--line);border-radius:var(--radius-2xs);background:var(--panel2)}

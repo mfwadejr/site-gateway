@@ -531,3 +531,13 @@ Fixed the Backup storage cleanup dropdown for real this time — v0.17.3's fix t
 The fix now targets the actual visible component: `.list-toolbar-start .custom-select` gets a 210px minimum width, matching the floor already used successfully elsewhere (Performance's Domain/Range filters). Because the open menu's width always tracks the trigger's width, fixing the trigger fixes the menu automatically — every option now renders on one line. This is scoped to the shared `.list-toolbar-start` toolbar pattern, not to Backup storage cleanup specifically, so any future dropdown placed in that same toolbar row gets the correct width by default instead of needing its own one-off fix.
 
 Verified with an isolated headless-browser test that loads the real `select-enhance.js` (the previous release's isolated test omitted it, which is exactly how the wrong fix passed verification) — confirmed the enhanced trigger renders at 210px and every option in the open menu renders on a single line. `node --check` on both touched browser scripts; a live `node src/server.js` boot confirming the page serves correctly.
+
+## v0.17.5
+
+Fixed a button-size inconsistency on Administration → System, flagged by direct comparison: "Resync now," "Reload gateway config," and "Restart application" rendered noticeably smaller than the Backup storage cleanup panel's Download/Delete buttons right above them.
+
+Root cause: `.row-actions` is a CSS class meant for compact, per-row action buttons inside dense repeating lists (it shrinks any `.button` inside it to `.7rem` with tight padding) — appropriate for the individual entries in the stored-backups history list, which is its original and correct use. It had also been applied to two places that aren't list rows at all: the Sync & control panel's three buttons, and Backup & Restore's "Import backup"/"Create backup" buttons, both of which are standalone, one-off panel actions that should render at full size — matching the convention already used everywhere else for this kind of control, such as Danger Zone's "Restore default settings" button.
+
+Added a new `.action-row` class (plain flex layout, no font-size override) and moved both of those button groups to it, leaving `.row-actions` untouched for the one context where its compact sizing is actually correct. Also removed a now-dead CSS selector that existed only to force Backup & Restore's buttons back to full size as a workaround — no longer needed now that they use the right class from the start.
+
+Verified: `node --check` on the touched browser script; `index.html` tag-balance checks (div/section/article/p/h2/h3/ul/li/button, all matched); a live `node src/server.js` boot confirming the page serves correctly.
