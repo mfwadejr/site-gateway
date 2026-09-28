@@ -511,3 +511,15 @@ Fixed three regressions the v0.17.1 placement fix itself introduced. The shared 
 All three are fixed together: stat items now carry an explicit `.summary-row` class so their layout no longer depends on DOM depth; the search input is now 32px tall, matching the bar's original height; and the Ports note and Hide revoked checkbox now live inside the same right-aligned flex wrapper as the search box, sitting immediately to its left with a tight, consistent gap, on Hosted/Proxy/Streaming/Redirects/Access Lists' shared bar, Users, Groups, and API tokens alike.
 
 Verified: `node --check` on both touched browser scripts (IIFE-wrapped); `index.html` div/section/article/p/h2/h3/ul/li tag-balance checks, all matched; a live `node src/server.js` boot confirming the rendered markup nests the Ports note inside the search wrapper and applies `summary-row`/`summary-counts` classes correctly across the Hosted and Users bars.
+
+## v0.17.3
+
+Three follow-on fixes to the Administration → System and Certificates pages, found by direct comparison against other panels on the same pages:
+
+**Backup storage cleanup panel spacing.** Its description paragraph sat flush against the type-filter dropdown below it, with no breathing room — every other panel on the System tab that pairs an intro paragraph with controls (Icon library storage) gives that paragraph a bottom margin. Both now share one class (`panel-intro`) so this stays consistent by construction rather than by copy-paste.
+
+**Backup storage type filter wrapping on narrow screens.** The "All types" dropdown had no minimum width, so on mobile its native option list rendered as narrow as the closed trigger and wrapped longer labels ("Log-pruning snapshots") across two lines — while the Performance page's Domain/Range dropdowns, which already carry a 210px minimum width, never do this even with much longer domain names. Gave the backup storage type filter the same 210px floor.
+
+**Certificates "Configure thresholds."** The text link with a trailing arrow sat directly to the left of the new Certificates search box, and read as if it were pointing at Search rather than acting as its own control. Replaced it with the same `•••` options-menu button used everywhere else in the app (Hosted Sites, Proxy Hosts, Users, Groups, API tokens, and more) — click it, then choose "Configure thresholds" from the menu. One extra click, but now every options affordance in the app behaves identically. The in-app manual's Certificates field reference was updated to describe the new menu instead of the old link.
+
+Verified: `node --check` on both touched browser scripts (IIFE-wrapped); `index.html` tag-balance checks (div/section/article/p/h2/h3/ul/li/button/strong, all matched); a live `node src/server.js` boot confirming the served markup carries the new `•••` menu with a single "Configure thresholds" item wired to the existing thresholds dialog.

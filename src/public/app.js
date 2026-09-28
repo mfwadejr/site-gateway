@@ -405,7 +405,7 @@ $("#cert-detail-recheck")?.addEventListener("click", async event => {
 });
 $("#certificate-list").addEventListener("click", event => { const row = event.target.closest(".cert-table-row"); if (!row) return; const data = state.certRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
 $("#certificate-list").addEventListener("keydown", event => { if (event.key !== "Enter" && event.key !== " ") return; const row = event.target.closest(".cert-table-row"); if (!row) return; event.preventDefault(); const data = state.certRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
-$("#cert-threshold-trigger").addEventListener("click", () => { renderHealthSettings(); $("#health-settings-dialog").showModal(); });
+$("#cert-options-menu").addEventListener("click", event => { const wrap = event.target.closest(".menu-wrap"); if (!wrap) return; if (event.target.closest(".menu-button")) { const opening = !wrap.classList.contains("menu-open"); closeMenus(); wrap.classList.toggle("menu-open", opening); wrap.querySelector(".menu-button").setAttribute("aria-expanded", String(opening)); return; } if (event.target.closest("#cert-threshold-trigger")) { closeMenus(); renderHealthSettings(); $("#health-settings-dialog").showModal(); } });
 
 
 // --- Logs view: a single combined page (Access requests / Gateway events / Audit log). ------
