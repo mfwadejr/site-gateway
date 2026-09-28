@@ -495,7 +495,7 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .dashboard-panel.collapsible[data-collapsed="true"] > *:not(.panel-heading){display:none}
 
 /* Backup storage cleanup panel */
-.backup-storage-toolbar select{appearance:none!important;min-width:210px;height:44px;min-height:44px;box-sizing:border-box;padding:0 42px 0 var(--space-3);line-height:42px;border:1px solid var(--line);border-radius:var(--radius-sm);background-color:var(--panel);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23f4f7fb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:16px}
+.list-toolbar-start .custom-select{width:auto;min-width:210px}
 .backup-storage-list{max-height:min(52vh,620px);overflow:auto;border:1px solid var(--line);border-radius:var(--radius-2xl)}
 .backup-storage-list table{width:100%;border-collapse:collapse}
 .backup-storage-list thead th{position:sticky;top:0;background:var(--panel);text-align:left;padding:var(--space-3);border-bottom:1px solid var(--line)}
