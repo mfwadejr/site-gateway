@@ -477,6 +477,13 @@ dialog{max-height:calc(100vh - 28px);overflow:auto}
 .list-toolbar-search{max-width:260px;width:100%;margin:0 0 0 auto;height:44px;min-height:44px;box-sizing:border-box;padding:0 var(--space-3);line-height:42px;border-radius:var(--radius-sm)}
 @media(max-width:760px){.list-toolbar{flex-direction:column;align-items:stretch}.list-toolbar-start{margin-right:0}.list-toolbar-search{max-width:none;margin-left:0}}
 
+/* Search nested directly into the shared indicator/summary bar (Hosted/Proxy/Streaming/
+   Redirect/Access) rather than a separate row -- sits at the far right, same bar as the
+   status counts and the Ports note, per the settled design. */
+.summary-search{margin-left:auto;flex-shrink:0}
+.summary-search .list-toolbar-search{margin:0;max-width:220px}
+@media(max-width:760px){.summary-search{margin-left:0;width:100%}.summary-search .list-toolbar-search{max-width:none}}
+
 /* Collapsible dashboard panel -- generic mechanism, applied only to the Backup storage
    cleanup panel for now (System tab). A reusable pattern: any .dashboard-panel.collapsible
    can opt in later without new CSS. */

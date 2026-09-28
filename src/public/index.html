@@ -166,7 +166,7 @@
         </div>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Certificate inventory</p><h2>Certificates</h2></div></div>
-          <div class="feature-note-row"><p class="muted feature-note">Managed certificates, TLS readiness, and renewal status for every configured domain. Select a row for full detail.</p><button type="button" id="cert-threshold-trigger" class="text-button">Configure thresholds →</button></div><div class="list-toolbar"><input type="search" id="certificate-search" class="list-toolbar-search" placeholder="Search" aria-label="Search certificates"></div>
+          <div class="feature-note-row"><p class="muted feature-note">Managed certificates, TLS readiness, and renewal status for every configured domain. Select a row for full detail.</p><button type="button" id="cert-threshold-trigger" class="text-button">Configure thresholds →</button><div class="summary-search"><input type="search" id="certificate-search" class="list-toolbar-search" placeholder="Search" aria-label="Search certificates"></div></div>
           <div class="table-wrap performance-table-wrap cert-table-wrap"><table class="performance-table cert-table"><thead><tr><th>Domain</th><th>Status</th><th>Days remaining</th><th>Issuer</th><th>DNS</th><th>TLS</th><th>Upstream</th></tr></thead><tbody id="certificate-list"><tr><td colspan="7" class="quiet-state">Loading certificates…</td></tr></tbody></table></div>
         </section>
       </section>
@@ -238,8 +238,7 @@
         <div class="admin-tabs"><button data-admin-tab="system">System</button><button class="tab-active" data-admin-tab="users">Users</button><button data-admin-tab="groups">Groups</button><button data-admin-tab="defaults">Gateway defaults</button><button data-admin-tab="backups">Backup & restore</button><button data-admin-tab="retention">Logs & Retention</button><button data-admin-tab="api">API Access</button><button data-admin-tab="danger" class="danger-tab">Danger Zone</button></div>
         <!-- Users tab -->
         <section data-admin-panel="system" class="hidden settings-panel"></section><section data-admin-panel="api" class="hidden settings-panel"></section><section data-admin-panel="users">
-        <div id="user-summary" class="summary user-summary" aria-label="User summary"></div>
-        <div class="list-toolbar"><input type="search" id="user-search" class="list-toolbar-search" placeholder="Search" aria-label="Search users"></div>
+        <div id="user-summary" class="summary user-summary" aria-label="User summary"><div id="user-summary-counts"></div><div class="summary-search"><input type="search" id="user-search" class="list-toolbar-search" placeholder="Search" aria-label="Search users"></div></div>
         <div id="user-list" class="user-grid"><p class="quiet-state">Loading users…</p></div>
         </section>
         <!-- Groups tab (inserted dynamically by features.js's renderGroups) -->
@@ -335,7 +334,7 @@
       </dialog>
 
       <!-- Shared summary/indicator bar (Hosted, Proxy, Streaming, Redirect views) -->
-      <section id="management-summary" class="summary hidden" aria-label="Site summary"><div><span id="running-dot" class="status-dot inactive"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div><div><span id="disabled-dot" class="status-dot inactive"></span><strong id="disabled-count">0</strong><span id="disabled-label">No disabled sites</span></div><div><span id="error-dot" class="status-dot inactive"></span><strong id="error-count">0</strong><span id="error-label">No issues</span></div></section><div id="management-toolbar" class="list-toolbar hidden"><div class="list-toolbar-start"><span class="port-note">Ports <strong id="port-range">9000–9099</strong></span></div><input type="search" id="management-search" class="list-toolbar-search" placeholder="Search" aria-label="Search"></div>
+      <section id="management-summary" class="summary hidden" aria-label="Site summary"><div><span id="running-dot" class="status-dot inactive"></span><strong id="running-count">0</strong><span id="running-label">No sites running</span></div><div><span id="disabled-dot" class="status-dot inactive"></span><strong id="disabled-count">0</strong><span id="disabled-label">No disabled sites</span></div><div><span id="error-dot" class="status-dot inactive"></span><strong id="error-count">0</strong><span id="error-label">No issues</span></div><div class="port-note">Ports <strong id="port-range">9000–9099</strong></div><div class="summary-search"><input type="search" id="management-search" class="list-toolbar-search" placeholder="Search" aria-label="Search"></div></section>
       <!-- Streaming Hosts view -->
       <section id="streaming-view" class="feature-view hidden"><div id="stream-list" class="site-grid"></div><section id="stream-empty" class="empty hidden"><div class="empty-icon">⇄</div><h2>Create your first streaming host</h2><p>Forward raw TCP or UDP traffic on a specific port straight to another host and port — no domain, no HTTPS.</p><button class="button primary create-trigger">Create a streaming host</button></section></section>
       <!-- Redirect Hosts view -->

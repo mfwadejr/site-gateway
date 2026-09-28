@@ -620,7 +620,7 @@ function renderUsers() {
   const counts = { administrator: 0, standard: 0, viewer: 0, disabled: 0, archived: 0 };
   state.users.forEach(user => { if (user.status === "active") counts[user.role] = (counts[user.role] || 0) + 1; else if (counts[user.status] !== undefined) counts[user.status] += 1; });
   const userSearchInput = $("#user-search"); if (userSearchInput && document.activeElement !== userSearchInput) userSearchInput.value = state.search.users || "";
-  const summary = $("#user-summary");
+  const summary = $("#user-summary-counts");
   if (summary) summary.innerHTML = [["Administrators", counts.administrator, "#62e6a7"], ["Standard Users", counts.standard, "#6ea8ff"], ["Viewers", counts.viewer, "#b58cff"], ["Disabled", counts.disabled, "#ff7185"], ["Archived", counts.archived, "#e6a04f"]].map(([label, count, color]) => `<div><span class="status-dot" style="${count ? `background:${color}` : ""}"></span><strong>${count}</strong><span>${label}</span></div>`).join("");
   const userTerm = state.search.users;
   const visibleUsers = state.users.filter(user => matchesSearch(userTerm, user.displayName, user.username));
@@ -674,7 +674,7 @@ function render() {
   const overview = state.view === "overview";
   $("#dashboard-view").classList.toggle("hidden", !overview);
   const management = state.view === "hosted" || state.view === "proxies";
-  $("#management-view").classList.toggle("hidden", !management); const showManagementToolbar = management || state.view === "streaming" || state.view === "redirects" || state.view === "access"; $("#management-summary").classList.toggle("hidden", !showManagementToolbar); $("#management-toolbar").classList.toggle("hidden", !showManagementToolbar); if (showManagementToolbar) { const searchKey = management ? "management" : state.view; const searchInput = $("#management-search"); if (searchInput && document.activeElement !== searchInput) searchInput.value = state.search[searchKey] || ""; }
+  $("#management-view").classList.toggle("hidden", !management); const showManagementToolbar = management || state.view === "streaming" || state.view === "redirects" || state.view === "access"; $("#management-summary").classList.toggle("hidden", !showManagementToolbar); if (showManagementToolbar) { const searchKey = management ? "management" : state.view; const searchInput = $("#management-search"); if (searchInput && document.activeElement !== searchInput) searchInput.value = state.search[searchKey] || ""; }
   $("#certificates-view").classList.toggle("hidden", state.view !== "certificates"); $("#logs-view").classList.toggle("hidden", state.view !== "logs"); $("#performance-view").classList.toggle("hidden", state.view !== "performance"); $("#users-view").classList.toggle("hidden", state.view !== "administration"); $("#account-view").classList.toggle("hidden", state.view !== "account");
   if (state.view === "administration") { const adminTab = state.adminTab || "system"; document.querySelectorAll("[data-admin-tab]").forEach(item => item.classList.toggle("tab-active", item.dataset.adminTab === adminTab)); document.querySelectorAll("[data-admin-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.adminPanel !== adminTab)); }
   $("#streaming-view").classList.toggle("hidden", state.view !== "streaming"); $("#redirects-view").classList.toggle("hidden", state.view !== "redirects"); $("#access-view").classList.toggle("hidden", state.view !== "access"); $("#documentation-view").classList.toggle("hidden", state.view !== "documentation");
