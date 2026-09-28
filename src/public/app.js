@@ -8,7 +8,7 @@
 
 // --- Shared DOM shortcut and app state ----------------------------------------
 const $ = selector => document.querySelector(selector);
-const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], usersLoaded: false, user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, staleIcons: new Set(), passwordTarget: null, healthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [] };
+const state = { sites: [], proxies: [], redirects: [], streams: [], accessLists: [], groups: [], backups: [], settings: null, dashboard: null, certificates: null, readiness: null, logs: null, users: [], usersLoaded: false, user: null, config: null, view: "overview", loaded: false, pendingDelete: null, pendingReplace: null, editing: null, iconTarget: null, staleIcons: new Set(), passwordTarget: null, healthTimer: null, viewHealthTimer: null, updateCheckTimer: null, loadedVersion: null, updateAvailable: false, performanceErrorBreakdowns: {}, performanceTopPaths: {}, performancePoints: [], performanceCoords: [] };
 
 // One-time DOM patches: move the Access List field into the create/settings
 // forms (features.js owns the Access List data, this file owns these forms).
@@ -822,6 +822,15 @@ async function boot() {
   $("#port-range").textContent = `${state.config.minPort}–${state.config.maxPort}`; $("#port-help").textContent = `Direct LAN access range: ${state.config.minPort}–${state.config.maxPort}`;
   $("#create-form [name=port]").min = state.config.minPort; $("#create-form [name=port]").max = state.config.maxPort; await refresh(); if (state.view !== "overview") await loadFeatureView();
   if (!state.healthTimer) state.healthTimer = setInterval(() => { if (state.view === "overview" && !$("#dashboard").classList.contains("hidden")) refreshDashboard().catch(error => toast(error.message, "error")); }, 30000);
+  // Hosted Sites / Proxy Hosts pages: unlike Overview, these pages have no periodic re-poll of
+  // their own upstream health today -- only the one-time maybeRefreshPendingProxies() catch-up
+  // for brand-new proxies that have never been checked. That leaves an already-flagged card's
+  // stale state (e.g. a red card-alert border) stuck until the user navigates away and back or
+  // hits the manual refresh button, even after the underlying upstream recovers and the
+  // Dashboard's own attention list has already cleared via its own 30s timer above. This timer
+  // closes that gap with the same page-scoped refreshCurrentView() the manual refresh button
+  // uses, so a card's border/text updates live while the user is actually looking at the page.
+  if (!state.viewHealthTimer) state.viewHealthTimer = setInterval(() => { if ((state.view === "proxies" || state.view === "hosted") && !$("#dashboard").classList.contains("hidden")) refreshCurrentView().catch(() => {}); }, 30000);
   if (!state.updateCheckTimer) state.updateCheckTimer = setInterval(() => { if (!$("#dashboard").classList.contains("hidden")) checkForUpdate().catch(() => {}); }, 60000);
   // Dashboard hero panel: one immediate load so it isn't sitting on dashes until the first
   // 7-second tick, then the same lightweight poll-while-visible pattern as the System tab's

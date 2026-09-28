@@ -433,3 +433,11 @@ Every item pushed into the attention list server-side now carries a `severity` o
 The client renders a full border in the matching color (red or amber) instead of the old thin left stripe, and the small status dot next to each item now matches too (previously always amber regardless of what was actually wrong).
 
 Verified: `node --check` on both touched JS files; a live `node src/server.js` run confirming `GET /api/dashboard`'s `attention` array carries a real `severity` field on every item (this sandbox has no `caddy` binary, so the gateway-down condition fires naturally and was confirmed as `"critical"`); manual read-through confirming the CSS/JS wiring for both severities and the drift-tile's special-cased button variant.
+
+## v0.16.113
+
+Fixed a stale-state bug on the Hosted Sites and Proxy Hosts pages: once a card's upstream failed and turned its border red (`card-alert`, added in v0.16.111), the border never cleared on its own even after the upstream recovered — only a manual page refresh or navigating away and back would pick up the change. Reported by the user directly: the Dashboard's Needs Attention list correctly cleared once the underlying upstream came back (it has its own 30-second poll of `/api/dashboard`), but the Proxy Hosts card grid, driven by a separate `/api/proxies` fetch, had no periodic re-poll at all — the only existing mechanism (`maybeRefreshPendingProxies()`) only catches proxies that have never been checked yet, not one whose status changes later.
+
+Added a page-scoped 30-second polling timer for the Hosted Sites and Proxy Hosts views, mirroring the Dashboard's own pattern: while the user is actively viewing either page, it now periodically calls the same page-scoped `refreshCurrentView()` the manual refresh button already uses, so a card's border and upstream text update live as health changes — without requiring a manual refresh.
+
+Verified: `node --check` on the touched JS file (wrapped in an IIFE for a standalone syntax check, since it's a plain browser script); manual read-through confirming the new timer is gated the same way as the existing Dashboard timers (`state.view` check plus the dashboard container's visibility) and reuses `refreshCurrentView()` rather than introducing a second fetch path.
