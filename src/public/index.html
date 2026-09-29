@@ -201,7 +201,7 @@
             <label>Log type<select id="logs-type"><option value="access">Access requests</option><option value="gateway">Gateway events</option></select></label>
             <label id="logs-filter-a-wrap">Domain<select id="logs-filter-a"><option value="">All domains</option></select></label>
             <label id="logs-filter-b-wrap">Response status<select id="logs-filter-b"><option value="">All responses</option><option value="2">Successful · 2xx</option><option value="3">Redirects · 3xx</option><option value="4">Client errors · 4xx</option><option value="5">Server errors · 5xx</option></select></label>
-            <label id="logs-search-wrap">Search<input id="logs-search" type="search" placeholder="Search by domain or path"></label>
+            <label id="logs-search-wrap">Search<input id="logs-search" type="search" placeholder="Search"></label>
           </div>
           <p id="log-summary" class="muted feature-note">No requests in the current view. <span id="log-last-checked">Not checked yet.</span></p>
           <div class="table-wrap log-table-wrap" data-logs-panel="access"><table class="log-table"><thead><tr><th>Time</th><th>Domain</th><th>Request</th><th>Status</th><th>Duration</th></tr></thead><tbody id="log-rows"></tbody></table></div>
