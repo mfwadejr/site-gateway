@@ -360,13 +360,14 @@ function renderCertificates() {
   const visibleCertRows = state.certRows.filter(row => matchesSearch(certTerm, row.cert.domain));
   $("#certificate-list").innerHTML = !state.certRows.length ? '<tr><td colspan="7" class="quiet-state">No HTTPS domains are configured.</td></tr>' : !visibleCertRows.length ? '<tr><td colspan="7" class="quiet-state">No matches.</td></tr>' : visibleCertRows.map((row, index) => {
     const cert = row.cert, item = row.readiness;
-    const dnsOk = item ? item.dns.healthy : null;
-    const tlsOk = item ? ["healthy", "warning", "critical", "not-configured"].includes(item.tls.status) : null;
-    const dnsCell = item ? `<span class="status-dot ${dnsOk ? "running" : "error"}"></span>${dnsOk ? "Resolved" : "Failed"}` : `<span class="status-dot idle"></span>—`;
-    const tlsCell = item ? `<span class="status-dot ${tlsOk ? "running" : "error"}"></span>${escapeHtml(item.tls.status.replaceAll("-", " "))}` : `<span class="status-dot idle"></span>—`;
-    const upstreamCell = !item ? `<span class="status-dot idle"></span>—` : !item.upstream ? `<span class="status-dot idle"></span>Monitoring paused` : item.upstream.status === "unmonitored" ? `<span class="status-dot idle"></span>Monitoring disabled` : item.upstream.status === "pending" ? `<span class="status-dot idle"></span>Check pending` : item.upstream.status === "healthy" ? `<span class="status-dot running"></span>${item.upstream.httpStatus}` : `<span class="status-dot bad"></span>${escapeHtml(item.upstream.error || "Unavailable")}`;
+    const routeDisabled = item?.enabled === false;
+    const dnsOk = item && !routeDisabled ? item.dns.healthy : null;
+    const tlsOk = item && !routeDisabled ? ["healthy", "warning", "critical", "not-configured"].includes(item.tls.status) : null;
+    const dnsCell = routeDisabled ? `<span class="status-dot idle"></span>Route disabled` : item ? `<span class="status-dot ${dnsOk ? "running" : "error"}"></span>${dnsOk ? "Resolved" : "Failed"}` : `<span class="status-dot idle"></span>—`;
+    const tlsCell = routeDisabled ? `<span class="status-dot idle"></span>Route disabled` : item ? `<span class="status-dot ${tlsOk ? "running" : "error"}"></span>${escapeHtml(item.tls.status.replaceAll("-", " "))}` : `<span class="status-dot idle"></span>—`;
+    const upstreamCell = routeDisabled ? `<span class="status-dot idle"></span>Route disabled` : !item ? `<span class="status-dot idle"></span>—` : !item.upstream ? `<span class="status-dot idle"></span>Monitoring paused` : item.upstream.status === "unmonitored" ? `<span class="status-dot idle"></span>Monitoring disabled` : item.upstream.status === "pending" ? `<span class="status-dot idle"></span>Check pending` : item.upstream.status === "healthy" ? `<span class="status-dot running"></span>${item.upstream.httpStatus}` : `<span class="status-dot bad"></span>${escapeHtml(item.upstream.error || "Unavailable")}`;
     const statusLabel = cert.status === "mismatch" ? "Domain mismatch" : cert.status.charAt(0).toUpperCase() + cert.status.slice(1);
-    return `<tr class="cert-table-row" data-index="${index}" tabindex="0"><td><strong>${escapeHtml(cert.domain)}</strong><br><small class="muted">${escapeHtml(cert.kind)} · ${escapeHtml(cert.source)}</small></td><td><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span>${escapeHtml(statusLabel)}</td><td>${cert.expiresAt ? `${cert.daysRemaining} days` : "—"}</td><td>${escapeHtml(cert.issuer || "—")}</td><td>${dnsCell}</td><td>${tlsCell}</td><td>${upstreamCell}</td></tr>`;
+    return `<tr class="cert-table-row" data-index="${index}" tabindex="0"><td><strong>${escapeHtml(cert.domain)}</strong><br><small class="muted">${escapeHtml(cert.kind)} · ${escapeHtml(cert.source)}</small></td><td><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span>${escapeHtml(statusLabel)}</td><td>${cert.expiresAt ? `${cert.daysRemaining} days` : "—"}</td><td title="${escapeHtml(cert.issuer || "")}">${escapeHtml(cert.issuer || "—")}</td><td>${dnsCell}</td><td>${tlsCell}</td><td title="${escapeHtml(upstreamCell.replace(/<[^>]+>/g, ""))}">${upstreamCell}</td></tr>`;
   }).join("");
 }
 
@@ -376,7 +377,7 @@ function renderCertificateDetailBody(cert, item) {
   const banner = item?.diagnosis ? `<div class="readiness-diagnosis danger-text">${escapeHtml(item.diagnosis)}</div>` : "";
   const certRows = `<div><dt>Status</dt><dd>${escapeHtml(cert.status)}</dd></div><div><dt>Valid from</dt><dd>${cert.validFrom ? escapeHtml(formatTime(cert.validFrom)) : "—"}</dd></div><div><dt>Expires</dt><dd>${cert.expiresAt ? escapeHtml(formatTime(cert.expiresAt)) : "—"}</dd></div><div><dt>Issuer</dt><dd>${escapeHtml(cert.issuer || "—")}</dd></div><div><dt>Covered domains</dt><dd>${escapeHtml((cert.coveredNames || []).join(", ") || "—")}</dd></div><div><dt>Serial number</dt><dd>${escapeHtml(cert.serialNumber || "—")}</dd></div><div><dt>SHA-256 fingerprint</dt><dd>${escapeHtml(cert.fingerprint || "—")}</dd></div><div><dt>Last detected update</dt><dd>${cert.updatedAt ? escapeHtml(formatTime(cert.updatedAt)) : "—"}</dd></div>`;
   const divider = `<p class="eyebrow readiness-divider">Domain readiness</p>`;
-  const readinessRows = item ? `<div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}${item.tls.healthy === false ? `<br><span class="danger-text">${escapeHtml(item.tls.error || "Live handshake failed")}</span>` : ""}</dd></div>${item.upstream ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${item.upstream.httpStatus ?? "no response"}${item.upstream.responseMs != null ? ` · ${item.upstream.responseMs} ms` : ""} · ${item.upstream.attempts || 1} attempt${(item.upstream.attempts || 1) === 1 ? "" : "s"}</dd></div>${item.upstream.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(item.upstream.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>"}<div><dt>Last checked</dt><dd>${escapeHtml(formatTime(item.checkedAt || item.upstream?.checkedAt))}</dd></div>` : "<div><dt>Domain readiness</dt><dd>No readiness data available for this domain.</dd></div>";
+  const readinessRows = item?.enabled === false ? "<div><dt>Domain readiness</dt><dd>This route is disabled, so DNS, TLS, and upstream checks are skipped.</dd></div>" : item ? `<div><dt>DNS</dt><dd>${item.dns.healthy ? `Resolved${item.dns.addresses.length ? ` · ${escapeHtml(item.dns.addresses.join(", "))}` : ""}` : `Failed${item.dns.error ? ` · ${escapeHtml(item.dns.error)}` : ""}`}</dd></div><div><dt>Gateway ports</dt><dd>HTTP 80 ${item.ports.http ? "responding" : "not responding"} · HTTPS 443 ${item.ports.https === false ? "not responding" : "responding"}</dd></div><div><dt>TLS</dt><dd>${escapeHtml(item.tls.status.replaceAll("-", " "))}${item.tls.healthy === false ? `<br><span class="danger-text">${escapeHtml(item.tls.error || "Live handshake failed")}</span>` : ""}</dd></div>${item.upstream ? `<div><dt>Upstream</dt><dd>Expected ${escapeHtml(item.upstreamExpected || "200-499")} · received ${item.upstream.httpStatus ?? "no response"}${item.upstream.responseMs != null ? ` · ${item.upstream.responseMs} ms` : ""} · ${item.upstream.attempts || 1} attempt${(item.upstream.attempts || 1) === 1 ? "" : "s"}</dd></div>${item.upstream.error ? `<div><dt>Failure detail</dt><dd class="danger-text">${escapeHtml(item.upstream.error)}</dd></div>` : ""}` : "<div><dt>Upstream</dt><dd>No upstream health check configured.</dd></div>"}<div><dt>Last checked</dt><dd>${escapeHtml(formatTime(item.checkedAt || item.upstream?.checkedAt))}</dd></div>` : "<div><dt>Domain readiness</dt><dd>No readiness data available for this domain.</dd></div>";
   return banner + certRows + divider + readinessRows;
 }
 
@@ -520,10 +521,18 @@ function renderPerformance() {
     return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="var(--line)" stroke-width="1" />`;
   }).join("");
   const leftPct = (left / width) * 100, plotWidthPct = (plotWidth / width) * 100, plotHeightPct = (plotHeight / height) * 100, topInsetPct = (top / height) * 100;
-  const axisLabels = gridFractions.map(fraction => {
-    const value = Math.round(max * fraction);
+  // Each gridline gets its own rounded label, but when `max` is small (e.g. 1 request in the
+  // window) two fractions can round to the same integer -- most commonly the 0.5 and 1
+  // gridlines both reading "1". Rather than show a misleading duplicate, blank out a middle
+  // label that collides with either endpoint; the gridline itself still renders.
+  const axisValues = gridFractions.map(fraction => Math.round(max * fraction));
+  const axisLabels = gridFractions.map((fraction, index) => {
+    const isEndpoint = index === 0 || index === gridFractions.length - 1;
+    const value = axisValues[index];
+    const collidesWithEndpoint = !isEndpoint && (value === axisValues[0] || value === axisValues[gridFractions.length - 1]);
+    const text = collidesWithEndpoint ? "" : value;
     const yPct = topInsetPct + plotHeightPct * (1 - fraction);
-    return `<span class="axis-label" style="left:0;width:${(leftPct - 2).toFixed(2)}%;top:${yPct.toFixed(2)}%;text-align:right">${value}</span>`;
+    return `<span class="axis-label" style="left:0;width:${(leftPct - 2).toFixed(2)}%;top:${yPct.toFixed(2)}%;text-align:right">${text}</span>`;
   }).join("");
   // Time axis: labels land on real clock boundaries scaled to the selected range, and the
   // true first and last sample are always labelled so the window's edges stay readable.

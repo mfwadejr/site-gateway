@@ -1088,9 +1088,14 @@ function diagnoseReadiness({ dns: dnsResult, ports, tlsLive, upstream, kind }) {
 }
 
 async function domainReadiness(precomputedCertificates) {
-  const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.enabled && item.domain).flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
+  // Disabled routes are kept here (not filtered out) so the Certificates page can show an
+  // explicit "Route disabled" state instead of the row silently losing its DNS/TLS/Upstream
+  // detail. DNS/TLS/upstream probing is skipped for a disabled route -- there's nothing live
+  // to check, and probing it would just waste a lookup/handshake on an inactive route.
+  const routes = [...sites.map(item => ({ ...item, kind: "Hosted site" })), ...proxies.map(item => ({ ...item, kind: "Proxy host" })), ...redirects.map(item => ({ ...item, kind: "Redirect host" }))].filter(item => item.domain).flatMap(item => normalizeDomains(item.domain, item.domains).map(domain => ({ ...item, domain })));
   const [certs, httpResponding, httpsResponding] = await Promise.all([precomputedCertificates ? Promise.resolve(precomputedCertificates) : certificateInventory(), tcpProbe(80), tcpProbe(443)]);
   return Promise.all(routes.map(async item => {
+    if (!item.enabled) return { id: item.id, domain: item.domain, name: item.name, kind: item.kind, enabled: false, dns: null, ports: null, tls: null, upstream: null, diagnosis: null, checkedAt: new Date().toISOString() };
     let addresses = [], dnsError = null;
     try { addresses = [...new Set((await dns.lookup(item.domain, { all: true })).map(value => value.address))]; } catch (error) { dnsError = error.code || error.message; }
     const certificate = certs.certificates.find(cert => cert.domain === item.domain) || null;
@@ -1099,7 +1104,7 @@ async function domainReadiness(precomputedCertificates) {
     const ports = { http: httpResponding, https: item.tls === "http" ? null : httpsResponding };
     const tlsLive = item.tls === "http" ? null : (dnsResult.healthy && httpsResponding ? await tlsProbe(item.domain) : { healthy: false, error: !dnsResult.healthy ? "Skipped: DNS isn't resolving." : "Skipped: gateway port 443 isn't reachable." });
     const tlsField = item.tls === "http" ? { status: "not-configured", healthy: null, error: null } : { status: certificate?.status || "pending", healthy: tlsLive?.healthy ?? null, error: tlsLive?.error ?? null };
-    const readiness = { id: item.id, domain: item.domain, name: item.name, kind: item.kind, dns: dnsResult, ports, tls: tlsField, upstream, checkedAt: new Date().toISOString() };
+    const readiness = { id: item.id, domain: item.domain, name: item.name, kind: item.kind, enabled: true, dns: dnsResult, ports, tls: tlsField, upstream, checkedAt: new Date().toISOString() };
     readiness.diagnosis = diagnoseReadiness({ dns: dnsResult, ports, tlsLive, upstream, kind: item.kind });
     return readiness;
   }));
@@ -2360,7 +2365,11 @@ app.post("/api/readiness/:domain/recheck", async (req, res, next) => {
     else if (proxy) await checkProxy(proxy);
     const routes = await domainReadiness();
     const row = routes.find(item => item.domain === domain);
-    if (!row) return res.status(404).json({ error: "That domain isn't part of an enabled route." });
+    // domainReadiness() now keeps disabled routes too (for the Certificates page's own
+    // "Route disabled" display), so this recheck endpoint must still explicitly reject
+    // a disabled route rather than silently returning its inert record as if a fresh
+    // check had actually run.
+    if (!row || row.enabled === false) return res.status(404).json({ error: "That domain isn't part of an enabled route." });
     res.json(row);
   } catch (error) { next(error); }
 });
