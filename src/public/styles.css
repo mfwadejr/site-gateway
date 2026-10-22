@@ -51,8 +51,10 @@ h2{letter-spacing:-.025em}
 .port-note{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:.88rem;white-space:nowrap}
 .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--status-dot-idle)}
 .status-dot.running{background:var(--green);box-shadow:0 0 0 4px rgba(var(--green-rgb),.1)}
-.status-dot.disabled{background:var(--danger);box-shadow:0 0 0 4px rgba(var(--danger-rgb),.09)}
-.status-dot.error,.status-dot.idle{background:var(--warning);box-shadow:0 0 0 4px rgba(var(--warning-rgb),.09)}
+/* One color per meaning: green running, orange warning (degraded/at risk), red bad (broken),
+   gray inactive/idle/disabled (paused or not applicable -- never a problem on its own). */
+.status-dot.warning{background:var(--warning);box-shadow:0 0 0 4px rgba(var(--warning-rgb),.09)}
+.status-dot.disabled,.status-dot.idle{background:var(--status-dot-inactive);box-shadow:0 0 0 4px rgba(var(--status-dot-inactive-rgb),.09)}
 .status-dot.bad{background:var(--danger);box-shadow:0 0 0 4px rgba(var(--danger-rgb),.09)}
 
 /* Hosted Site / Proxy Host cards, card menu, and the toggle switch */
@@ -1102,3 +1104,11 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
   .site-card.card-alert{animation:card-alert-pulse 1.1s ease-out 3}
 }
 @keyframes card-alert-pulse{0%{box-shadow:0 0 0 0 rgba(var(--danger-rgb),.45)}70%{box-shadow:0 0 0 12px rgba(var(--danger-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--danger-rgb),0)}}
+
+/* Needs attention tile -> panel jump: brief highlight so the eye lands on the right panel. */
+.dashboard-panel{scroll-margin-top:16px}
+.dashboard-panel.panel-flash{border-color:var(--blue)}
+@media (prefers-reduced-motion: no-preference) {
+  .dashboard-panel.panel-flash{animation:panel-flash 1.4s ease-out}
+}
+@keyframes panel-flash{0%{box-shadow:0 0 0 0 rgba(var(--chip-blue-rgb),.5)}70%{box-shadow:0 0 0 12px rgba(var(--chip-blue-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--chip-blue-rgb),0)}}

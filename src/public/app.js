@@ -200,7 +200,7 @@ function healthCopy(group, label) {
   return `${group.disabled} disabled`;
 }
 
-function probeClass(service) { return service.status === "ready" ? "running" : service.status === "error" ? "error" : service.status === "checking" ? "idle" : "inactive"; }
+function probeClass(service) { return service.status === "ready" ? "running" : service.status === "error" ? "bad" : service.status === "checking" ? "warning" : "inactive"; }
 function probeCopy(service, ready, error, unconfigured = "Not configured") {
   if (service.status === "checking") return "Checking again before reporting a problem";
   if (service.status === "unconfigured") return unconfigured;
@@ -220,18 +220,20 @@ function setTileAccent(valueId, level) {
   tile.classList.add(level === "danger" ? "accent-danger" : level === "warning" ? "accent-warning" : "accent-green");
 }
 function applyTileAccents(data) {
-  const group = value => !value?.total || !value.errors ? "green" : value.errors >= value.total ? "danger" : "warning";
-  setTileAccent("#dash-hosted-total", group(data.hosted));
+  // One rule everywhere: a tile shows the worst severity of what it counts, never a proportion.
+  // red ("danger") = broken and affecting traffic now; orange ("warning") = degraded or at risk;
+  // green = fine. Disabled/paused items are not problems and never color a tile. Counts ("9 of 12
+  // healthy") stay as detail text and do not drive the color.
+  const level = (critical, warning = 0) => critical > 0 ? "danger" : warning > 0 ? "warning" : "green";
+  setTileAccent("#dash-hosted-total", level(data.hosted?.errors || 0));
   const upstreams = data.upstreams || { total: 0, unhealthy: 0 };
-  const proxyLevel = group(data.proxies);
-  setTileAccent("#dash-proxy-total", proxyLevel !== "green" ? proxyLevel : upstreams.unhealthy > 0 ? (upstreams.unhealthy >= upstreams.total ? "danger" : "warning") : "green");
+  setTileAccent("#dash-proxy-total", level((data.proxies?.errors || 0) + (upstreams.unhealthy || 0)));
   const certificates = data.certificates || {};
-  const certificateLevel = (certificates.expired || 0) + (certificates.mismatch || 0) > 0 ? "danger" : (certificates.warning || 0) + (certificates.critical || 0) > 0 ? "warning" : "green";
-  setTileAccent("#dash-tls-total", certificateLevel);
+  setTileAccent("#dash-tls-total", level((certificates.expired || 0) + (certificates.mismatch || 0) + (certificates.critical || 0), certificates.warning || 0));
   // Redirect hosts have no runtime failure state of their own, so they stay on the baseline.
   setTileAccent("#dash-redirect-total", "green");
   const streaming = data.streamingPorts || { total: 0, listening: 0 };
-  setTileAccent("#dash-stream-total", !streaming.total || streaming.listening === streaming.total ? "green" : streaming.listening === 0 ? "danger" : "warning");
+  setTileAccent("#dash-stream-total", level(streaming.total - streaming.listening));
   // Throughput is a rate, not a health signal: there is no "bad" value to react to.
   setTileAccent("#dash-throughput-total", "green");
 }
@@ -250,8 +252,9 @@ function renderDashboard() {
   $("#dash-attention-total").textContent = data.attention.length;
   $("#dash-attention-detail").textContent = data.attention.length ? `${data.attention.length} item${data.attention.length === 1 ? "" : "s"} to review` : "No current issues";
   applyTileAccents(data);
-  $("#dash-attention-chip").classList.toggle("accent-danger", data.attention.length > 0);
-  $("#dash-attention-chip").classList.toggle("accent-green", data.attention.length === 0);
+  const attentionLevel = data.attention.some(item => item.severity !== "warning") ? "danger" : data.attention.length ? "warning" : "green";
+  $("#dash-attention-chip").classList.remove(...TILE_ACCENT_CLASSES);
+  $("#dash-attention-chip").classList.add(`accent-${attentionLevel}`);
   $("#dash-attention-icon").textContent = data.attention.length > 0 ? "!" : "✓";
   $("#dash-throughput-total").textContent = data.throughput?.liveRequests ?? 0;
   const panelStreaming = data.streamingPorts || { total: 0, listening: 0 }, panelUpstreams = data.upstreams || { total: 0, healthy: 0, unhealthy: 0 };
@@ -266,13 +269,13 @@ function renderDashboard() {
   $("#http-health-copy").textContent = probeCopy(data.services.http, "Ready and responding", "Not responding");
   $("#https-health-dot").className = `status-dot ${probeClass(data.services.https)}`;
   $("#https-health-copy").textContent = probeCopy(data.services.https, `Ready and responding · ${data.services.https.activeDomains} TLS domain${data.services.https.activeDomains === 1 ? "" : "s"}`, "Not responding", "Not configured · no TLS domains enabled");
-  $("#storage-health-dot").className = `status-dot ${data.services.storage.healthy ? "running" : "error"}`;
+  $("#storage-health-dot").className = `status-dot ${data.services.storage.healthy ? "running" : "bad"}`;
   $("#storage-health-copy").textContent = data.services.storage.healthy ? "Ready · /data is readable and writable" : "Permission error · check /data";
   const streaming = data.streamingPorts || { total: 0, listening: 0 };
-  $("#streaming-health-dot").className = `status-dot ${!streaming.total ? "inactive" : streaming.listening === streaming.total ? "running" : "error"}`;
+  $("#streaming-health-dot").className = `status-dot ${!streaming.total ? "inactive" : streaming.listening === streaming.total ? "running" : "bad"}`;
   $("#streaming-health-copy").textContent = !streaming.total ? "No streaming hosts configured" : `${streaming.listening} of ${streaming.total} port${streaming.total === 1 ? "" : "s"} listening`;
   const upstreams = data.upstreams || { total: 0, healthy: 0, unhealthy: 0 };
-  $("#upstream-health-dot").className = `status-dot ${!upstreams.total ? "inactive" : upstreams.unhealthy > 0 ? "error" : "running"}`;
+  $("#upstream-health-dot").className = `status-dot ${!upstreams.total ? "inactive" : upstreams.unhealthy > 0 ? "bad" : "running"}`;
   $("#upstream-health-copy").textContent = !upstreams.total ? "No proxy hosts configured" : `${upstreams.healthy} of ${upstreams.total} healthy`;
   $("#health-checked").innerHTML = `<span class="live-dot" id="health-live-dot"></span>Last checked ${formatTime(data.checkedAt)}`;
   // Memory/Data/Storage/Version/Database/Public IP moved to the Administration > System tab's
@@ -287,7 +290,7 @@ function renderDashboard() {
   // is. "bad" is the existing dot class that renders red (var(--danger)); "error" (despite the
   // name) renders amber (var(--warning)) -- see upstreamStateClass()'s "bad" card-alert border for
   // the same red/amber vocabulary already used elsewhere on the dashboard.
-  const severityDot = item => item.severity === "warning" ? "error" : "bad";
+  const severityDot = item => item.severity === "warning" ? "warning" : "bad";
   const severityClass = item => `severity-${item.severity === "warning" ? "warning" : "critical"}`;
   $("#attention-list").innerHTML = data.attention.length ? data.attention.map(item => item.kind === "drift"
     ? `<div class="attention-tile drift-tile ${severityClass(item)}"><span class="status-dot ${severityDot(item)}"></span><span class="attention-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.message)}</small></span>${canAdmin() ? '<button type="button" class="button secondary" data-drift-resync>Resync now</button>' : ""}</div>`
@@ -333,7 +336,7 @@ function hostedCard(site) {
   // Any card whose upstream is genuinely unreachable (not just paused/pending) gets a pulsing red
   // border to draw the eye -- a bad upstream previously only showed as a small red line of text
   // buried inside the card, with nothing about its outline or position in the grid standing out.
-  return `<article class="site-card${upstreamState === "bad" ? " card-alert" : ""}" data-id="${site.id}" data-kind="hosted"><div class="card-top"><div class="site-icon">${iconMarkup(site, "sites")}</div>${menu}</div><h2>${escapeHtml(site.name)}</h2><p class="address">${escapeHtml(site.domain || `Port ${site.port}`)}</p>${site.domain ? `<p class="gateway-address ${site.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(site))}</p>` : ""}<p class="upstream-copy ${upstreamState}">${upstream}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(site)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(site.name)}">↗</a></div></div></article>`;
+  return `<article class="site-card${upstreamState === "bad" ? " card-alert" : ""}" data-id="${site.id}" data-kind="hosted"><div class="card-top"><div class="site-icon">${iconMarkup(site, "sites")}</div>${menu}</div><h2>${escapeHtml(site.name)}</h2><p class="address">${escapeHtml(site.domain || `Port ${site.port}`)}</p>${site.domain ? `<p class="gateway-address ${site.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(site))}</p>` : ""}<p class="upstream-copy ${upstreamState}">${upstream}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status === "error" ? "bad" : status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(site)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(site.name)}">↗</a></div></div></article>`;
 }
 function proxyCard(proxy) {
   const status = proxy.status === "running" ? "running" : proxy.status === "error" ? "error" : "disabled";
@@ -342,7 +345,7 @@ function proxyCard(proxy) {
   const menu = canManage() ? `<div class="menu-wrap"><button class="icon-button menu-button" aria-label="Proxy options" aria-expanded="false">•••</button><div class="menu"><button data-action="settings">Edit proxy</button><button data-action="icon">Change icon</button><button data-action="caddy-config">View Caddy config</button><button data-action="delete" class="danger-text">Delete proxy</button></div></div>` : "";
   const toggle = canManage() ? `<button class="toggle ${proxy.enabled ? "on" : ""}" data-action="toggle" aria-label="${proxy.enabled ? "Disable" : "Enable"} ${escapeHtml(proxy.name)}"><span></span></button>` : "";
   const access = proxy.accessListId ? (state.accessLists.find(item => item.id === proxy.accessListId)?.name || "Access List") : "Public · no Access List";
-  return `<article class="site-card proxy${upstreamState === "bad" ? " card-alert" : ""}" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy, "proxies")}</div>${menu}</div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><p class="upstream-copy ${upstreamState}">${upstream}</p><p class="access-summary">${escapeHtml(access)}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
+  return `<article class="site-card proxy${upstreamState === "bad" ? " card-alert" : ""}" data-id="${proxy.id}" data-kind="proxy"><div class="card-top"><div class="site-icon">${iconMarkup(proxy, "proxies")}</div>${menu}</div><h2>${escapeHtml(proxy.name)}</h2><p class="address">${escapeHtml(proxy.target)}</p><p class="gateway-address ${proxy.tls !== "http" ? "secure" : ""}">${escapeHtml(publicUrl(proxy))}</p><p class="upstream-copy ${upstreamState}">${upstream}</p><p class="access-summary">${escapeHtml(access)}</p><div class="card-footer"><span class="status-pill"><span class="status-dot ${status === "error" ? "bad" : status}"></span>${status === "error" ? "Needs attention" : status[0].toUpperCase() + status.slice(1)}</span><div class="card-actions">${toggle}<a class="launch" href="${publicUrl(proxy)}" target="_blank" rel="noopener" aria-label="Open ${escapeHtml(proxy.name)}">↗</a></div></div></article>`;
 }
 
 
@@ -363,11 +366,11 @@ function renderCertificates() {
     const routeDisabled = item?.enabled === false;
     const dnsOk = item && !routeDisabled ? item.dns.healthy : null;
     const tlsOk = item && !routeDisabled ? ["healthy", "warning", "critical", "not-configured"].includes(item.tls.status) : null;
-    const dnsCell = routeDisabled ? `<span class="status-dot idle"></span>Route disabled` : item ? `<span class="status-dot ${dnsOk ? "running" : "error"}"></span>${dnsOk ? "Resolved" : "Failed"}` : `<span class="status-dot idle"></span>—`;
-    const tlsCell = routeDisabled ? `<span class="status-dot idle"></span>Route disabled` : item ? `<span class="status-dot ${tlsOk ? "running" : "error"}"></span>${escapeHtml(item.tls.status.replaceAll("-", " "))}` : `<span class="status-dot idle"></span>—`;
+    const dnsCell = routeDisabled ? `<span class="status-dot idle"></span>Route disabled` : item ? `<span class="status-dot ${dnsOk ? "running" : "bad"}"></span>${dnsOk ? "Resolved" : "Failed"}` : `<span class="status-dot idle"></span>—`;
+    const tlsCell = routeDisabled ? `<span class="status-dot idle"></span>Route disabled` : item ? `<span class="status-dot ${tlsOk ? "running" : "bad"}"></span>${escapeHtml(item.tls.status.replaceAll("-", " "))}` : `<span class="status-dot idle"></span>—`;
     const upstreamCell = routeDisabled ? `<span class="status-dot idle"></span>Route disabled` : !item ? `<span class="status-dot idle"></span>—` : !item.upstream ? `<span class="status-dot idle"></span>Monitoring paused` : item.upstream.status === "unmonitored" ? `<span class="status-dot idle"></span>Monitoring disabled` : item.upstream.status === "pending" ? `<span class="status-dot idle"></span>Check pending` : item.upstream.status === "healthy" ? `<span class="status-dot running"></span>${item.upstream.httpStatus}` : `<span class="status-dot bad"></span>${escapeHtml(item.upstream.error || "Unavailable")}`;
     const statusLabel = cert.status === "mismatch" ? "Domain mismatch" : cert.status.charAt(0).toUpperCase() + cert.status.slice(1);
-    return `<tr class="cert-table-row" data-index="${index}" tabindex="0"><td><strong>${escapeHtml(cert.domain)}</strong><br><small class="muted">${escapeHtml(cert.kind)} · ${escapeHtml(cert.source)}</small></td><td><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : "error"}"></span>${escapeHtml(statusLabel)}</td><td>${cert.expiresAt ? `${cert.daysRemaining} days` : "—"}</td><td title="${escapeHtml(cert.issuer || "")}">${escapeHtml(cert.issuer || "—")}</td><td>${dnsCell}</td><td>${tlsCell}</td><td title="${escapeHtml(upstreamCell.replace(/<[^>]+>/g, ""))}">${upstreamCell}</td></tr>`;
+    return `<tr class="cert-table-row" data-index="${index}" tabindex="0"><td><strong>${escapeHtml(cert.domain)}</strong><br><small class="muted">${escapeHtml(cert.kind)} · ${escapeHtml(cert.source)}</small></td><td><span class="status-dot ${cert.status === "healthy" ? "running" : cert.status === "pending" ? "idle" : cert.status === "warning" ? "warning" : "bad"}"></span>${escapeHtml(statusLabel)}</td><td>${cert.expiresAt ? `${cert.daysRemaining} days` : "—"}</td><td title="${escapeHtml(cert.issuer || "")}">${escapeHtml(cert.issuer || "—")}</td><td>${dnsCell}</td><td>${tlsCell}</td><td title="${escapeHtml(upstreamCell.replace(/<[^>]+>/g, ""))}">${upstreamCell}</td></tr>`;
   }).join("");
 }
 
@@ -452,14 +455,14 @@ function renderLogsAccessAndGateway() {
     let activity = data.activity.filter(item => (!severity || item.status === severity) && (!category || item.category === category));
     if (search) activity = activity.filter(item => item.message.toLowerCase().includes(search));
     $("#log-summary").innerHTML = `${activity.length} event${activity.length === 1 ? "" : "s"} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
-    $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const indicatorClass = item.status === "error" ? "disabled" : item.status === "warning" ? "error" : "running"; const severityLabel = item.status === "error" ? "Error" : item.status === "warning" ? "Warning" : "Normal"; return `<tr${item.id ? ` data-event-id="${item.id}"` : ""}><td>${escapeHtml(formatTime(item.at))}</td><td><span class="status-dot ${indicatorClass}"></span>${severityLabel}</td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.message)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching gateway events. Try a different severity or category filter.</td></tr>';
+    $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const indicatorClass = item.status === "error" ? "bad" : item.status === "warning" ? "warning" : "running"; const severityLabel = item.status === "error" ? "Error" : item.status === "warning" ? "Warning" : "Normal"; return `<tr${item.id ? ` data-event-id="${item.id}"` : ""}><td>${escapeHtml(formatTime(item.at))}</td><td><span class="status-dot ${indicatorClass}"></span>${severityLabel}</td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.message)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching gateway events. Try a different severity or category filter.</td></tr>';
   }
 }
 async function renderLogsAudit() {
   const result = $("#logs-filter-a").value, action = $("#logs-search").value;
   const records = await api(`/api/audit?action=${encodeURIComponent(action)}&status=${encodeURIComponent(result)}`);
   $("#log-summary").innerHTML = `${records.length} record${records.length === 1 ? "" : "s"} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
-  $("#logs-audit-list").innerHTML = records.length ? records.map(item => { const failed = item.status === "error"; return `<tr><td>${escapeHtml(formatTime(item.created_at))}</td><td>${escapeHtml(item.actor || "System")}</td><td><span class="status-dot ${failed ? "error" : "running"}"></span>${failed ? "Failed" : "Success"}</td><td>${escapeHtml(item.action)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching audit records.</td></tr>';
+  $("#logs-audit-list").innerHTML = records.length ? records.map(item => { const failed = item.status === "error"; return `<tr><td>${escapeHtml(formatTime(item.created_at))}</td><td>${escapeHtml(item.actor || "System")}</td><td><span class="status-dot ${failed ? "bad" : "running"}"></span>${failed ? "Failed" : "Success"}</td><td>${escapeHtml(item.action)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching audit records.</td></tr>';
 }
 async function renderLogs() {
   const type = currentLogsType();
@@ -701,7 +704,7 @@ function render() {
     const heading = headings[state.view] || ["Site Gateway",""]; $("#page-title").textContent = heading[0]; $("#page-subtitle").textContent = heading[1];
     $("#open-create").textContent = state.view === "administration" ? (adminGroupsActive ? "＋ Create group" : adminApiActive ? "＋ Create token" : "＋ Create user") : state.view === "streaming" ? "＋ New streaming host" : state.view === "redirects" ? "＋ New redirect host" : state.view === "access" ? "＋ New Access List" : $("#open-create").textContent;
     if (state.view === "streaming") $("#stream-empty").classList.toggle("hidden", !state.loaded || state.streams.length > 0);
-    if (state.view === "streaming") { const items = state.streams; const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length; $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors; $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues"; $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`; $(".port-note").classList.add("hidden"); }
+    if (state.view === "streaming") { const items = state.streams; const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length; $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors; $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues"; $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "bad" : "inactive"}`; $(".port-note").classList.add("hidden"); }
     if (state.view === "redirects") $("#redirect-empty .create-trigger").textContent = "Create a redirect host";
     if (state.view === "redirects") $("#redirect-empty").classList.toggle("hidden", !state.loaded || state.redirects.length > 0);
     if (state.view === "redirects") { const items = state.redirects; const running = items.filter(item => item.enabled !== false).length, disabled = items.length - running; $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = 0; $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = "No issues"; $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = "status-dot inactive"; $(".port-note").classList.add("hidden"); }
@@ -726,7 +729,7 @@ function render() {
   const running = items.filter(item => item.status === "running").length, disabled = items.filter(item => item.status === "disabled").length, errors = items.filter(item => item.status === "error").length;
   $("#running-count").textContent = running; $("#disabled-count").textContent = disabled; $("#error-count").textContent = errors;
   $("#running-label").textContent = running ? "Running" : "None running"; $("#disabled-label").textContent = disabled ? "Disabled" : "None disabled"; $("#error-label").textContent = errors ? "Needs attention" : "No issues";
-  $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "error" : "inactive"}`;
+  $("#running-dot").className = `status-dot ${running ? "running" : "inactive"}`; $("#disabled-dot").className = `status-dot ${disabled ? "disabled" : "inactive"}`; $("#error-dot").className = `status-dot ${errors ? "bad" : "inactive"}`;
 }
 
 // --- Data refresh helpers ------------------------------------------------------------------
@@ -905,6 +908,16 @@ $("#attention-list").addEventListener("click", async event => {
 // --- Primary navigation (sidebar view switching) -------------------------------------------
 function closeMenus() { document.querySelectorAll(".menu-open").forEach(card => { card.classList.remove("menu-open"); card.querySelector(".menu-button")?.setAttribute("aria-expanded", "false"); }); }
 document.querySelectorAll("nav, .aside-utilities, .brand").forEach(nav => nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (button) { closeMenus(); state.view = button.dataset.view; render(); loadFeatureView().catch(error => toast(error.message, "error")); } }));
+// The Needs attention tile jumps to its own panel further down the same page (the items inside
+// that panel already link to whatever fixes them), so it carries data-scroll-to instead of the
+// data-target the other tiles use to switch views.
+$("#dashboard-view").addEventListener("click", event => {
+  const trigger = event.target.closest("[data-scroll-to]"); if (!trigger) return;
+  const panel = document.getElementById(trigger.dataset.scrollTo); if (!panel) return;
+  panel.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  panel.classList.remove("panel-flash"); void panel.offsetWidth; panel.classList.add("panel-flash");
+  setTimeout(() => panel.classList.remove("panel-flash"), 1600);
+});
 $("#dashboard-view").addEventListener("click", event => { const target = event.target.closest("[data-target], [data-view]"); if (!target) return; state.view = target.dataset.target || target.dataset.view; render(); loadFeatureView().catch(error => toast(error.message, "error")); });
 
 // --- Logs & Performance filter controls -----------------------------------------------------
