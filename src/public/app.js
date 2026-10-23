@@ -175,7 +175,7 @@ document.addEventListener("submit", async event => {
   const certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile");
   let body = Object.fromEntries(form); delete body.certificateFile; delete body.privateKeyFile;
   if (state.editing.kind === "proxy") body = advancedFormBody(form, body, { scope: "#settings-advanced", formEl: event.target });
-  else { const scope = "#settings-hosted-advanced"; body = { name: body.name, domain: body.domain, domains: String(form.get("domainsText") || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean), tls: body.tls, hsts: form.has("hsts"), accessListId: scopedValue(event.target, scope, "accessListId"), healthEnabled: monitoringChecked(event.target, "site"), healthPath: scopedValue(event.target, scope, "healthPath", "/"), healthMethod: scopedValue(event.target, scope, "healthMethod", "GET"), healthExpected: scopedValue(event.target, scope, "healthExpected", "200-499"), healthTimeoutSeconds: Number(scopedValue(event.target, scope, "healthTimeoutSeconds", "4")), healthRetries: Number(scopedValue(event.target, scope, "healthRetries", "0")), compression: scopedValue(event.target, scope, "compression", "automatic"), requestHeaders: parseHeaderLines(scopedValue(event.target, scope, "requestHeadersText")), responseHeaders: parseHeaderLines(scopedValue(event.target, scope, "responseHeadersText")), hstsSubdomains: event.target.querySelector(`${scope} [name="hstsSubdomains"]`)?.checked === true, customConfig: scopedValue(event.target, scope, "customConfig") }; }
+  else { const scope = "#settings-hosted-advanced"; body = { name: body.name, domain: body.domain, domains: String(form.get("domainsText") || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean), tls: body.tls, hsts: form.has("hsts"), accessListId: scopedValue(event.target, scope, "accessListId"), healthEnabled: monitoringChecked(event.target, "site"), healthPath: scopedValue(event.target, scope, "healthPath", "/"), healthMethod: scopedValue(event.target, scope, "healthMethod", "GET"), healthExpected: scopedValue(event.target, scope, "healthExpected", "200-499"), healthTimeoutSeconds: Number(scopedValue(event.target, scope, "healthTimeoutSeconds", "4")), healthRetries: Number(scopedValue(event.target, scope, "healthRetries", "0")), compression: scopedValue(event.target, scope, "compression", "automatic"), requestHeaders: parseHeaderLines(scopedValue(event.target, scope, "requestHeadersText")), responseHeaders: parseHeaderLines(scopedValue(event.target, scope, "responseHeadersText")), hstsSubdomains: event.target.querySelector(`${scope} [name="hstsSubdomains"]`)?.checked === true, customConfig: scopedValue(event.target, scope, "customConfig"), spaMode: event.target.querySelector(`${scope} [name="spaMode"]`)?.checked === true, custom404: event.target.querySelector(`${scope} [name="custom404"]`)?.checked === true, cachePolicy: scopedValue(event.target, scope, "cachePolicy", "off") }; }
   const uploadCustom = state.editing.kind === "proxy" && body.tls === "custom" && certificate?.size && privateKey?.size;
   if (state.editing.kind === "proxy" && body.tls === "custom" && !uploadCustom) {
     const existing = state.proxies.find(item => item.id === state.editing.id);
@@ -352,12 +352,13 @@ function proxyCard(proxy) {
 // --- Certificates view --------------------------------------------------------------
 const CERT_FILTERS = {
   healthy: cert => cert.status === "healthy",
-  within30: cert => certDays(cert) != null && certDays(cert) > 0 && certDays(cert) <= 30,
-  within7: cert => certDays(cert) != null && certDays(cert) > 0 && certDays(cert) <= 7,
+  within30: cert => certDays(cert) != null && certDays(cert) > 0 && certDays(cert) <= certWindow("warningDays", 30),
+  within7: cert => certDays(cert) != null && certDays(cert) > 0 && certDays(cert) <= certWindow("criticalDays", 7),
   attention: cert => ["warning", "critical", "expired", "mismatch"].includes(cert.status),
   pending: cert => cert.status === "pending",
 };
 const CERT_STATUS_RANK = { expired: 0, mismatch: 1, critical: 2, warning: 3, healthy: 4, pending: 5 };
+function certWindow(key, fallback) { return state.certificates?.thresholds?.[key] || fallback; }
 function certDays(cert) { return cert.expiresAt && cert.daysRemaining != null ? cert.daysRemaining : null; }
 function sortCertRows(rows, sort) {
   const dir = sort.dir === "desc" ? -1 : 1, byDomain = (a, b) => a.cert.domain.localeCompare(b.cert.domain);
@@ -378,7 +379,7 @@ function renderCertificates() {
   const data = state.certificates; if (!data) return;
   const certSearchInput = $("#certificate-search"); if (certSearchInput && document.activeElement !== certSearchInput) certSearchInput.value = state.search.certificates || "";
   $("#certificate-count").textContent = data.summary.total;
-  $("#cert-healthy").textContent = data.summary.healthy; $("#cert-30").textContent = data.summary.within30Days; $("#cert-7").textContent = data.summary.within7Days; $("#cert-warning").textContent = data.summary.warning + data.summary.critical + data.summary.expired + data.summary.mismatch; $("#cert-pending").textContent = data.summary.pending;
+  $("#cert-healthy").textContent = data.summary.healthy; $("#cert-30").textContent = data.summary.within30Days; $("#cert-7").textContent = data.summary.within7Days; $("#cert-30-label").textContent = `Within ${certWindow("warningDays", 30)} days`; $("#cert-7-label").textContent = `Within ${certWindow("criticalDays", 7)} days`; $("#cert-warning").textContent = data.summary.warning + data.summary.critical + data.summary.expired + data.summary.mismatch; $("#cert-pending").textContent = data.summary.pending;
   const ageMinutes = (Date.now() - new Date(data.checkedAt).getTime()) / 60000, stale = ageMinutes > (data.thresholds?.staleMinutes || 10);
   $("#cert-last-checked").textContent = `Last checked ${formatTime(data.checkedAt)} · ${stale ? "data may be stale" : "current"}`;
   const routes = state.readiness?.routes || [];
@@ -477,6 +478,7 @@ function renderLogsAccessAndGateway() {
     let entries = statusClass ? data.entries.filter(entry => String(entry.status || "").startsWith(statusClass)) : data.entries;
     if (host) entries = entries.filter(entry => entry.host === host);
     if (search) entries = entries.filter(entry => (entry.host || "").toLowerCase().includes(search) || (entry.uri || "").toLowerCase().includes(search));
+    entries = sortTableRows("logs-access", entries, { time: entry => Date.parse(entry.at), host: entry => entry.host, status: entry => entry.status, duration: entry => entry.durationMs }); syncSortHeaders("logs-access");
     const errors = entries.filter(entry => entry.status >= 400).length, measured = entries.filter(entry => entry.durationMs != null), average = measured.length ? Math.round(measured.reduce((sum,entry) => sum + entry.durationMs,0) / measured.length) : null;
     $("#log-summary").innerHTML = `${entries.length} request${entries.length === 1 ? "" : "s"} · ${errors} error response${errors === 1 ? "" : "s"} · ${average == null ? "no latency data" : `${average} ms average`} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
     $("#log-rows").innerHTML = entries.length ? entries.map(entry => `<tr><td>${escapeHtml(formatTime(entry.at))}</td><td>${escapeHtml(entry.host || "—")}</td><td><code>${escapeHtml(entry.method || "")} ${escapeHtml(entry.uri || "")}</code></td><td><span class="http-status ${entry.status >= 500 ? "bad" : ""}">${entry.status ?? "—"}</span></td><td>${entry.durationMs == null ? "—" : `${entry.durationMs} ms`}</td></tr>`).join("") : '<tr><td colspan="5" class="quiet-state">No matching requests have been logged yet.</td></tr>';
@@ -486,13 +488,14 @@ function renderLogsAccessAndGateway() {
     // computed once at write time -- no longer re-derived here by a second, independent regex.
     let activity = data.activity.filter(item => (!severity || item.status === severity) && (!category || item.category === category));
     if (search) activity = activity.filter(item => item.message.toLowerCase().includes(search));
+    activity = sortTableRows("logs-gateway", activity, { time: item => Date.parse(item.at), severity: item => ({ error: 0, warning: 1 })[item.status] ?? 2, category: item => item.category, message: item => item.message }); syncSortHeaders("logs-gateway");
     $("#log-summary").innerHTML = `${activity.length} event${activity.length === 1 ? "" : "s"} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
     $("#gateway-log-list").innerHTML = activity.length ? activity.map(item => { const indicatorClass = item.status === "error" ? "bad" : item.status === "warning" ? "warning" : "running"; const severityLabel = item.status === "error" ? "Error" : item.status === "warning" ? "Warning" : "Normal"; return `<tr${item.id ? ` data-event-id="${item.id}"` : ""}><td>${escapeHtml(formatTime(item.at))}</td><td><span class="status-dot ${indicatorClass}"></span>${severityLabel}</td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.message)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching gateway events. Try a different severity or category filter.</td></tr>';
   }
 }
 async function renderLogsAudit() {
   const result = $("#logs-filter-a").value, action = $("#logs-search").value;
-  const records = await api(`/api/audit?action=${encodeURIComponent(action)}&status=${encodeURIComponent(result)}`);
+  const records = sortTableRows("logs-audit", await api(`/api/audit?action=${encodeURIComponent(action)}&status=${encodeURIComponent(result)}`), { time: item => Date.parse(item.created_at), user: item => item.actor || "System", result: item => item.status, action: item => item.action }); syncSortHeaders("logs-audit");
   $("#log-summary").innerHTML = `${records.length} record${records.length === 1 ? "" : "s"} · <span id="log-last-checked">Checked ${escapeHtml(formatTime(new Date().toISOString()))}</span>`;
   $("#logs-audit-list").innerHTML = records.length ? records.map(item => { const failed = item.status === "error"; return `<tr><td>${escapeHtml(formatTime(item.created_at))}</td><td>${escapeHtml(item.actor || "System")}</td><td><span class="status-dot ${failed ? "bad" : "running"}"></span>${failed ? "Failed" : "Success"}</td><td>${escapeHtml(item.action)}</td></tr>`; }).join("") : '<tr><td colspan="4" class="quiet-state">No matching audit records.</td></tr>';
 }
@@ -530,6 +533,32 @@ function formatChartTime(value, intervalMinutes) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 function formatLatency(ms) { return ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`; }
+
+// --- Generic sortable table headings (Performance, Logs, Backup history) -------------------------
+// A heading button carries data-sort-table / data-sort-key (and data-sort-first="desc" for columns that
+// read best largest/newest first). Choices live in state.tableSort so they survive automatic re-renders.
+// Rows with no value for the sorted column always go last; ties keep their original order.
+function sortTableRows(table, rows, accessors) {
+  const sort = state.tableSort?.[table]; if (!sort || !accessors[sort.key]) return rows;
+  const dir = sort.dir === "desc" ? -1 : 1, empty = value => value == null || value === "" || Number.isNaN(value);
+  return rows.map((row, index) => ({ row, index, value: accessors[sort.key](row) })).sort((a, b) => {
+    if (empty(a.value) && empty(b.value)) return a.index - b.index;
+    if (empty(a.value)) return 1; if (empty(b.value)) return -1;
+    const order = typeof a.value === "string" || typeof b.value === "string" ? String(a.value).localeCompare(String(b.value)) : a.value - b.value;
+    return order ? dir * order : a.index - b.index;
+  }).map(entry => entry.row);
+}
+function syncSortHeaders(table) {
+  const sort = state.tableSort?.[table];
+  document.querySelectorAll(`[data-sort-table="${table}"]`).forEach(button => { const on = sort && sort.key === button.dataset.sortKey; button.closest("th").setAttribute("aria-sort", on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"); button.querySelector(".sort-arrow").textContent = on ? (sort.dir === "asc" ? "▲" : "▼") : ""; });
+}
+const TABLE_SORT_RERENDER = { performance: () => renderPerformance(), "logs-access": () => renderLogsAccessAndGateway(), "logs-gateway": () => renderLogsAccessAndGateway(), "logs-audit": () => renderLogsAudit(), "backup-history": () => renderBackupHistory() };
+document.addEventListener("click", event => {
+  const button = event.target.closest("[data-sort-table]"); if (!button) return;
+  const table = button.dataset.sortTable, key = button.dataset.sortKey, current = state.tableSort?.[table];
+  state.tableSort = { ...(state.tableSort || {}), [table]: current && current.key === key ? { key, dir: current.dir === "asc" ? "desc" : "asc" } : { key, dir: button.dataset.sortFirst === "desc" ? "desc" : "asc" } };
+  TABLE_SORT_RERENDER[table]?.();
+});
 
 // Geometry shared by the chart renderer and the hover tooltip.
 const PERFORMANCE_CHART = { left: 34, right: 8, top: 10, bottom: 20, width: 600, height: 140 };
@@ -617,7 +646,8 @@ function renderPerformance() {
   // instead of a real backend. Badge those rows so they read as log history, not live config.
   const configuredDomains = new Set([...state.sites, ...state.proxies, ...state.redirects].flatMap(item => [item.domain, ...(item.domains || [])]).filter(Boolean).map(domain => domain.toLowerCase()));
   const isUnconfigured = route => !configuredDomains.has((route.host || "").toLowerCase());
-  const visibleRoutes = state.performanceHideUnconfigured ? routes.filter(route => !isUnconfigured(route)) : routes;
+  const visibleRoutes = sortTableRows("performance", state.performanceHideUnconfigured ? routes.filter(route => !isUnconfigured(route)) : routes, { host: route => (route.host || "").toLowerCase(), hour: route => route.hourRequests, day: route => route.dayRequests, avg: route => route.dayAvgMs, p95: route => route.dayP95Ms, bytes: route => route.dayBytes || 0, visitors: route => route.dayVisitors || 0 });
+  syncSortHeaders("performance");
   $("#performance-rows").innerHTML = visibleRoutes.length ? visibleRoutes.map(route => { const unconfigured = isUnconfigured(route); return `<tr class="${selected && route.host === selected ? "row-highlight" : ""}"><td title="${escapeHtml(route.host)}">${escapeHtml(route.host)}${unconfigured ? ' <span class="chip unconfigured-chip" title="No Hosted Site, Proxy Host, or Redirect Host currently matches this domain -- these requests hit the Default Site handler instead of a real backend.">Not configured</span>' : ""}</td><td>${countCell(route.hourRequests)}</td><td>${countCell(route.dayRequests)}</td><td>${formatLatency(route.dayAvgMs)}</td><td>${formatLatency(route.dayP95Ms)}</td><td>${route.dayBytes ? escapeHtml(formatBytes(route.dayBytes)) : "—"}</td><td>${(route.dayVisitors || 0).toLocaleString()}</td><td>${pathsCell(route)}</td></tr>`; }).join("") : `<tr><td colspan="8" class="quiet-state">${routes.length ? "No configured domains match the current filter — uncheck \u201cHide not configured\u201d to see them." : "No requests have been logged yet."}</td></tr>`;
   if (selected) $(`#performance-rows tr.row-highlight`)?.scrollIntoView({ block: "nearest" });
 }
@@ -1069,6 +1099,7 @@ function openSettings(kind, id) {
   }
   if (kind === "site") {
     const scope = "#settings-hosted-advanced";
+    setScoped(form, scope, "spaMode", Boolean(item.spaMode)); setScoped(form, scope, "custom404", Boolean(item.custom404)); setScoped(form, scope, "cachePolicy", item.cachePolicy || "off");
     setScoped(form, scope, "healthPath", item.healthPath || "/"); setScoped(form, scope, "healthMethod", item.healthMethod || "GET"); setScoped(form, scope, "healthExpected", item.healthExpected || "200-499"); setScoped(form, scope, "healthTimeoutSeconds", item.healthTimeoutSeconds || 4); setScoped(form, scope, "healthRetries", item.healthRetries || 0); setScoped(form, scope, "healthEnabled", item.healthEnabled !== false); setScoped(form, scope, "accessListId", item.accessListId || ""); setScoped(form, scope, "compression", item.compression || "automatic"); setScoped(form, scope, "requestHeadersText", (item.requestHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n")); setScoped(form, scope, "responseHeadersText", (item.responseHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n")); setScoped(form, scope, "hstsSubdomains", Boolean(item.hstsSubdomains)); setScoped(form, scope, "customConfig", item.customConfig || "");
   }
   $("#settings-error").textContent = ""; if (form.elements.domainsText) form.elements.domainsText.value = (item.domains || []).filter(domain => domain !== item.domain).join("\n"); $("#settings-dialog").showModal();

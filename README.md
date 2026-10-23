@@ -12,7 +12,7 @@
     <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white">
     <img alt="Architectures" src="https://img.shields.io/badge/platform-amd64%20%7C%20arm64-5965F2">
     <img alt="Caddy" src="https://img.shields.io/badge/powered%20by-Caddy-1F88C0">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.17.9-62E6A7">
+    <img alt="Version" src="https://img.shields.io/badge/version-0.18.0-62E6A7">
   </p>
   <p>
     <a href="#why-site-gateway">Why Site Gateway</a> ·
@@ -57,7 +57,7 @@ It's narrower than a general-purpose proxy manager on purpose. You tell it what 
 - **Performance and logs** — per-domain request throughput, response times, and rotating access/activity logs, including a System page (Administration) with the same live resource panel as the Dashboard, environment/integration status, gateway sync, scheduled jobs, storage usage, and version/database/public IP details.
 - **SQLite-backed persistence** — no external database container; everything lives under one `/data` volume.
 
-Hosted uploads remain static-only (HTML, CSS, JS, images, fonts, downloads). Dynamic applications are connected as Proxy Hosts instead — Site Gateway does not execute uploaded PHP, Node, Python, or database code.
+Hosted uploads remain static-only (HTML, CSS, JS, images, fonts, downloads). Each hosted site can optionally use single-page-app mode (unknown paths serve `index.html`), a custom `404.html`, and a browser-caching policy. Dynamic applications are connected as Proxy Hosts instead — Site Gateway does not execute uploaded PHP, Node, Python, or database code.
 
 ## Quick start
 

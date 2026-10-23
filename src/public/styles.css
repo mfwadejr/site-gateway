@@ -1122,3 +1122,10 @@ th[aria-sort=ascending] .sort-button,th[aria-sort=descending] .sort-button{color
 #certificates-view .feature-summary>button:hover{border-color:var(--border-hover-alt)}
 #certificates-view .feature-summary>button.active{border-color:var(--green);background:rgba(var(--green-rgb),.08)}
 @media(max-width:700px){#certificates-view .feature-summary>button{padding:13px}}
+.details-body>.field-note{display:block;margin:6px 2px 12px;color:var(--muted);font-size:var(--font-size-sm)}
+.log-table th .sort-button,.performance-table th .sort-button{white-space:nowrap}
+/* Review pass #2 (mobile): grid cards may shrink below their longest unbreakable line, the Certificates note row wraps,
+   and a checkbox label that was forced to one truncated line wraps instead. */
+.site-grid>*,.user-grid>*,.access-grid>*{min-width:0}
+@media(max-width:760px){.feature-note-row{flex-wrap:wrap}.feature-note-row .feature-note{flex:1 1 100%}.feature-note-row .summary-search{flex:1 1 0;width:auto;min-width:0}}
+@media(max-width:600px){label.check-control:has(input[name="upstreamTlsInsecure"]) span{white-space:normal;overflow:visible;text-overflow:clip}}

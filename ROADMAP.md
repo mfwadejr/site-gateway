@@ -2,7 +2,7 @@
 
 ## Current release status
 
-`v0.17.9` is current. Site Gateway is a single container that gives a homelab or small team one dashboard for Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts, with Caddy handling routing and automatic HTTPS underneath. Authentication, roles (Administrator/Standard/Viewer), Groups, Access Lists, two-factor authentication, a REST API with issuable tokens, encrypted backups with scheduled runs and full restore history, a combined Logs page (access requests, gateway events, and an administrator-only audit log, all under one unified event categorization), configuration-drift detection, a three-source icon mirror (dashboard-icons, selfh.st, and Lucide) with a configurable storage tier (search-only, cached, single-format mirror, or full mirror), a Disk usage breakdown that itemizes the icon mirror's own footprint, a Backup storage cleanup panel for the safety snapshots that accumulate outside the tracked backup list, and name search across every list view, are all implemented and shipped, not planned.
+`v0.18.0` is current. Site Gateway is a single container that gives a homelab or small team one dashboard for Hosted Sites, Proxy Hosts, Redirect Hosts, and Streaming Hosts, with Caddy handling routing and automatic HTTPS underneath. Authentication, roles (Administrator/Standard/Viewer), Groups, Access Lists, two-factor authentication, a REST API with issuable tokens, encrypted backups with scheduled runs and full restore history, a combined Logs page (access requests, gateway events, and an administrator-only audit log, all under one unified event categorization), configuration-drift detection, a three-source icon mirror (dashboard-icons, selfh.st, and Lucide) with a configurable storage tier (search-only, cached, single-format mirror, or full mirror), a Disk usage breakdown that itemizes the icon mirror's own footprint, a Backup storage cleanup panel for the safety snapshots that accumulate outside the tracked backup list, and name search across every list view, are all implemented and shipped, not planned.
 
 Versioning follows ordinary semantic versioning: a minor bump for a real batch of changes, a patch bump for a targeted fix, rather than incrementing the same trailing number regardless of size. (Every release from `v0.16.0` through `v0.16.116` was a patch bump even where the change was substantial; `v0.17.0` resumes applying this rule as written, rather than defaulting to a patch bump out of habit.) Everything below this line is the full version history, oldest conventions first.
 
@@ -14,7 +14,7 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 
 ### Routing
 
-- **Hosted Sites** — upload a ZIP or `index.html`, publish on a domain and/or a direct LAN port, replace files without recreating the site.
+- **Hosted Sites** — upload a ZIP or `index.html`, publish on a domain and/or a direct LAN port, replace files without recreating the site, with optional single-page-app mode, a custom 404 page, and browser-caching rules.
 - **Proxy Hosts** — forward a domain to any HTTP(S) target, with custom locations, headers, compression, upstream TLS, health checks, load-balancing across multiple upstreams, and expert Caddy snippets.
 - **Redirect Hosts** — 301/302/307/308 responses with optional path preservation.
 - **Streaming Hosts** — native TCP/UDP port forwarding with monitoring, for services that aren't HTTP (game servers, SSH, etc).
@@ -32,7 +32,7 @@ Site Gateway stays simpler than a general-purpose proxy manager: one dashboard, 
 ### Certificates and TLS
 
 - Automatic public HTTPS via Caddy, plus internal, HTTP-only, and uploaded custom-certificate modes.
-- Certificate inventory: issuer, covered domains, validity, serial number, fingerprint, expiration, and last detected update. The table sorts by domain, status, days remaining, or issuer (soonest-expiring first by default) and the summary counts act as filters.
+- Certificate inventory: issuer, covered domains, validity, serial number, fingerprint, expiration, and last detected update. The table sorts by domain, status, days remaining, or issuer (soonest-expiring first by default) and the summary counts act as filters. The Performance, Logs, and Backup history tables have the same click-to-sort headings. The icon library's cached tier keeps picked icons in a bounded local cache (200 MB, least recently used removed first).
 - Dashboard alerts for certificates nearing expiration.
 
 ### Observability

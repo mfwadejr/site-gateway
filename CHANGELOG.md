@@ -587,3 +587,13 @@ Verified: `node --check` on both touched browser scripts; a live `node src/serve
 - **Summary counts filter the table.** Healthy, Within 30 days, Within 7 days, Needs attention, and Not detected are now buttons; click one to show only those certificates, click it again to clear. Filters combine with the Search box, and sort and filter persist across automatic refreshes.
 - **Fixed: wrong certificate opened while searching.** Row clicks used an index into the unfiltered list, so opening a row with an active search could show a different certificate. Rows now resolve against the visible list.
 - The in-app manual has a new "Sorting and filtering" section.
+
+## v0.18.0
+
+- **Hosted Sites options.** Each site can now use single-page-app mode (unknown paths serve `index.html` so client-side routes survive a reload), serve its own `404.html` for missing pages, and apply a browser-caching policy (default, always revalidate, or cache images/CSS/JS/fonts for 7 days). Available when creating a site and in its Domain & TLS dialog; applied to both the domain (Caddy) and the direct LAN port.
+- **Certificate chips follow your thresholds.** The "Within 30 days" and "Within 7 days" counts, their labels, and their table filters now use the configured warning and critical thresholds instead of fixed 30/7-day windows.
+- **Sortable tables.** The Performance "Throughput by domain" table, all three Logs tables (Access requests, Gateway events, Audit log), and Backup history now have click-to-sort headings with arrows and `aria-sort`, matching the Certificates table. Empty values sort last and the choice survives automatic refreshes.
+- **Icon library tier 2 is a real cache.** "Search-only, with a local cache" now keeps icons you pick in a bounded local cache (200 MB, least recently used removed first) so choosing one again is instant and works offline. Icons assigned to routes are stored separately and are never evicted. The System panel shows cache usage and has a Clear cache button.
+- **Second review pass.** Every New/Edit dialog, every page and every Administration tab were checked at desktop and phone widths against a seeded instance. Fixed: Proxy host cards with a long domain pushed the page sideways on phones; the Certificates description collapsed into a one-word-wide column and its search box overflowed the panel on phones; the "Ignore upstream TLS certificate errors" checkbox label was cut off on phones. All dialogs fit their viewport and no form controls were misaligned.
+- Housekeeping: the retired Gitea remote is no longer configured in the repository.
+

@@ -544,12 +544,13 @@ async function renderBackupHistory() {
   if (!section) {
     section = document.createElement("div");
     section.className = "dashboard-panel backup-history-section";
-    section.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">History</p><h2>Backup history</h2><p class="muted">Every backup, restore, import, and deletion — including failed attempts — recorded independently of what is currently stored on disk.</p></div></div><div class="table-wrap performance-table-wrap event-table-wrap backup-history-wrap"><table class="performance-table event-table backup-history-table"><thead><tr><th>Time</th><th>Action</th><th>Type</th><th>Detail</th></tr></thead><tbody id="backup-history-list"><tr><td colspan="4" class="quiet-state">Loading backup history…</td></tr></tbody></table></div>';
+    section.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">History</p><h2>Backup history</h2><p class="muted">Every backup, restore, import, and deletion — including failed attempts — recorded independently of what is currently stored on disk.</p></div></div><div class="table-wrap performance-table-wrap event-table-wrap backup-history-wrap"><table class="performance-table event-table backup-history-table"><thead><tr><th aria-sort="none"><button type="button" class="sort-button" data-sort-table="backup-history" data-sort-key="time" data-sort-first="desc">Time<span class="sort-arrow" aria-hidden="true"></span></button></th><th aria-sort="none"><button type="button" class="sort-button" data-sort-table="backup-history" data-sort-key="action">Action<span class="sort-arrow" aria-hidden="true"></span></button></th><th aria-sort="none"><button type="button" class="sort-button" data-sort-table="backup-history" data-sort-key="type">Type<span class="sort-arrow" aria-hidden="true"></span></button></th><th aria-sort="none"><button type="button" class="sort-button" data-sort-table="backup-history" data-sort-key="detail">Detail<span class="sort-arrow" aria-hidden="true"></span></button></th></tr></thead><tbody id="backup-history-list"><tr><td colspan="4" class="quiet-state">Loading backup history…</td></tr></tbody></table></div>';
     panel.append(section);
   }
   const list = section.querySelector("#backup-history-list");
   try {
-    const events = await api("/api/backups/history");
+    const events = sortTableRows("backup-history", await api("/api/backups/history"), { time: item => Date.parse(item.createdAt), action: item => backupHistoryAction(item), type: item => backupHistoryType(item), detail: item => item.status });
+    syncSortHeaders("backup-history");
     list.innerHTML = events.length ? events.map(item => {
       const failed = item.status === "failed";
       const detail = failed ? `Failed — ${item.errorMessage || "no further detail recorded"}` : [item.sizeBytes ? formatBytes(item.sizeBytes) : "", item.safetyBackupFilename ? "A safety backup was taken first" : ""].filter(Boolean).join(" · ") || "Completed";
@@ -839,16 +840,16 @@ function updateSystemVersionUptime(health) {
   if (!el) return;
   el.textContent = Number.isFinite(health?.uptimeSeconds) ? formatDuration(health.uptimeSeconds) : "Unavailable";
 }
-// The four "Icon library storage" tiers, lightest to heaviest. Sizes are indicative, not
-// measured live -- there's nowhere yet to pull a real per-tier estimate from, so these describe
-// the mechanism rather than promise an exact figure for this deployment's actual catalog.
+// The four "Icon library storage" tiers, lightest to heaviest. The sizes on the cards are typical
+// figures, not measurements of this install; the line under the list shows this install's real
+// icon storage, and the cache line shows its real cache usage.
 const ICON_LIBRARY_TIERS = [
   { tier: "search", name: "Search-only", size: "~5 MB", recommended: false,
     desc: "Search results load thumbnails live from each source's CDN. Nothing is stored in bulk — only icons you actually assign to a route are saved permanently.",
     pros: "Smallest footprint", cons: "Needs internet while browsing icons" },
   { tier: "cached", name: "Search-only, with a local cache", size: "~200 MB cap", recommended: true,
-    desc: "Same as Search-only, but icons you've viewed recently stay cached locally so repeat browsing doesn't keep re-fetching them. Oldest icons are dropped first once the cap is reached.",
-    pros: "Fast on repeat browsing", cons: "Still needs internet for icons never seen before" },
+    desc: "Same as Search-only, but icons you pick are also kept in a local cache so choosing one again is instant and works offline. Icons assigned to a route are always kept separately; once the cache reaches its cap, the least recently used cached icons are dropped first.",
+    pros: "Fast and offline-friendly for icons you reuse", cons: "Still needs internet for icons never picked before" },
   { tier: "mirror-single", name: "Full nightly mirror · one format per icon", size: "~350 MB", recommended: false,
     desc: "Every icon from all three sources is downloaded and kept up to date automatically, storing only the best available format per icon instead of every format a source ships.",
     pros: "Works fully offline", cons: "Largest of the offline-friendly options" },
@@ -865,7 +866,15 @@ function renderIconLibraryPanel() {
   // A persistent, always-current line under the option list -- not just the transient toast --
   // so it's clear which choice actually took effect without relying on spotting the green border
   // (the user caught that the border alone wasn't a confident-enough confirmation).
-  if (status) status.innerHTML = `Currently active: <strong>${extendedEscape(currentOption?.name || current)}</strong>`;
+  if (status) {
+    status.innerHTML = `Currently active: <strong>${extendedEscape(currentOption?.name || current)}</strong>` + (current === "cached" ? ' · <span id="icon-cache-usage">Cache: checking…</span> <button type="button" class="button secondary" id="icon-cache-clear" disabled>Clear cache</button>' : "");
+    if (current === "cached") {
+      const usage = status.querySelector("#icon-cache-usage"), clear = status.querySelector("#icon-cache-clear");
+      const showUsage = info => { usage.textContent = `Cache: ${formatBytes(info.bytes)} of ${formatBytes(info.capBytes)} · ${info.count} icon${info.count === 1 ? "" : "s"}`; clear.disabled = info.count === 0; };
+      api("/api/icons/cache").then(showUsage).catch(() => { usage.textContent = "Cache usage unavailable"; });
+      clear.addEventListener("click", async () => { clear.disabled = true; try { const result = await api("/api/icons/cache", { method: "DELETE" }); toast(`Icon cache cleared (${result.cleared} icon${result.cleared === 1 ? "" : "s"}).`); showUsage(await api("/api/icons/cache")); } catch (error) { toast(error.message, "error"); clear.disabled = false; } });
+    }
+  }
   const selectTier = async tier => {
     if (tier === current || host.dataset.busy) return;
     host.dataset.busy = "1";

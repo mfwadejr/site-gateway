@@ -687,6 +687,10 @@ function applyAdvancedSettings(item, body) {
   if (body.healthTimeoutSeconds !== undefined) item.healthTimeoutSeconds = Math.min(Math.max(Number(body.healthTimeoutSeconds) || 4, 1), 60);
   if (body.healthRetries !== undefined) item.healthRetries = Math.min(Math.max(Number(body.healthRetries) || 0, 0), 3);
   if (body.customConfig !== undefined) item.customConfig = cleanCustomConfig(body.customConfig);
+  const flag = value => value === true || (typeof value === "string" && ["true", "on", "1"].includes(value.toLowerCase()));
+  if (body.spaMode !== undefined) item.spaMode = flag(body.spaMode);
+  if (body.custom404 !== undefined) item.custom404 = flag(body.custom404);
+  if (body.cachePolicy !== undefined) item.cachePolicy = ["off", "revalidate", "assets"].includes(body.cachePolicy) ? body.cachePolicy : "off";
   if (body.locations !== undefined) item.locations = cleanLocations(body.locations);
 }
 
@@ -776,8 +780,15 @@ function caddyLoggingDirectives() {
 // One builder per route kind, each returning the exact Caddyfile lines that route
 // contributes. renderCaddyfile()'s loops and the "View Caddy config" endpoint both call
 // these, so the popout can never drift from the configuration Caddy actually runs.
+const STATIC_ASSET_PATTERN = "\\.(css|js|mjs|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf)$";
 function renderHostedSiteBlock(site, logging = caddyLoggingDirectives()) {
-  return [`${caddySiteAddress(site)} {`, ...logging, ...commonHostDirectives(site), `  root * ${path.join(sitesDir, site.id)}`, "  file_server", "}"];
+  const lines = [`${caddySiteAddress(site)} {`, ...logging, ...commonHostDirectives(site), `  root * ${path.join(sitesDir, site.id)}`];
+  if (site.cachePolicy === "revalidate") lines.push('  header Cache-Control "no-cache"');
+  if (site.cachePolicy === "assets") lines.push('  header Cache-Control "no-cache"', `  @static path_regexp static ${STATIC_ASSET_PATTERN}`, '  header @static Cache-Control "public, max-age=604800"');
+  if (site.spaMode) lines.push("  try_files {path} /index.html");
+  if (site.custom404) lines.push("  handle_errors {", "    @notfound expression `{err.status_code} == 404`", "    handle @notfound {", "      rewrite * /404.html", "      file_server", "    }", "  }");
+  lines.push("  file_server", "}");
+  return lines;
 }
 function renderProxyBlock(proxy, logging = caddyLoggingDirectives()) {
   const lines = [`${caddySiteAddress(proxy)} {`, ...logging, ...commonHostDirectives(proxy)];
@@ -1052,7 +1063,7 @@ async function certificateInventory() {
   });
   for (const certificate of certificates) { const previous = certificateStatusCache.get(certificate.domain); if (previous && previous !== certificate.status) recordActivity(`Certificate status changed for ${certificate.domain}: ${previous} → ${certificate.status}.`, certificate.status === "healthy" ? "ok" : "error"); certificateStatusCache.set(certificate.domain, certificate.status); }
   const latestError = recentActivity.find(item => item.status === "error" && /cert|tls|acme|caddy|gateway/i.test(item.message)) || null;
-  const result = { checkedAt: new Date().toISOString(), thresholds: settings.certificateHealth, latestError, summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, within30Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 30 && item.daysRemaining > 0).length, within7Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= 7 && item.daysRemaining > 0).length, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length, mismatch: certificates.filter(item => item.status === "mismatch").length }, certificates };
+  const result = { checkedAt: new Date().toISOString(), thresholds: settings.certificateHealth, latestError, summary: { total: certificates.length, healthy: certificates.filter(item => item.status === "healthy").length, within30Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= (settings.certificateHealth?.warningDays || 30) && item.daysRemaining > 0).length, within7Days: certificates.filter(item => item.daysRemaining != null && item.daysRemaining <= (settings.certificateHealth?.criticalDays || 7) && item.daysRemaining > 0).length, warningDays: settings.certificateHealth?.warningDays || 30, criticalDays: settings.certificateHealth?.criticalDays || 7, warning: certificates.filter(item => item.status === "warning").length, critical: certificates.filter(item => item.status === "critical").length, expired: certificates.filter(item => item.status === "expired").length, pending: certificates.filter(item => item.status === "pending").length, mismatch: certificates.filter(item => item.status === "mismatch").length }, certificates };
   certificateInventoryCache = { at: Date.now(), value: result };
   return result;
 }
@@ -1443,6 +1454,42 @@ async function runIconMirrorSync(source, { initial = false, force = false } = {}
   }
 }
 
+// --- Icon library tier 2 ("Search-only, with a local cache") ----------------------------------------
+// Icons the administrator actually picks are kept in iconsDir/cache so picking one again is instant
+// and works offline. Assigned icons live separately in iconsDir/used, so trimming the cache can never
+// remove an icon a route is using. The cache is bounded (default 200 MB, ICON_CACHE_MAX_BYTES overrides
+// it for testing) and the least recently used files are dropped first.
+const iconCacheDir = path.join(iconsDir, "cache");
+const ICON_CACHE_MAX_BYTES = Math.max(1, Number(process.env.ICON_CACHE_MAX_BYTES) || 200 * 1024 * 1024);
+function iconCacheTierActive() { return settings.iconLibrary?.tier === "cached"; }
+async function iconCacheEntries() {
+  const entries = [];
+  for (const source of await fsp.readdir(iconCacheDir).catch(() => [])) {
+    const dir = path.join(iconCacheDir, source);
+    for (const name of await fsp.readdir(dir).catch(() => [])) {
+      const file = path.join(dir, name), stat = await fsp.stat(file).catch(() => null);
+      if (stat?.isFile()) entries.push({ file, size: stat.size, mtimeMs: stat.mtimeMs });
+    }
+  }
+  return entries;
+}
+async function enforceIconCacheCap() {
+  const entries = (await iconCacheEntries()).sort((a, b) => a.mtimeMs - b.mtimeMs);
+  let total = entries.reduce((sum, entry) => sum + entry.size, 0);
+  for (const entry of entries) { if (total <= ICON_CACHE_MAX_BYTES) break; await fsp.rm(entry.file, { force: true }); total -= entry.size; }
+}
+async function readCachedIcon(source, slug, formatOrder) {
+  for (const format of formatOrder) {
+    const file = path.join(iconCacheDir, source, `${slug}.${format}`);
+    try { const buffer = await fsp.readFile(file), now = new Date(); await fsp.utimes(file, now, now).catch(() => {}); return { buffer, format }; } catch { /* not cached in this format */ }
+  }
+  return null;
+}
+async function writeIconCache(source, slug, format, buffer) {
+  try { await fsp.mkdir(path.join(iconCacheDir, source), { recursive: true }); await fsp.writeFile(path.join(iconCacheDir, source, `${slug}.${format}`), buffer); await enforceIconCacheCap(); }
+  catch (error) { console.warn("Could not update the icon cache:", error.message); }
+}
+
 async function cacheIcon(rawRef) {
   const { source, slug } = parseIconRef(rawRef);
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(source)) throw Object.assign(new Error("Invalid icon selection."), { status: 400 });
@@ -1459,6 +1506,8 @@ async function cacheIcon(rawRef) {
   let format = null, buffer = null;
   const mirrored = await readMirroredIcon(source, slug, formatOrder);
   if (mirrored) { format = mirrored.format; buffer = mirrored.buffer; }
+  let fetchedLive = false;
+  if (!buffer && iconCacheTierActive()) { const cachedCopy = await readCachedIcon(source, slug, formatOrder); if (cachedCopy) { format = cachedCopy.format; buffer = cachedCopy.buffer; } }
   if (!buffer) {
     let response = null;
     for (const candidate of formatOrder) {
@@ -1467,6 +1516,7 @@ async function cacheIcon(rawRef) {
     }
     if (!response) throw Object.assign(new Error("The selected icon could not be downloaded."), { status: 502 });
     buffer = format === "svg" ? Buffer.from(await response.text(), "utf8") : Buffer.from(await response.arrayBuffer());
+    fetchedLive = true;
   }
   // A mirrored lucide file is already recolored at sync time (see recolorLucideSvg), but a live
   // fallback fetch (not yet mirrored, or a stale pre-fix mirror file) still has the original
@@ -1479,9 +1529,11 @@ async function cacheIcon(rawRef) {
       throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
     }
     await fsp.writeFile(path.join(iconsUsedDir, filename), svg);
+    if (fetchedLive && iconCacheTierActive()) await writeIconCache(source, slug, format, buffer);
   } else {
     if (buffer.length > 2 * 1024 * 1024) throw Object.assign(new Error("The selected icon did not pass safety validation."), { status: 400 });
     await fsp.writeFile(path.join(iconsUsedDir, filename), buffer);
+    if (fetchedLive && iconCacheTierActive()) await writeIconCache(source, slug, format, buffer);
   }
   // Cache-bust with the actual saved content's own hash, not the mirror row's -- this file
   // gets reused in place under the same filename on every future save of this source:slug
@@ -1586,10 +1638,23 @@ async function dashboardSnapshot(precomputedCertificates) {
 async function startSite(site) {
   if (!site.enabled || activeServers.has(site.id)) return;
   const root = path.join(sitesDir, site.id);
+  // Options are read per request so editing a site never needs the listener restarted.
+  const current = () => sites.find(item => item.id === site.id) || site;
+  const assetPattern = new RegExp(STATIC_ASSET_PATTERN, "i");
   const app = express();
   app.disable("x-powered-by");
-  app.use(express.static(root, { extensions: ["html"], index: "index.html", fallthrough: true }));
-  app.use((req, res) => res.status(404).sendFile(path.join(publicDir, "site-404.html")));
+  app.use(express.static(root, { extensions: ["html"], index: "index.html", fallthrough: true, setHeaders: (res, file) => {
+    const policy = current().cachePolicy;
+    if (policy === "revalidate") res.setHeader("Cache-Control", "no-cache");
+    else if (policy === "assets") res.setHeader("Cache-Control", assetPattern.test(file) ? "public, max-age=604800" : "no-cache");
+  } }));
+  app.use((req, res) => {
+    const options = current(), notFound = () => res.status(404).sendFile(path.join(publicDir, "site-404.html"));
+    if (options.cachePolicy === "revalidate" || options.cachePolicy === "assets") res.setHeader("Cache-Control", "no-cache");
+    if (options.spaMode && (req.method === "GET" || req.method === "HEAD")) return res.sendFile(path.join(root, "index.html"), error => { if (error && !res.headersSent) notFound(); });
+    if (options.custom404 && fs.existsSync(path.join(root, "404.html"))) return res.status(404).sendFile(path.join(root, "404.html"));
+    notFound();
+  });
   const server = http.createServer(app);
   await new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -2452,6 +2517,14 @@ app.get("/api/:kind/:id/caddy-config", (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.get("/api/icons/cache", async (req, res, next) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  try { const entries = await iconCacheEntries(); res.json({ active: iconCacheTierActive(), count: entries.length, bytes: entries.reduce((sum, entry) => sum + entry.size, 0), capBytes: ICON_CACHE_MAX_BYTES }); } catch (error) { next(error); }
+});
+app.delete("/api/icons/cache", async (req, res, next) => {
+  if (req.user.role !== "administrator") return res.status(403).json({ error: "Administrator access is required." });
+  try { const entries = await iconCacheEntries(); await fsp.rm(iconCacheDir, { recursive: true, force: true }); recordActivity(`Icon cache cleared (${entries.length} icon${entries.length === 1 ? "" : "s"}).`); res.json({ cleared: entries.length }); } catch (error) { next(error); }
+});
 app.get("/api/icons/mirror/status", (req, res) => {
   const stats = storage.iconMirrorStats ? storage.iconMirrorStats() : [];
   const sources = {};
@@ -2629,7 +2702,7 @@ app.post("/api/sites", upload.single("files"), async (req, res, next) => {
     if (!req.file) throw Object.assign(new Error("Choose a ZIP file or index.html."), { status: 400 });
     const accessListId = String(req.body.accessListId || "");
     const site = { id, name, port, domain, domains, accessListId, tls, hsts, enabled: true, createdAt: new Date().toISOString() };
-    applyAdvancedSettings(site, { accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains === "true", customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled === true || (typeof req.body.healthEnabled === "string" && req.body.healthEnabled.toLowerCase() === "true"), healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
+    applyAdvancedSettings(site, { spaMode: req.body.spaMode, custom404: req.body.custom404, cachePolicy: req.body.cachePolicy, accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains === "true", customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled === true || (typeof req.body.healthEnabled === "string" && req.body.healthEnabled.toLowerCase() === "true"), healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
     await installUpload(site, req.file);
     sites.push(site);
     try { await startSite(site); } catch (error) { sites = sites.filter(item => item.id !== site.id); await fsp.rm(path.join(sitesDir, site.id), { recursive: true, force: true }); throw Object.assign(new Error(`Could not start the hosted site on port ${port}: ${error.message}`), { status: 409 }); }
@@ -2697,7 +2770,7 @@ app.patch("/api/sites/:id", async (req, res, next) => {
     }
     site.tls = ["http", "automatic", "internal"].includes(req.body.tls) ? req.body.tls : "automatic";
     site.hsts = req.body.hsts === true;
-    applyAdvancedSettings(site, { accessListId: req.body.accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains, requestHeaders: req.body.requestHeaders, responseHeaders: req.body.responseHeaders, customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled, healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
+    applyAdvancedSettings(site, { spaMode: req.body.spaMode, custom404: req.body.custom404, cachePolicy: req.body.cachePolicy, accessListId: req.body.accessListId, compression: req.body.compression, hstsSubdomains: req.body.hstsSubdomains, requestHeaders: req.body.requestHeaders, responseHeaders: req.body.responseHeaders, customConfig: req.body.customConfig, healthEnabled: req.body.healthEnabled, healthPath: req.body.healthPath, healthMethod: req.body.healthMethod, healthExpected: req.body.healthExpected, healthTimeoutSeconds: req.body.healthTimeoutSeconds, healthRetries: req.body.healthRetries });
     if (site.healthEnabled === false) upstreamHealth.set(site.id, { status: "unmonitored", checkedAt: null, history: [] });
     else { upstreamHealth.set(site.id, { status: "pending", checkedAt: null, history: [] }); checkProxy({ ...site, target: `http://127.0.0.1:${site.port}` }).catch(error => console.warn("Hosted site health check failed:", error.message)); }
     await syncCaddy();
