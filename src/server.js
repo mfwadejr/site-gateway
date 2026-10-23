@@ -787,7 +787,9 @@ function renderHostedSiteBlock(site, logging = caddyLoggingDirectives()) {
   if (site.cachePolicy === "assets") lines.push('  header Cache-Control "no-cache"', `  @static path_regexp static ${STATIC_ASSET_PATTERN}`, '  header @static Cache-Control "public, max-age=604800"');
   if (site.spaMode) lines.push("  try_files {path} /index.html");
   if (site.custom404) lines.push("  handle_errors {", "    @notfound expression `{err.status_code} == 404`", "    handle @notfound {", "      rewrite * /404.html", "      file_server", "    }", "  }");
-  lines.push("  file_server", "}");
+  lines.push("  file_server");
+  if (site.customConfig) lines.push("  # Administrator-provided custom configuration", ...String(site.customConfig).split("\n").map(line => `  ${line}`));
+  lines.push("}");
   return lines;
 }
 function renderProxyBlock(proxy, logging = caddyLoggingDirectives()) {
@@ -1003,7 +1005,7 @@ function siteStatus(site) {
 }
 
 function publicSite(site) {
-  return { ...site, domains: normalizeDomains(site.domain, site.domains), status: siteStatus(site), url: `http://${site.host || "localhost"}:${site.port}`, upstream: upstreamHealth.get(site.id) || null };
+  return { ...site, custom404Missing: Boolean(site.custom404) && !fs.existsSync(path.join(sitesDir, site.id, "404.html")), domains: normalizeDomains(site.domain, site.domains), status: siteStatus(site), url: `http://${site.host || "localhost"}:${site.port}`, upstream: upstreamHealth.get(site.id) || null };
 }
 
 function publicProxy(proxy, includeAdvanced = false) {
@@ -1838,7 +1840,14 @@ async function createBackupInternal(type = "configuration", includeLogs = false,
   for (const [name, getter] of Object.entries(portableCollections)) zip.addFile(`portable-json/${name}`, Buffer.from(JSON.stringify(getter(), null, 2)));
   if (safeType === "complete") {
     for (const [directory, archivePath] of [[sitesDir, "sites"], [iconsDir, "icons"], [defaultSiteDir, "default-site"], [certificatesRoot, "certificates"]]) {
-      if (fs.existsSync(directory)) zip.addLocalFolder(directory, archivePath);
+      if (!fs.existsSync(directory)) continue;
+      if (directory === iconsDir) {
+        // The local icon cache (iconsDir/cache) is rebuildable, so it is left out; assigned icons, uploads and any mirrored library are kept.
+        for (const entry of fs.readdirSync(iconsDir, { withFileTypes: true })) {
+          if (entry.name === "cache") continue;
+          if (entry.isDirectory()) zip.addLocalFolder(path.join(iconsDir, entry.name), `${archivePath}/${entry.name}`); else zip.addLocalFile(path.join(iconsDir, entry.name), archivePath);
+        }
+      } else zip.addLocalFolder(directory, archivePath);
     }
   }
   if (includeLogs && fs.existsSync(logsDir)) zip.addLocalFolder(logsDir, "logs");

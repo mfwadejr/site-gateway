@@ -597,3 +597,11 @@ Verified: `node --check` on both touched browser scripts; a live `node src/serve
 - **Second review pass.** Every New/Edit dialog, every page and every Administration tab were checked at desktop and phone widths against a seeded instance. Fixed: Proxy host cards with a long domain pushed the page sideways on phones; the Certificates description collapsed into a one-word-wide column and its search box overflowed the panel on phones; the "Ignore upstream TLS certificate errors" checkbox label was cut off on phones. All dialogs fit their viewport and no form controls were misaligned.
 - Housekeeping: the retired Gitea remote is no longer configured in the repository.
 
+
+## v0.18.1
+
+- **Custom Caddy configuration now works on Hosted Sites.** The field was saved but never written into the generated Caddy config for hosted sites (only Proxy Hosts used it). It is now added to the site's block exactly as on Proxy Hosts, validated by Caddy before it is applied, and shown in "View Caddy config".
+- **Missing 404 page warning.** With "Use my own 404 page" on and no `404.html` in the site's files, saving now tells you, and the site's dialog shows a note, instead of silently falling back to the default page.
+- **Sort choices are remembered.** Sorting on Certificates, Performance, Logs, and Backup history is kept per browser across page reloads.
+- **Back to default order.** A third click on a sorted heading returns the table to its default order.
+- **Complete backups leave out the icon cache.** The Search-only tier's local icon cache is rebuildable and is no longer included; assigned icons, uploaded icons, and any mirrored icon library still are. The manual and README say so.

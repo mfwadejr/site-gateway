@@ -183,9 +183,9 @@ document.addEventListener("submit", async event => {
   }
   button.disabled = true;
   try {
-    await api(`/api/${state.editing.kind === "proxy" ? "proxies" : "sites"}/${state.editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const saved = await api(`/api/${state.editing.kind === "proxy" ? "proxies" : "sites"}/${state.editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (uploadCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${state.editing.id}/certificate`, { method: "POST", body: files }); }
-    $("#settings-dialog").close(); await refreshCurrentView(); toast("Gateway settings applied.");
+    $("#settings-dialog").close(); await refreshCurrentView(); toast(saved?.custom404Missing ? "Gateway settings applied, but this site has no 404.html, so visitors still see the default 404 page." : "Gateway settings applied.");
   }
   catch (error) { showError("#settings-error", error); }
   finally { button.disabled = false; }
@@ -437,7 +437,7 @@ $("#cert-detail-recheck")?.addEventListener("click", async event => {
 });
 $("#certificates-view").addEventListener("click", event => {
   const sortBtn = event.target.closest("[data-cert-sort]"), filterBtn = event.target.closest("[data-cert-filter]");
-  if (sortBtn) { const key = sortBtn.dataset.certSort, cur = state.certSort || { key: "days", dir: "asc" }; state.certSort = { key, dir: cur.key === key && cur.dir === "asc" ? "desc" : "asc" }; renderCertificates(); }
+  if (sortBtn) { const key = sortBtn.dataset.certSort, cur = state.certSort || { key: "days", dir: "asc" }; state.certSort = cur.key === key ? (cur.dir === "asc" ? { key, dir: "desc" } : null) : { key, dir: "asc" }; saveSortChoices(); renderCertificates(); }
   else if (filterBtn) { state.certFilter = state.certFilter === filterBtn.dataset.certFilter ? null : filterBtn.dataset.certFilter; renderCertificates(); }
 });
 $("#certificate-list").addEventListener("click", event => { const row = event.target.closest(".cert-table-row"); if (!row) return; const data = state.certVisibleRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
@@ -552,11 +552,25 @@ function syncSortHeaders(table) {
   const sort = state.tableSort?.[table];
   document.querySelectorAll(`[data-sort-table="${table}"]`).forEach(button => { const on = sort && sort.key === button.dataset.sortKey; button.closest("th").setAttribute("aria-sort", on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"); button.querySelector(".sort-arrow").textContent = on ? (sort.dir === "asc" ? "▲" : "▼") : ""; });
 }
+// Sort choices are remembered per browser (never required: storage may be unavailable).
+const SORT_STORAGE_KEY = "site-gateway.sort";
+function saveSortChoices() { try { localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ certs: state.certSort || null, tables: state.tableSort || {} })); } catch { /* storage unavailable */ } }
+function loadSortChoices() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SORT_STORAGE_KEY) || "{}"), valid = sort => sort && typeof sort.key === "string" && (sort.dir === "asc" || sort.dir === "desc");
+    if (valid(saved.certs) && ["domain", "status", "days", "issuer"].includes(saved.certs.key)) state.certSort = { key: saved.certs.key, dir: saved.certs.dir };
+    for (const [table, sort] of Object.entries(saved.tables || {})) if (TABLE_SORT_RERENDER[table] && valid(sort) && /^[a-z0-9-]+$/.test(sort.key)) (state.tableSort = state.tableSort || {})[table] = { key: sort.key, dir: sort.dir };
+  } catch { /* ignore unreadable saved choices */ }
+}
 const TABLE_SORT_RERENDER = { performance: () => renderPerformance(), "logs-access": () => renderLogsAccessAndGateway(), "logs-gateway": () => renderLogsAccessAndGateway(), "logs-audit": () => renderLogsAudit(), "backup-history": () => renderBackupHistory() };
+loadSortChoices();
 document.addEventListener("click", event => {
   const button = event.target.closest("[data-sort-table]"); if (!button) return;
-  const table = button.dataset.sortTable, key = button.dataset.sortKey, current = state.tableSort?.[table];
-  state.tableSort = { ...(state.tableSort || {}), [table]: current && current.key === key ? { key, dir: current.dir === "asc" ? "desc" : "asc" } : { key, dir: button.dataset.sortFirst === "desc" ? "desc" : "asc" } };
+  const table = button.dataset.sortTable, key = button.dataset.sortKey, current = state.tableSort?.[table], first = button.dataset.sortFirst === "desc" ? "desc" : "asc";
+  // Click cycle: first direction, then the opposite, then back to the default order.
+  const next = current && current.key === key ? (current.dir === first ? { key, dir: first === "asc" ? "desc" : "asc" } : null) : { key, dir: first };
+  state.tableSort = { ...(state.tableSort || {}) }; if (next) state.tableSort[table] = next; else delete state.tableSort[table];
+  saveSortChoices();
   TABLE_SORT_RERENDER[table]?.();
 });
 
@@ -1076,7 +1090,7 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("close", () => { closeMenus(); dialog.querySelectorAll('input[type="password"]').forEach(input => input.value = ""); }));
 
 // --- Hosted Sites & Proxy Hosts: create form submit handlers --------------------------------
-$("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refreshCurrentView(); toast("Hosted site created and gateway applied."); } catch (error) { showError("#create-error", error); } finally { button.disabled = false; button.textContent = "Create & publish"; } });
+$("#create-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#create-error").textContent = ""; try { const created = await api("/api/sites", { method: "POST", body: new FormData(event.target) }); $("#create-dialog").close(); await refreshCurrentView(); toast(created?.custom404Missing ? "Hosted site created, but it has no 404.html, so visitors will see the default 404 page." : "Hosted site created and gateway applied."); } catch (error) { showError("#create-error", error); } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 $("#proxy-form").addEventListener("submit", async event => { event.preventDefault(); const button = resolveSubmitter(event); button.disabled = true; button.textContent = "Publishing…"; $("#proxy-error").textContent = ""; const form = new FormData(event.target), certificate = form.get("certificateFile"), privateKey = form.get("privateKeyFile"), wantsCustom = form.get("tls") === "custom"; if (wantsCustom && (!certificate?.size || !privateKey?.size)) { $("#proxy-error").textContent = "Choose both the certificate and private key for Custom HTTPS."; button.disabled = false; button.textContent = "Create & publish"; return; } const body = advancedFormBody(form, Object.fromEntries(form)); delete body.certificateFile; delete body.privateKeyFile; if (wantsCustom) body.tls = "http"; try { const created = await api("/api/proxies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (wantsCustom) { const files = new FormData(); files.append("certificate", certificate); files.append("privateKey", privateKey); await api(`/api/proxies/${created.id}/certificate`, { method:"POST", body:files }); } $("#proxy-dialog").close(); await refreshCurrentView(); toast(wantsCustom ? "Proxy host created with its custom certificate." : "Proxy host created. Certificate provisioning runs automatically."); } catch (error) { showError("#proxy-error", error); } finally { button.disabled = false; button.textContent = "Create & publish"; } });
 
 
@@ -1099,7 +1113,7 @@ function openSettings(kind, id) {
   }
   if (kind === "site") {
     const scope = "#settings-hosted-advanced";
-    setScoped(form, scope, "spaMode", Boolean(item.spaMode)); setScoped(form, scope, "custom404", Boolean(item.custom404)); setScoped(form, scope, "cachePolicy", item.cachePolicy || "off");
+    $("#custom404-missing-note")?.classList.toggle("hidden", !item.custom404Missing); setScoped(form, scope, "spaMode", Boolean(item.spaMode)); setScoped(form, scope, "custom404", Boolean(item.custom404)); setScoped(form, scope, "cachePolicy", item.cachePolicy || "off");
     setScoped(form, scope, "healthPath", item.healthPath || "/"); setScoped(form, scope, "healthMethod", item.healthMethod || "GET"); setScoped(form, scope, "healthExpected", item.healthExpected || "200-499"); setScoped(form, scope, "healthTimeoutSeconds", item.healthTimeoutSeconds || 4); setScoped(form, scope, "healthRetries", item.healthRetries || 0); setScoped(form, scope, "healthEnabled", item.healthEnabled !== false); setScoped(form, scope, "accessListId", item.accessListId || ""); setScoped(form, scope, "compression", item.compression || "automatic"); setScoped(form, scope, "requestHeadersText", (item.requestHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n")); setScoped(form, scope, "responseHeadersText", (item.responseHeaders || []).map(header => `${header.name}: ${header.value}`).join("\n")); setScoped(form, scope, "hstsSubdomains", Boolean(item.hstsSubdomains)); setScoped(form, scope, "customConfig", item.customConfig || "");
   }
   $("#settings-error").textContent = ""; if (form.elements.domainsText) form.elements.domainsText.value = (item.domains || []).filter(domain => domain !== item.domain).join("\n"); $("#settings-dialog").showModal();
