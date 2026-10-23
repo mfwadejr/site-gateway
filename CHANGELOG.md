@@ -580,3 +580,10 @@ Dashboard color consistency. The same underlying condition (for example three of
 - **Status dot classes cleaned up.** The misleadingly named amber `error` dot class is gone, replaced by an explicit `warning` (orange) class; `bad` stays red; `idle` and `disabled` are now gray, matching `inactive`, instead of sharing orange (`idle`) and red (`disabled`) with real problems. Every call site was reviewed individually rather than renamed blindly: failed items (backup validation, audit and backup-history failures, DNS/TLS failures on the Certificates page, Proxy/Hosted/Streaming card "Needs attention" pills, Logs error rows, the Errors counter dot) are red; at-risk items (a security setting left at its default, backup encryption unconfigured, an expired API token, warning-level log events) are orange; disabled and paused items are gray.
 
 Verified: `node --check` on both touched browser scripts; a live `node src/server.js` boot with seeded data covering unreachable upstreams, a disabled route, and a clean state, confirming the computed tile and dot colors in a real browser and the Needs attention tile's scroll-and-highlight behavior.
+
+## v0.17.9
+
+- **Certificates table can be sorted.** Click the Domain, Status, Days remaining, or Issuer heading to sort; click again to reverse. The default order is now soonest-expiring first. Certificates with no expiry or issuer always sort last. Headings show an arrow and expose `aria-sort`.
+- **Summary counts filter the table.** Healthy, Within 30 days, Within 7 days, Needs attention, and Not detected are now buttons; click one to show only those certificates, click it again to clear. Filters combine with the Search box, and sort and filter persist across automatic refreshes.
+- **Fixed: wrong certificate opened while searching.** Row clicks used an index into the unfiltered list, so opening a row with an active search could show a different certificate. Rows now resolve against the visible list.
+- The in-app manual has a new "Sorting and filtering" section.

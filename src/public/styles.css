@@ -1112,3 +1112,13 @@ select{appearance:none!important;-webkit-appearance:none!important;background-re
   .dashboard-panel.panel-flash{animation:panel-flash 1.4s ease-out}
 }
 @keyframes panel-flash{0%{box-shadow:0 0 0 0 rgba(var(--chip-blue-rgb),.5)}70%{box-shadow:0 0 0 12px rgba(var(--chip-blue-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--chip-blue-rgb),0)}}
+
+.sort-button{background:none;border:0;padding:0;margin:0;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.sort-button:hover{color:var(--text)}
+.sort-button:focus-visible,#certificates-view .feature-summary>button:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.sort-arrow{min-width:.8em;font-size:.6rem;color:var(--green)}
+th[aria-sort=ascending] .sort-button,th[aria-sort=descending] .sort-button{color:var(--text)}
+#certificates-view .feature-summary>button{padding:18px;border:1px solid var(--line);border-radius:var(--radius-2xl);background:var(--panel);color:inherit;text-align:left;cursor:pointer;display:block}
+#certificates-view .feature-summary>button:hover{border-color:var(--border-hover-alt)}
+#certificates-view .feature-summary>button.active{border-color:var(--green);background:rgba(var(--green-rgb),.08)}
+@media(max-width:700px){#certificates-view .feature-summary>button{padding:13px}}

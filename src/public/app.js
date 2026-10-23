@@ -350,6 +350,30 @@ function proxyCard(proxy) {
 
 
 // --- Certificates view --------------------------------------------------------------
+const CERT_FILTERS = {
+  healthy: cert => cert.status === "healthy",
+  within30: cert => certDays(cert) != null && certDays(cert) > 0 && certDays(cert) <= 30,
+  within7: cert => certDays(cert) != null && certDays(cert) > 0 && certDays(cert) <= 7,
+  attention: cert => ["warning", "critical", "expired", "mismatch"].includes(cert.status),
+  pending: cert => cert.status === "pending",
+};
+const CERT_STATUS_RANK = { expired: 0, mismatch: 1, critical: 2, warning: 3, healthy: 4, pending: 5 };
+function certDays(cert) { return cert.expiresAt && cert.daysRemaining != null ? cert.daysRemaining : null; }
+function sortCertRows(rows, sort) {
+  const dir = sort.dir === "desc" ? -1 : 1, byDomain = (a, b) => a.cert.domain.localeCompare(b.cert.domain);
+  return rows.slice().sort((a, b) => {
+    let x, y;
+    if (sort.key === "days") { x = certDays(a.cert); y = certDays(b.cert); }
+    else if (sort.key === "issuer") { x = (a.cert.issuer || "").toLowerCase() || null; y = (b.cert.issuer || "").toLowerCase() || null; }
+    else if (sort.key === "status") { x = CERT_STATUS_RANK[a.cert.status] ?? 9; y = CERT_STATUS_RANK[b.cert.status] ?? 9; }
+    else return dir * byDomain(a, b);
+    if (x == null && y == null) return byDomain(a, b);
+    if (x == null) return 1;
+    if (y == null) return -1;
+    const c = x < y ? -1 : x > y ? 1 : 0;
+    return c ? dir * c : byDomain(a, b);
+  });
+}
 function renderCertificates() {
   const data = state.certificates; if (!data) return;
   const certSearchInput = $("#certificate-search"); if (certSearchInput && document.activeElement !== certSearchInput) certSearchInput.value = state.search.certificates || "";
@@ -360,8 +384,11 @@ function renderCertificates() {
   const routes = state.readiness?.routes || [];
   state.certRows = data.certificates.map(cert => ({ cert, readiness: routes.find(item => item.domain === cert.domain) || null }));
   const certTerm = state.search.certificates;
-  const visibleCertRows = state.certRows.filter(row => matchesSearch(certTerm, row.cert.domain));
-  $("#certificate-list").innerHTML = !state.certRows.length ? '<tr><td colspan="7" class="quiet-state">No HTTPS domains are configured.</td></tr>' : !visibleCertRows.length ? '<tr><td colspan="7" class="quiet-state">No matches.</td></tr>' : visibleCertRows.map((row, index) => {
+  const certSort = state.certSort || { key: "days", dir: "asc" }, certFilter = CERT_FILTERS[state.certFilter] ? state.certFilter : null;
+  const visibleCertRows = state.certVisibleRows = sortCertRows(state.certRows.filter(row => matchesSearch(certTerm, row.cert.domain) && (!certFilter || CERT_FILTERS[certFilter](row.cert))), certSort);
+  document.querySelectorAll("#certificates-view [data-cert-sort]").forEach(btn => { const on = btn.dataset.certSort === certSort.key; btn.closest("th").setAttribute("aria-sort", on ? (certSort.dir === "asc" ? "ascending" : "descending") : "none"); btn.querySelector(".sort-arrow").textContent = on ? (certSort.dir === "asc" ? "▲" : "▼") : ""; });
+  document.querySelectorAll("#certificates-view [data-cert-filter]").forEach(btn => { const on = btn.dataset.certFilter === certFilter; btn.classList.toggle("active", on); btn.setAttribute("aria-pressed", on ? "true" : "false"); });
+  $("#certificate-list").innerHTML = !state.certRows.length ? '<tr><td colspan="7" class="quiet-state">No HTTPS domains are configured.</td></tr>' : !visibleCertRows.length ? `<tr><td colspan="7" class="quiet-state">${certFilter ? "No certificates match this filter." : "No matches."}</td></tr>` : visibleCertRows.map((row, index) => {
     const cert = row.cert, item = row.readiness;
     const routeDisabled = item?.enabled === false;
     const dnsOk = item && !routeDisabled ? item.dns.healthy : null;
@@ -407,8 +434,13 @@ $("#cert-detail-recheck")?.addEventListener("click", async event => {
   } catch (error) { toast(error.message, "error"); }
   finally { button.disabled = false; button.textContent = originalText; }
 });
-$("#certificate-list").addEventListener("click", event => { const row = event.target.closest(".cert-table-row"); if (!row) return; const data = state.certRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
-$("#certificate-list").addEventListener("keydown", event => { if (event.key !== "Enter" && event.key !== " ") return; const row = event.target.closest(".cert-table-row"); if (!row) return; event.preventDefault(); const data = state.certRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
+$("#certificates-view").addEventListener("click", event => {
+  const sortBtn = event.target.closest("[data-cert-sort]"), filterBtn = event.target.closest("[data-cert-filter]");
+  if (sortBtn) { const key = sortBtn.dataset.certSort, cur = state.certSort || { key: "days", dir: "asc" }; state.certSort = { key, dir: cur.key === key && cur.dir === "asc" ? "desc" : "asc" }; renderCertificates(); }
+  else if (filterBtn) { state.certFilter = state.certFilter === filterBtn.dataset.certFilter ? null : filterBtn.dataset.certFilter; renderCertificates(); }
+});
+$("#certificate-list").addEventListener("click", event => { const row = event.target.closest(".cert-table-row"); if (!row) return; const data = state.certVisibleRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
+$("#certificate-list").addEventListener("keydown", event => { if (event.key !== "Enter" && event.key !== " ") return; const row = event.target.closest(".cert-table-row"); if (!row) return; event.preventDefault(); const data = state.certVisibleRows?.[Number(row.dataset.index)]; if (data) openCertificateDetail(data); });
 $("#cert-options-menu").addEventListener("click", event => { const wrap = event.target.closest(".menu-wrap"); if (!wrap) return; if (event.target.closest(".menu-button")) { const opening = !wrap.classList.contains("menu-open"); closeMenus(); wrap.classList.toggle("menu-open", opening); wrap.querySelector(".menu-button").setAttribute("aria-expanded", String(opening)); return; } if (event.target.closest("#cert-threshold-trigger")) { closeMenus(); renderHealthSettings(); $("#health-settings-dialog").showModal(); } });
 
 
